@@ -51,13 +51,13 @@ input double   InpFixedLot          = 0.01;       // Used if no SL specified
 input bool     InpUseSLTP           = true;       // Set SL/TP on entry
 
 input group "=== Session Filter (avoid Market closed errors) ==="
-input bool     InpFilterSession     = true;       // Filter Buy/Sell by session
-input int      InpEarliestHour      = 1;          // Earliest server hour to trade (≥)
-input int      InpLatestHour        = 21;         // Latest server hour to trade (<)
-input bool     InpSkipSaturday      = true;       // Always skip Saturday
-input bool     InpSkipSunday        = true;       // Skip Sunday (most brokers closed)
-input bool     InpSkipFridayLate    = true;       // Skip Friday after 21:00 server
-input bool     InpCheckMarketOpen   = true;       // Also check broker SYMBOL_TRADE_MODE
+input bool     InpFilterSession     = true;       // Filter Buy/Sell by trading session
+input bool     InpUseSymbolSession  = true;       // Use broker session (SymbolInfoSessionTrade) — recommended
+input bool     InpCheckMarketOpen   = true;       // Also verify SYMBOL_TRADE_MODE
+input bool     InpSkipFridayLate    = true;       // Skip Friday after cutoff (avoid weekend gap)
+input int      InpFridayCutoffHour  = 21;         // Friday cutoff hour (server time)
+input int      InpManualEarliestHour = 0;         // Manual fallback: earliest hour (used if InpUseSymbolSession=false)
+input int      InpManualLatestHour   = 24;        // Manual fallback: latest hour
 
 //=== Globals ===
 long           g_onnx_handle = INVALID_HANDLE;
@@ -389,6 +389,36 @@ void CheckHardStop()
 }
 
 //+------------------------------------------------------------------+
+//| Check if symbol's broker-defined trading session is open         |
+//| Uses SymbolInfoSessionTrade — adapts to symbol & broker config   |
+//+------------------------------------------------------------------+
+bool IsSymbolSessionOpen(datetime bar_time)
+{
+   MqlDateTime dt;
+   TimeToStruct(bar_time, dt);
+   ENUM_DAY_OF_WEEK day = (ENUM_DAY_OF_WEEK)dt.day_of_week;
+
+   // Current time-of-day in seconds since midnight
+   long current_tod = dt.hour * 3600 + dt.min * 60 + dt.sec;
+
+   datetime from, to;
+   for(uint i = 0; i < 8; i++) {  // most brokers have ≤ 4 sessions per day; allow up to 8
+      if(!SymbolInfoSessionTrade(_Symbol, day, i, from, to)) {
+         break;  // no more sessions for this day
+      }
+      // The returned datetime represents time-of-day (epoch + offset)
+      // Extract seconds-since-midnight via modulo 86400
+      long from_tod = (long)from % 86400;
+      long to_tod   = (long)to   % 86400;
+
+      if(current_tod >= from_tod && current_tod < to_tod) {
+         return true;  // inside an active session
+      }
+   }
+   return false;  // no active session at this time
+}
+
+//+------------------------------------------------------------------+
 //| Check if trading session is open for new entries                 |
 //| (CLOSE action is always allowed regardless)                      |
 //+------------------------------------------------------------------+
@@ -398,22 +428,26 @@ bool IsAllowedSession(datetime bar_time)
 
    MqlDateTime dt;
    TimeToStruct(bar_time, dt);
-   int dow  = dt.day_of_week;   // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+   int dow  = dt.day_of_week;
    int hour = dt.hour;
 
-   // Saturday — Forex closed
-   if(InpSkipSaturday && dow == 6) return false;
+   // Always-applied: Friday cutoff (weekend gap protection)
+   if(InpSkipFridayLate && dow == 5 && hour >= InpFridayCutoffHour) {
+      return false;
+   }
 
-   // Sunday — most brokers closed
-   if(InpSkipSunday && dow == 0) return false;
+   // Primary session check
+   if(InpUseSymbolSession) {
+      // Use broker-defined trading session (best for arbitrary symbols/brokers)
+      if(!IsSymbolSessionOpen(bar_time)) return false;
+   } else {
+      // Manual fallback: hour range + skip weekends
+      if(dow == 6) return false;  // Saturday
+      if(dow == 0) return false;  // Sunday
+      if(hour < InpManualEarliestHour || hour >= InpManualLatestHour) return false;
+   }
 
-   // Friday late session
-   if(InpSkipFridayLate && dow == 5 && hour >= 21) return false;
-
-   // Hour range
-   if(hour < InpEarliestHour || hour >= InpLatestHour) return false;
-
-   // Also check broker — does symbol allow new orders right now?
+   // Also verify broker live status (extra safety)
    if(InpCheckMarketOpen) {
       long mode = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_MODE);
       if(mode == SYMBOL_TRADE_MODE_DISABLED) return false;

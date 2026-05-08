@@ -79,6 +79,8 @@ input double InpStarOuterBodyMinPct  = 0.70;   // Star: outer bars body ≥ N ×
 input double InpMatHoldOuterBodyMin  = 0.60;   // MatHold: outer bars body ≥ N × range
 input double InpMatHoldMidBodyMax    = 0.40;   // MatHold: middle 3 bars body ≤ N × range
 input bool   InpMatHoldRequireBreak  = true;   // MatHold: bar0 must close past bar4 high/low
+input bool   InpInsideOutsideStrict  = true;   // Inside/Outside: compare BODIES (true) vs HIGH/LOW (false)
+input double InpPiercingMinBodyRatio = 0.5;    // Piercing: cur body ≥ N × prev body (substance filter)
 
 input group "=== Visual Markers ==="
 input bool InpDrawArrows           = true;     // Draw arrow markers on chart
@@ -193,14 +195,46 @@ int IsEngulfing(double o0, double c0, double o1, double c1)
    return 0;
 }
 
-int IsInsideBar(double h0, double l0, double h1, double l1)
+//+------------------------------------------------------------------+
+//| Inside Bar:                                                       |
+//|   Strict (body): child's body fully inside parent's body          |
+//|   Loose (h/l):   child's high/low inside parent's high/low        |
+//+------------------------------------------------------------------+
+int IsInsideBar(double o0, double c0, double h0, double l0,
+                 double o1, double c1, double h1, double l1)
 {
-   return (h0 < h1 && l0 > l1) ? 1 : 0;
+   if(InpInsideOutsideStrict) {
+      // Body-based — child's body must be inside parent's body
+      double cur_top  = MathMax(o0, c0);
+      double cur_bot  = MathMin(o0, c0);
+      double prev_top = MathMax(o1, c1);
+      double prev_bot = MathMin(o1, c1);
+      return (cur_top < prev_top && cur_bot > prev_bot) ? 1 : 0;
+   } else {
+      // High/low-based (legacy/loose)
+      return (h0 < h1 && l0 > l1) ? 1 : 0;
+   }
 }
 
-int IsOutsideBar(double h0, double l0, double h1, double l1)
+//+------------------------------------------------------------------+
+//| Outside Bar:                                                      |
+//|   Strict (body): child's body engulfs parent's body               |
+//|   Loose (h/l):   child's high/low engulfs parent's high/low       |
+//+------------------------------------------------------------------+
+int IsOutsideBar(double o0, double c0, double h0, double l0,
+                  double o1, double c1, double h1, double l1)
 {
-   return (h0 > h1 && l0 < l1) ? 1 : 0;
+   if(InpInsideOutsideStrict) {
+      // Body-based — child's body must engulf parent's body
+      double cur_top  = MathMax(o0, c0);
+      double cur_bot  = MathMin(o0, c0);
+      double prev_top = MathMax(o1, c1);
+      double prev_bot = MathMin(o1, c1);
+      return (cur_top > prev_top && cur_bot < prev_bot) ? 1 : 0;
+   } else {
+      // High/low-based (legacy/loose)
+      return (h0 > h1 && l0 < l1) ? 1 : 0;
+   }
 }
 
 int IsHarami(double o0, double c0, double o1, double c1)
@@ -226,18 +260,43 @@ int IsHarami(double o0, double c0, double o1, double c1)
    return 0;
 }
 
+//+------------------------------------------------------------------+
+//| Piercing / Dark Cloud Cover (2-bar reversal)                      |
+//|                                                                  |
+//| Bullish Piercing:                                                 |
+//|   Day 1: bearish (close < open)                                   |
+//|   Day 2: bullish (close > open)                                   |
+//|   Day 2 OPEN < Day 1 CLOSE (gap down)                             |
+//|   Day 2 CLOSE > 50% of Day 1's body (significant retracement)    |
+//|   Day 2 CLOSE < Day 1 OPEN (doesn't fully engulf — that'd be     |
+//|                              Bullish Engulfing instead)           |
+//|                                                                  |
+//| Bearish Dark Cloud Cover = mirror image                           |
+//|                                                                  |
+//| Substance filter:                                                 |
+//|   cur_body ≥ InpPiercingMinBodyRatio × prev_body                  |
+//|   (prevents false signals from tiny doji-like Day 2)             |
+//+------------------------------------------------------------------+
 int IsPiercingOrDarkCloud(double o0, double c0, double o1, double c1)
 {
    double prev_body = MathAbs(c1 - o1);
    double cur_body  = MathAbs(c0 - o0);
-   if(prev_body < 1e-10 || cur_body < prev_body * 0.5) return 0;
+   if(prev_body < 1e-10) return 0;
+   // Substance filter: current body must be substantial
+   if(cur_body < prev_body * InpPiercingMinBodyRatio) return 0;
 
    double prev_mid = (o1 + c1) / 2.0;
 
+   // Bullish Piercing
+   //   Day 1 bear, Day 2 bull, gap down open, close > 50% Day 1, close < Day 1 open
    if(c1 < o1 && c0 > o0 && o0 < c1 && c0 > prev_mid && c0 < o1)
-      return 1;  // bullish piercing
+      return 1;
+
+   // Bearish Dark Cloud Cover
+   //   Day 1 bull, Day 2 bear, gap up open, close < 50% Day 1, close > Day 1 open
    if(c1 > o1 && c0 < o0 && o0 > c1 && c0 < prev_mid && c0 > o1)
-      return -1; // bearish dark cloud
+      return -1;
+
    return 0;
 }
 
@@ -410,8 +469,8 @@ int OnCalculate(const int rates_total,
 
       //=== Two-bar ===
       BufEngulfing[i]  = InpEnableEngulfing  ? IsEngulfing(o0, c0, o1, c1)        : 0;
-      BufInsideBar[i]  = InpEnableInsideBar  ? IsInsideBar(h0, l0, h1, l1)        : 0;
-      BufOutsideBar[i] = InpEnableOutsideBar ? IsOutsideBar(h0, l0, h1, l1)       : 0;
+      BufInsideBar[i]  = InpEnableInsideBar  ? IsInsideBar(o0, c0, h0, l0, o1, c1, h1, l1)  : 0;
+      BufOutsideBar[i] = InpEnableOutsideBar ? IsOutsideBar(o0, c0, h0, l0, o1, c1, h1, l1) : 0;
       BufHarami[i]     = InpEnableHarami     ? IsHarami(o0, c0, o1, c1)           : 0;
       BufPiercing[i]   = InpEnablePiercing   ? IsPiercingOrDarkCloud(o0, c0, o1, c1) : 0;
 

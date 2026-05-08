@@ -122,12 +122,78 @@ InpStarMidBodyMaxPct    = 0.40   // middle bar body ≤ 40% × middle range
 InpStarOuterBodyMinPct  = 0.70   // outer bars body ≥ 70% × middle range
                                   //   ค่าน้อย = หลวม, ค่ามาก = strict
 
-# Mat Hold (5-bar continuation):  ⭐ NEW
+# Mat Hold (5-bar continuation):
 InpMatHoldOuterBodyMin  = 0.60   // outer bars body ≥ 60% × range
 InpMatHoldMidBodyMax    = 0.40   // middle 3 bars body ≤ 40% × bar4 range
 InpMatHoldRequireBreak  = true   // bar0 must close past bar4 high/low
                                   //   true  = strict (textbook)
                                   //   false = loose (easier to detect)
+
+# Inside / Outside Bar (strict vs loose):  ⭐ NEW
+InpInsideOutsideStrict  = true   // true  = compare BODIES (strict, cleaner)
+                                  // false = compare high/low (legacy/loose)
+
+# Piercing / Dark Cloud:
+InpPiercingMinBodyRatio = 0.5    // cur body ≥ 50% × prev body (substance)
+                                  //   0.5 = default
+                                  //   0.7 = stricter (more conviction)
+                                  //   0.3 = looser (more signals)
+```
+
+### **Inside / Outside Bar — Strict vs Loose**
+
+```
+STRICT mode (default, body-based):  ⭐ Recommended
+   Inside:  child's body ⊂ parent's body
+   Outside: child's body ⊃ parent's body
+
+   ┌──────┐                  Mother body covers wider range
+   │      │                  → child body must fit inside
+   │ ┌──┐ │  ← Inside Bar
+   │ │  │ │   (strict — clean signal, less noise)
+   │ └──┘ │
+   │      │
+   └──────┘
+
+LOOSE mode (h/l-based, traditional):
+   Inside:  child.high < parent.high AND child.low > parent.low
+   Outside: child.high > parent.high AND child.low < parent.low
+
+   Includes wicks → more detections but noisier
+```
+
+### **Piercing Pattern Verified ✅**
+
+```
+Image source (textbook):
+
+  Day 1 (Bearish)         Day 2 (Bullish)
+  ┌───────┐
+  │ Open  │ ←─── Open of Day 1
+  │       │
+  │       │
+  │ ──50%─│  ←──── 50% midpoint
+  │       │      ↓
+  │       │      Close of Day 2 must be HERE (above 50%)
+  │       │      but BELOW Day 1's open
+  │ Close │ ←─── Close of Day 1
+  └───────┘
+                  ↓ Gap Down
+                  ┌───────┐
+                  │ Open  │ ← Day 2 opens BELOW Day 1 close
+                  │       │
+                  │ Close │ ← Day 2 closes ABOVE 50% midpoint
+                  └───────┘
+
+Code conditions (all must be true):
+  ✓ c1 < o1           Day 1 bearish
+  ✓ c0 > o0           Day 2 bullish
+  ✓ o0 < c1           Gap down (open below D1 close)
+  ✓ c0 > prev_mid     Close > 50% retracement
+  ✓ c0 < o1           Doesn't fully engulf (else = Engulfing)
+  ✓ cur_body ≥ ratio × prev_body   Substance filter
+
+Dark Cloud Cover = mirror image (D1 bull → D2 bear gap up → close < 50%)
 ```
 
 ### **Mat Hold Pattern (5-bar continuation)** ⭐

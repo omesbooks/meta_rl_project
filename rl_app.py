@@ -543,7 +543,9 @@ class RLTradingStudio(ctk.CTk):
 
         self.tool_indi_mode = ctk.CTkOptionMenu(opts,
             values=[
-                "Default (RSI/ATR/Stoch/CCI/WPR/ADX = AGGREGATE, EMA = MULTI)",
+                "Auto-detect (recommended)",
+                "v3 — Standard (50 features)",
+                "v4 — v3 + Candle Patterns (60 features)",
                 "All AGGREGATE (4 indicators)",
                 "All MULTI (4 periods each)",
                 "Custom (manual)",
@@ -906,18 +908,43 @@ class RLTradingStudio(ctk.CTk):
             # Add header if missing
             if not has_header:
                 self._log(self.tools_log, "No header detected, adding...", "info")
-                header = self._build_header_for_mode(self.tool_indi_mode.get())
-                # Verify column count
                 first_cols = first_line.count(',') + 1
+                mode = self.tool_indi_mode.get()
+
+                # Auto-detect by column count
+                if mode.startswith("Auto"):
+                    if first_cols == 57:
+                        mode = "v3"
+                        self._log(self.tools_log,
+                            f"  Auto-detected: v3 standard (57 cols)", "info")
+                    elif first_cols == 67:
+                        mode = "v4"
+                        self._log(self.tools_log,
+                            f"  Auto-detected: v4 with candle patterns (67 cols)", "info")
+                    else:
+                        self._log(self.tools_log,
+                            f"  ⚠️ Unknown column count: {first_cols}",
+                            "warn")
+                        self._log(self.tools_log,
+                            f"  Using generic header f0,f1,...", "warn")
+                        mode = "generic"
+
+                header = self._build_header_for_mode(mode, first_cols)
+
+                # Verify column count
                 if len(header) != first_cols:
                     self._log(self.tools_log,
                         f"⚠️ Column mismatch: header has {len(header)} but data has {first_cols}",
                         "warn")
                     self._log(self.tools_log,
-                        "ใช้ generic column names f0,f1,f2... แทน",
+                        "Falling back to generic column names f0,f1,f2...",
                         "warn")
-                    header = ['timestamp', 'symbol'] + [f'f{i}' for i in range(first_cols - 4)] + ['future_return', 'target']
+                    header = ['timestamp', 'symbol'] + \
+                             [f'f{i}' for i in range(first_cols - 4)] + \
+                             ['future_return', 'target']
                 text = ','.join(header) + '\n' + text
+                self._log(self.tools_log,
+                    f"  ✓ Header added: {len(header)} columns", "success")
 
             # Write
             dst.write_text(text, encoding='utf-8')
@@ -940,11 +967,20 @@ class RLTradingStudio(ctk.CTk):
             self._log(self.tools_log, f"Error: {e}", "error")
             self._log(self.tools_log, traceback.format_exc(), "error")
 
-    def _build_header_for_mode(self, mode):
-        """Build header columns for indicator mode preset"""
-        # Default v3 header (matches DataCollector_v3.mq5 default)
-        return [
-            "timestamp", "symbol", "open", "high", "low", "close", "volume",
+    def _build_header_for_mode(self, mode, n_cols=None):
+        """Build header columns for indicator mode preset.
+
+        Supported modes:
+          - "v3"      → 57 columns (DataCollector_v3.mq5 default)
+          - "v4"      → 67 columns (v3 + 10 candle patterns)
+          - "generic" → fallback f0, f1, ... when count unknown
+          - else      → uses keyword in mode string to detect v3/v4
+        """
+        # === Common base (timestamp + symbol + OHLCV) ===
+        meta = ["timestamp", "symbol", "open", "high", "low", "close", "volume"]
+
+        # === v3 indicator features (50 cols total without OHLCV/label) ===
+        v3_features = [
             "rsi_min", "rsi_max", "rsi_mean", "rsi_std",
             "ema_20", "ema_50", "ema_100", "ema_200",
             "atr_min", "atr_max", "atr_mean", "atr_std",
@@ -956,8 +992,32 @@ class RLTradingStudio(ctk.CTk):
             "hour", "dow", "session_london", "session_ny", "session_asia",
             "ret_1", "ret_3", "ret_5", "ret_10", "ret_20",
             "close_zscore", "pct_rank", "sharpe_20", "hl_range", "body_size",
-            "future_return", "target",
         ]
+
+        # === v4 candle pattern features (10 cols, added before label) ===
+        candle_features = [
+            "candle_hammer", "candle_engulfing",
+            "candle_inside", "candle_outside",
+            "candle_star", "candle_soldiers",
+            "candle_marubozu", "candle_harami",
+            "candle_piercing", "candle_mathold",
+        ]
+
+        label = ["future_return", "target"]
+
+        # === Mode resolution ===
+        mode_lc = mode.lower()
+        if "v4" in mode_lc or "candle" in mode_lc:
+            return meta + v3_features + candle_features + label
+        elif "v3" in mode_lc or "default" in mode_lc or "aggregate" in mode_lc or "multi" in mode_lc:
+            return meta + v3_features + label
+        elif "generic" in mode_lc or "custom" in mode_lc:
+            # Generic fallback: f0, f1, ...
+            n = n_cols if n_cols else 57
+            return meta[:2] + [f"f{i}" for i in range(n - 4)] + label
+
+        # Default → v3 (most common)
+        return meta + v3_features + label
 
     def _apply_split_preset(self, choice):
         """Apply quick preset to date entry"""

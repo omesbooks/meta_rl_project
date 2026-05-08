@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Workflow — โฟลวการทำงาน</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0e14;
+  --panel: #18181b;
+  --panel2: #27272a;
+  --border: #2d2d33;
+  --text: #e4e4e7;
+  --muted: #71717a;
+  --collect: #3b82f6;
+  --process: #10b981;
+  --supervised: #a78bfa;
+  --rl: #fb923c;
+  --validate: #ef4444;
+  --output: #fbbf24;
+}
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 30px 20px;
+  line-height: 1.6;
+}
+h1 {
+  text-align: center;
+  font-size: 32px;
+  margin-bottom: 6px;
+  background: linear-gradient(90deg, var(--collect), var(--rl), var(--validate));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.subtitle {
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 30px;
+}
+
+/* SCENARIO SELECTOR */
+.scenarios {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 30px;
+}
+.scenario-btn {
+  background: var(--panel);
+  border: 2px solid var(--border);
+  padding: 10px 18px;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.scenario-btn:hover { border-color: var(--output); }
+.scenario-btn.active {
+  background: var(--output);
+  color: #000;
+  font-weight: 700;
+}
+
+/* MAIN FLOW DIAGRAM */
+.diagram {
+  max-width: 1400px;
+  margin: 0 auto 40px;
+  background: var(--panel);
+  padding: 30px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow-x: auto;
+}
+
+.flow-container {
+  min-width: 1100px;
+  position: relative;
+}
+
+/* STAGE LABELS */
+.stages {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+  gap: 0;
+  margin-bottom: 8px;
+}
+.stage-label {
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 6px;
+  border-bottom: 2px solid var(--border);
+}
+.stage-label.s1 { border-bottom-color: var(--collect); color: var(--collect); }
+.stage-label.s2 { border-bottom-color: var(--process); color: var(--process); }
+.stage-label.s3 { border-bottom-color: var(--supervised); color: var(--supervised); }
+.stage-label.s4 { border-bottom-color: var(--validate); color: var(--validate); }
+.stage-label.s5 { border-bottom-color: var(--output); color: var(--output); }
+
+/* NODE GRID */
+.nodes {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.node {
+  background: var(--panel2);
+  border-radius: 10px;
+  padding: 14px 12px;
+  border: 2px solid;
+  transition: all 0.3s;
+  position: relative;
+}
+.node.dim { opacity: 0.25; filter: grayscale(0.7); }
+.node.active {
+  transform: scale(1.05);
+  box-shadow: 0 8px 30px rgba(96, 165, 250, 0.3);
+}
+
+.node.collect    { border-color: var(--collect); }
+.node.process    { border-color: var(--process); }
+.node.supervised { border-color: var(--supervised); }
+.node.rl         { border-color: var(--rl); }
+.node.validate   { border-color: var(--validate); }
+.node.output     { border-color: var(--output); }
+
+.node .icon {
+  font-size: 28px;
+  text-align: center;
+  margin-bottom: 6px;
+}
+.node .file {
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+.node.collect    .file { color: var(--collect); }
+.node.process    .file { color: var(--process); }
+.node.supervised .file { color: var(--supervised); }
+.node.rl         .file { color: var(--rl); }
+.node.validate   .file { color: var(--validate); }
+.node.output     .file { color: var(--output); }
+
+.node .desc {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.node .io {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.node .io-row {
+  display: flex;
+  gap: 4px;
+  font-size: 10px;
+  align-items: flex-start;
+}
+.node .io-row .label {
+  color: var(--muted);
+  font-weight: 600;
+  min-width: 20px;
+}
+.node .io-row .val {
+  color: var(--text);
+  font-family: 'Consolas', monospace;
+  word-break: break-all;
+  flex: 1;
+}
+
+/* SVG arrows overlay */
+.arrows {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.arrow-line {
+  stroke: var(--muted);
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 5 5;
+}
+.arrow-line.active {
+  stroke: var(--output);
+  stroke-dasharray: 0;
+  filter: drop-shadow(0 0 4px var(--output));
+}
+
+/* EXAMPLE SCENARIOS */
+.scenario-box {
+  max-width: 1200px;
+  margin: 0 auto;
+  background: var(--panel);
+  padding: 24px;
+  border-radius: 12px;
+  border-left: 4px solid var(--output);
+  margin-bottom: 30px;
+}
+.scenario-box h3 {
+  color: var(--output);
+  margin-bottom: 8px;
+  font-size: 18px;
+}
+.scenario-box .narrative {
+  color: var(--text);
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+.commands {
+  background: #09090b;
+  padding: 14px;
+  border-radius: 8px;
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.commands .comment { color: #6b7280; }
+.commands .cmd { color: var(--output); }
+.commands .out { color: var(--process); }
+.commands div { padding: 1px 0; }
+
+/* Output section */
+.outputs-section {
+  max-width: 1200px;
+  margin: 30px auto;
+}
+.outputs-section h2 {
+  text-align: center;
+  color: var(--output);
+  margin-bottom: 20px;
+  font-size: 22px;
+}
+.output-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.output-card {
+  background: var(--panel);
+  padding: 14px;
+  border-radius: 8px;
+  border-left: 3px solid var(--output);
+}
+.output-card .name {
+  font-family: 'Consolas', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--output);
+  margin-bottom: 4px;
+}
+.output-card .desc {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* LEGEND */
+.legend {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 20px auto 30px;
+  font-size: 12px;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.legend-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+</style>
+</head>
+<body>
+
+<h1>🔄 Workflow ของโปรแกรมที่เราสร้าง</h1>
+<div class="subtitle">เลือก scenario ด้านล่างเพื่อดูว่าใช้ไฟล์ไหนเรียงกันยังไง</div>
+
+<!-- SCENARIO SELECTOR -->
+<div class="scenarios">
+  <button class="scenario-btn active" data-scenario="full">📦 Full Pipeline (เริ่มต้น)</button>
+  <button class="scenario-btn" data-scenario="ml">🌲 Supervised ML</button>
+  <button class="scenario-btn" data-scenario="rl">🤖 Reinforcement Learning</button>
+  <button class="scenario-btn" data-scenario="validate">🔬 Walk-Forward</button>
+  <button class="scenario-btn" data-scenario="optimize">🧬 GA Optimizer (MT4)</button>
+</div>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--collect)"></div>📥 Collect</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--process)"></div>🔧 Process</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--supervised)"></div>🌲 Supervised</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--rl)"></div>🤖 RL</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--validate)"></div>🔬 Validate</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--output)"></div>📊 Output</div>
+</div>
+
+<!-- MAIN DIAGRAM -->
+<div class="diagram">
+  <div class="flow-container">
+    <div class="stages">
+      <div class="stage-label s1">1. Collect Data</div>
+      <div class="stage-label s2">2. Process</div>
+      <div class="stage-label s3">3. Train Model</div>
+      <div class="stage-label s4">4. Evaluate</div>
+      <div class="stage-label s5">5. Output</div>
+    </div>
+
+    <div class="nodes" id="nodes">
+
+      <!-- Stage 1: Collect -->
+      <div class="node collect" data-id="mt4">
+        <div class="icon">📊</div>
+        <div class="file">MT4 Strategy Tester</div>
+        <div class="desc">Tick data 2010-2026</div>
+      </div>
+
+      <!-- Stage 2: Process -->
+      <div class="node collect" data-id="datacollector">
+        <div class="icon">📥</div>
+        <div class="file">DataCollector_v2.mq4</div>
+        <div class="desc">EA เก็บ 35 features</div>
+        <div class="io">
+          <div class="io-row"><span class="label">in</span><span class="val">OHLC + ticks</span></div>
+          <div class="io-row"><span class="label">out</span><span class="val">.csv</span></div>
+        </div>
+      </div>
+
+      <!-- Stage 3: Train (placeholder, will be filled by scenario) -->
+      <div class="node supervised" data-id="train" id="trainNode">
+        <div class="icon">🧠</div>
+        <div class="file">รอเลือก scenario</div>
+        <div class="desc">-</div>
+      </div>
+
+      <!-- Stage 4: Evaluate -->
+      <div class="node validate" data-id="eval" id="evalNode">
+        <div class="icon">📈</div>
+        <div class="file">รอเลือก scenario</div>
+        <div class="desc">-</div>
+      </div>
+
+      <!-- Stage 5: Output -->
+      <div class="node output" data-id="output" id="outputNode">
+        <div class="icon">🎯</div>
+        <div class="file">Results</div>
+        <div class="desc">model + chart</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SCENARIO DETAIL -->
+<div class="scenario-box" id="scenarioBox">
+  <h3 id="scenarioTitle">📦 Full Pipeline</h3>
+  <div class="narrative" id="scenarioNarrative">
+    เลือก scenario ด้านบนเพื่อดูรายละเอียด
+  </div>
+  <div class="commands" id="scenarioCommands"></div>
+</div>
+
+<!-- ALL OUTPUTS -->
+<div class="outputs-section">
+  <h2>📊 Outputs ที่ได้จากทั้ง Pipeline</h2>
+  <div class="output-grid">
+    <div class="output-card">
+      <div class="name">training_data_v2.csv</div>
+      <div class="desc">Raw data จาก MT4 (35 features × 100k bars)</div>
+    </div>
+    <div class="output-card">
+      <div class="name">*_relabeled.csv</div>
+      <div class="desc">Class balanced (33/33/33)</div>
+    </div>
+    <div class="output-card">
+      <div class="name">model.pkl (PyCaret)</div>
+      <div class="desc">Trained classifier (LightGBM/RF/etc.)</div>
+    </div>
+    <div class="output-card">
+      <div class="name">rl_*.zip (PPO)</div>
+      <div class="desc">Trained RL agent (PyTorch weights)</div>
+    </div>
+    <div class="output-card">
+      <div class="name">*_norm.csv</div>
+      <div class="desc">Feature normalization stats (mean, std)</div>
+    </div>
+    <div class="output-card">
+      <div class="name">*_trades.csv</div>
+      <div class="desc">List ของ trade ทั้งหมดใน backtest</div>
+    </div>
+    <div class="output-card">
+      <div class="name">*_equity.png</div>
+      <div class="desc">Equity curve chart + drawdown</div>
+    </div>
+    <div class="output-card">
+      <div class="name">wf_*_results.csv</div>
+      <div class="desc">Walk-forward stats (PF, WR per window)</div>
+    </div>
+    <div class="output-card">
+      <div class="name">wf_*_chart.png</div>
+      <div class="desc">Multi-window equity comparison</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================================
+// Scenarios — define each pipeline configuration
+// =============================================================
+const scenarios = {
+  full: {
+    title: "📦 Full Pipeline (Step-by-step)",
+    narrative: "ขั้นตอนเต็มจากเก็บข้อมูล → train → backtest. เริ่มจาก MT4 รัน Strategy Tester เก็บ CSV → Python จัดการต่อ",
+    activeNodes: ['mt4', 'datacollector', 'train', 'eval', 'output'],
+    train: { icon: '🧠', file: '(เลือก ML / RL)', desc: 'ดู scenario ML หรือ RL' },
+    eval: { icon: '📈', file: 'backtest scripts', desc: 'ทดสอบบน test set' },
+    output: { icon: '🎯', file: 'model + report', desc: '.pkl/.zip + chart' },
+    commands: [
+      { type: 'comment', text: '# 1. รัน MT4 Strategy Tester ด้วย DataCollector_v2 EA' },
+      { type: 'comment', text: '#    Symbol: XAUUSD, TF: H1, Period: 2010-2026' },
+      { type: 'comment', text: '#    Output: training_data_v2.csv' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 2. Relabel (แก้ class imbalance)' },
+      { type: 'cmd',     text: 'python relabel.py training_data_v2.csv' },
+      { type: 'out',     text: '# -> training_data_v2_relabeled.csv' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 3. เลือกเทรน — supervised หรือ RL' },
+      { type: 'cmd',     text: 'python app.py    # Supervised (PyCaret GUI)' },
+      { type: 'cmd',     text: '# หรือ' },
+      { type: 'cmd',     text: 'python rl_train.py training_data_v2_relabeled.csv \\' },
+      { type: 'cmd',     text: '       --steps 200000 --name rl_v3' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 4. Backtest' },
+      { type: 'cmd',     text: 'python rl_backtest.py rl_v3 training_data_v2_relabeled.csv' },
+    ]
+  },
+
+  ml: {
+    title: "🌲 Supervised ML — PyCaret Pipeline",
+    narrative: "เทรน classifier (LightGBM, XGBoost, etc.) ทำนาย UP/DOWN/FLAT จาก features. ใช้ GUI app.py สะดวกสุด",
+    activeNodes: ['mt4', 'datacollector', 'train', 'eval', 'output'],
+    trainColor: 'supervised',
+    train: { icon: '🌲', file: 'app.py (Tkinter GUI)', desc: 'PyCaret training', io: { in: 'CSV + target', out: 'model.pkl' } },
+    eval:  { icon: '📈', file: 'backtest.py', desc: 'Win rate, PF, drawdown', io: { in: 'model + CSV', out: 'trades.csv' } },
+    output: { icon: '🎯', file: 'model.pkl + report', desc: 'sklearn pipeline + equity chart' },
+    commands: [
+      { type: 'comment', text: '# Pipeline สำหรับ Supervised Learning' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 1. Relabel ก่อน' },
+      { type: 'cmd',     text: 'python relabel.py training_data_v2.csv' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 2. เปิด GUI trainer' },
+      { type: 'cmd',     text: 'python app.py' },
+      { type: 'comment', text: '#    ในหน้าต่าง:' },
+      { type: 'comment', text: '#    - เลือกไฟล์ training_data_v2_relabeled.csv' },
+      { type: 'comment', text: '#    - Task: Classification' },
+      { type: 'comment', text: '#    - Target: target' },
+      { type: 'comment', text: '#    - ☑ Time-Series Mode' },
+      { type: 'comment', text: '#    - ☑ Fix imbalance' },
+      { type: 'comment', text: '#    - กด "เริ่มเทรน"' },
+      { type: 'out',     text: '# -> model.pkl' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 3. Backtest' },
+      { type: 'cmd',     text: 'python backtest.py model training_data_v2_relabeled.csv' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 4. ดูว่า confidence ใหนน่าเชื่อถือ' },
+      { type: 'cmd',     text: 'python analyze_confidence.py model training_data_v2_relabeled.csv' },
+    ]
+  },
+
+  rl: {
+    title: "🤖 Reinforcement Learning — PPO Pipeline",
+    narrative: "Agent เรียนเทรดจาก reward signals. ใช้ TradingEnv (Gymnasium) + PPO (stable-baselines3). Smart กว่า supervised แต่ใช้เวลานาน",
+    activeNodes: ['mt4', 'datacollector', 'train', 'eval', 'output'],
+    trainColor: 'rl',
+    train: { icon: '🤖', file: 'rl_train.py', desc: 'PPO + TradingEnv', io: { in: 'CSV + features', out: '.zip' } },
+    eval:  { icon: '📈', file: 'rl_backtest.py', desc: 'Run agent on test', io: { in: 'model + CSV', out: 'stats' } },
+    output: { icon: '🎯', file: 'rl_v3.zip + chart', desc: 'PyTorch weights + equity' },
+    commands: [
+      { type: 'comment', text: '# Pipeline สำหรับ Reinforcement Learning' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 1. Relabel' },
+      { type: 'cmd',     text: 'python relabel.py training_data_v2.csv' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 2. เทรน RL agent (ใช้ trading_env.py + PPO)' },
+      { type: 'cmd',     text: 'python rl_train.py training_data_v2_relabeled.csv \\' },
+      { type: 'cmd',     text: '       --steps 200000 --window 10 --name rl_v3' },
+      { type: 'out',     text: '# -> rl_v3.zip + rl_v3_norm.csv' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 3. Backtest' },
+      { type: 'cmd',     text: 'python rl_backtest.py rl_v3 training_data_v2_relabeled.csv' },
+      { type: 'out',     text: '# -> rl_v3_trades.csv + rl_v3_equity.png' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 4. วิเคราะห์ confidence' },
+      { type: 'cmd',     text: 'python rl_analyze.py rl_v3 training_data_v2_relabeled.csv' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 5. Backtest with confidence filter' },
+      { type: 'cmd',     text: 'python rl_backtest_filtered.py rl_v3 \\' },
+      { type: 'cmd',     text: '       training_data_v2_relabeled.csv --conf 0.85' },
+    ]
+  },
+
+  validate: {
+    title: "🔬 Walk-Forward Validation",
+    narrative: "เทรน + เทสต์ ซ้ำ N ช่วงเวลา เพื่อพิสูจน์ว่า edge ของ model robust จริง — ไม่ใช่ luck. คือมาตรฐานทอง!",
+    activeNodes: ['mt4', 'datacollector', 'train', 'eval', 'output'],
+    trainColor: 'rl',
+    train: { icon: '🔄', file: 'rl_walkforward.py', desc: 'Train + test ทุก window', io: { in: 'CSV + features', out: 'multi-models' } },
+    eval:  { icon: '🔬', file: '(built-in)', desc: 'Robustness verdict', io: { in: 'all results', out: 'verdict' } },
+    output: { icon: '📊', file: 'wf_xau_v3_*', desc: 'CSV + chart 5 windows' },
+    commands: [
+      { type: 'comment', text: '# Pipeline สำหรับ Walk-Forward Validation' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# รัน 5 windows × 50k steps แต่ละ window' },
+      { type: 'comment', text: '# (ใช้เวลา ~50 นาที)' },
+      { type: 'cmd',     text: 'python rl_walkforward.py training_data_v2_relabeled.csv \\' },
+      { type: 'cmd',     text: '       --windows 5 --steps 50000 \\' },
+      { type: 'cmd',     text: '       --window 10 --name wf_xau_v3' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# Output:' },
+      { type: 'out',     text: '#   wf_xau_v3_results.csv  (ตาราง stats)' },
+      { type: 'out',     text: '#   wf_xau_v3_chart.png    (equity + bar chart)' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# Verdict ที่เป็นไปได้:' },
+      { type: 'comment', text: '#   ✅ ROBUST   — ทุก window ผ่าน' },
+      { type: 'comment', text: '#   🟡 MOSTLY   — 70%+ ผ่าน' },
+      { type: 'comment', text: '#   ⚠️ UNSTABLE — 50-70%' },
+      { type: 'comment', text: '#   ❌ NOT      — < 50% ผ่าน' },
+    ]
+  },
+
+  optimize: {
+    title: "🧬 MT4 Genetic Algorithm Optimizer",
+    narrative: "ใช้ MT4 Strategy Tester ในโหมด Optimization (Genetic Algorithm) หา parameters ของ EA ที่ดีที่สุด. ไม่ต้องเขียน Python เลย!",
+    activeNodes: ['mt4', 'datacollector', 'train', 'eval', 'output'],
+    trainColor: 'rl',
+    train: { icon: '🧬', file: 'GA_Trainable_EA.mq4', desc: 'Optimize parameters', io: { in: '8 parameters', out: 'best params' } },
+    eval:  { icon: '📊', file: '(MT4 Tester)', desc: 'Net profit ranking', io: { in: 'all combinations', out: 'top results' } },
+    output: { icon: '🏆', file: 'optimization report', desc: 'Best parameter set' },
+    commands: [
+      { type: 'comment', text: '# Pipeline สำหรับ MT4 Genetic Optimizer' },
+      { type: 'comment', text: '# ทำใน MT4 — ไม่ใช่ Python!' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 1. Compile EA' },
+      { type: 'comment', text: '#    - เปิด MetaEditor' },
+      { type: 'comment', text: '#    - F7 compile GA_Trainable_EA.mq4' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 2. Strategy Tester' },
+      { type: 'comment', text: '#    Expert: GA_Trainable_EA' },
+      { type: 'comment', text: '#    Symbol: EURUSDm or XAUUSDm' },
+      { type: 'comment', text: '#    TF: H1' },
+      { type: 'comment', text: '#    Period: 2015-2023 (in-sample)' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 3. ตั้ง Optimization' },
+      { type: 'comment', text: '#    ☑ Optimization' },
+      { type: 'comment', text: '#    Genetic Algorithm: ☑' },
+      { type: 'comment', text: '#    Expert properties:' },
+      { type: 'comment', text: '#      ☑ RSI_Period (5..30, step 1)' },
+      { type: 'comment', text: '#      ☑ ATR_Multiplier (1.0..3.0, step 0.1)' },
+      { type: 'comment', text: '#      ☑ RR_Ratio (1.0..3.0, step 0.2)' },
+      { type: 'comment', text: '#      ... ฯลฯ' },
+      { type: 'cmd',     text: '' },
+      { type: 'comment', text: '# 4. Start → MT4 ลอง ~1000 combinations' },
+      { type: 'comment', text: '# 5. ทดสอบ best params บน out-of-sample' },
+    ]
+  },
+};
+
+// =============================================================
+// Define all node positions (used for drawing arrows)
+// =============================================================
+let activeScenario = 'full';
+
+function setScenario(key) {
+  activeScenario = key;
+  const s = scenarios[key];
+
+  // Update buttons
+  document.querySelectorAll('.scenario-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.scenario === key);
+  });
+
+  // Update narrative
+  document.getElementById('scenarioTitle').textContent = s.title;
+  document.getElementById('scenarioNarrative').textContent = s.narrative;
+
+  // Update commands
+  const cmdEl = document.getElementById('scenarioCommands');
+  cmdEl.innerHTML = '';
+  s.commands.forEach(c => {
+    const div = document.createElement('div');
+    div.className = c.type;
+    div.textContent = c.text || ' ';
+    cmdEl.appendChild(div);
+  });
+
+  // Update train/eval nodes
+  const trainNode = document.getElementById('trainNode');
+  const evalNode = document.getElementById('evalNode');
+  const outputNode = document.getElementById('outputNode');
+
+  if (s.train) {
+    const cls = s.trainColor || 'supervised';
+    trainNode.className = `node ${cls}`;
+    trainNode.innerHTML = `
+      <div class="icon">${s.train.icon}</div>
+      <div class="file">${s.train.file}</div>
+      <div class="desc">${s.train.desc}</div>
+      ${s.train.io ? `
+        <div class="io">
+          <div class="io-row"><span class="label">in</span><span class="val">${s.train.io.in}</span></div>
+          <div class="io-row"><span class="label">out</span><span class="val">${s.train.io.out}</span></div>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  if (s.eval) {
+    evalNode.innerHTML = `
+      <div class="icon">${s.eval.icon}</div>
+      <div class="file">${s.eval.file}</div>
+      <div class="desc">${s.eval.desc}</div>
+      ${s.eval.io ? `
+        <div class="io">
+          <div class="io-row"><span class="label">in</span><span class="val">${s.eval.io.in}</span></div>
+          <div class="io-row"><span class="label">out</span><span class="val">${s.eval.io.out}</span></div>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  if (s.output) {
+    outputNode.innerHTML = `
+      <div class="icon">${s.output.icon}</div>
+      <div class="file">${s.output.file}</div>
+      <div class="desc">${s.output.desc}</div>
+    `;
+  }
+
+  // Highlight active nodes
+  document.querySelectorAll('.node').forEach(n => {
+    if (s.activeNodes.includes(n.dataset.id)) {
+      n.classList.add('active');
+      n.classList.remove('dim');
+    } else {
+      n.classList.remove('active');
+      n.classList.add('dim');
+    }
+  });
+}
+
+// Set up button listeners
+document.querySelectorAll('.scenario-btn').forEach(btn => {
+  btn.addEventListener('click', () => setScenario(btn.dataset.scenario));
+});
+
+// Initialize with full pipeline
+setScenario('full');
+</script>
+
+</body>
+</html>

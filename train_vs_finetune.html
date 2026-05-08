@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Train vs Fine-tune — Visual</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background: #0a0e14;
+  color: #e4e4e7;
+  padding: 20px;
+}
+h1 {
+  text-align: center;
+  font-size: 26px;
+  margin-bottom: 6px;
+  background: linear-gradient(90deg, #60a5fa, #f472b6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.subtitle {
+  text-align: center;
+  color: #71717a;
+  font-size: 13px;
+  margin-bottom: 18px;
+}
+.controls {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.controls button, .controls select {
+  background: #1e3a8a;
+  color: white;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.controls .reset { background: #52525b; }
+.controls select { background: #27272a; border: 1px solid #3f3f46; }
+.cycle-display {
+  text-align: center;
+  font-size: 14px;
+  color: #fbbf24;
+  margin-bottom: 14px;
+  font-family: 'Consolas', monospace;
+}
+
+/* Timeline */
+.timeline {
+  max-width: 1500px;
+  margin: 0 auto 20px;
+  background: #18181b;
+  padding: 14px 20px;
+  border-radius: 10px;
+  border: 1px solid #27272a;
+}
+.timeline-bar {
+  height: 30px;
+  background: linear-gradient(90deg, #1e3a8a 0%, #1e40af 50%, #f59e0b 80%, #ef4444 100%);
+  border-radius: 4px;
+  position: relative;
+  margin: 8px 0;
+}
+.timeline-marker {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 36px;
+  background: #fbbf24;
+  transition: left 0.5s;
+}
+.timeline-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #71717a;
+  font-family: 'Consolas', monospace;
+}
+
+/* 3-column grid */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+.col {
+  background: #18181b;
+  border-radius: 10px;
+  padding: 16px;
+  border: 2px solid;
+}
+.col.scratch { border-color: #3b82f6; }
+.col.pure    { border-color: #ef4444; }
+.col.smart   { border-color: #10b981; }
+
+.col h2 {
+  font-size: 17px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.col.scratch h2 { color: #60a5fa; }
+.col.pure    h2 { color: #f87171; }
+.col.smart   h2 { color: #34d399; }
+.col .desc {
+  font-size: 12px;
+  color: #a1a1aa;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  min-height: 50px;
+}
+
+/* Brain (NN weights grid) */
+.brain-label {
+  font-size: 11px;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.brain {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 6px;
+  background: #09090b;
+  border-radius: 6px;
+}
+.cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  transition: background 0.2s, transform 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: #fff;
+  font-family: 'Consolas', monospace;
+}
+
+/* Stats */
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.stat-box {
+  background: #27272a;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.stat-label {
+  font-size: 10px;
+  color: #71717a;
+  text-transform: uppercase;
+}
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'Consolas', monospace;
+}
+.stat-value.old { color: #f87171; }
+.stat-value.new { color: #60a5fa; }
+
+.bar-row {
+  margin-bottom: 6px;
+}
+.bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #a1a1aa;
+  margin-bottom: 3px;
+}
+.bar-bg {
+  height: 12px;
+  background: #27272a;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.5s;
+}
+.bar-fill.old { background: linear-gradient(90deg, #ef4444, #f87171); }
+.bar-fill.new { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+
+.compute-meter {
+  background: #27272a;
+  padding: 8px;
+  border-radius: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.compute-bars {
+  display: flex;
+  gap: 2px;
+}
+.compute-bar {
+  width: 8px;
+  height: 14px;
+  background: #3f3f46;
+  border-radius: 2px;
+}
+.compute-bar.active { background: #fbbf24; }
+
+/* Log */
+.log {
+  background: #09090b;
+  border-radius: 6px;
+  padding: 8px;
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  height: 80px;
+  overflow-y: auto;
+  border: 1px solid #27272a;
+  margin-top: 10px;
+}
+.log-line { padding: 1px 0; }
+.col.scratch .log-line { color: #93c5fd; }
+.col.pure    .log-line { color: #fca5a5; }
+.col.smart   .log-line { color: #6ee7b7; }
+
+/* Summary table */
+.summary {
+  max-width: 1500px;
+  margin: 24px auto 0;
+  background: #18181b;
+  padding: 20px;
+  border-radius: 10px;
+  border: 1px solid #27272a;
+}
+.summary h3 {
+  text-align: center;
+  color: #fbbf24;
+  margin-bottom: 12px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+th, td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #27272a;
+}
+th {
+  background: #27272a;
+  color: #fbbf24;
+}
+td.scratch { color: #60a5fa; }
+td.pure    { color: #f87171; }
+td.smart   { color: #34d399; }
+</style>
+</head>
+<body>
+
+<h1>🧠 Train from Scratch vs Fine-tune — How Weights Change</h1>
+<div class="subtitle">เห็นชัดว่าการเรียนรู้ของ Neural Network ต่างกันยังไงในแต่ละวิธี</div>
+
+<div class="controls">
+  <button id="playBtn">▶ Play</button>
+  <button id="nextBtn">⏭ Next Cycle</button>
+  <button id="resetBtn" class="reset">↻ Reset</button>
+  <select id="speedSel">
+    <option value="2000">🐢 ช้า</option>
+    <option value="900" selected>ปกติ</option>
+    <option value="350">🐇 เร็ว</option>
+  </select>
+</div>
+
+<div class="cycle-display" id="cycleDisplay">Cycle 0 — Initial Training</div>
+
+<div class="timeline">
+  <div class="timeline-labels">
+    <span>2010</span><span>2024</span><span>2025</span><span>2026 (ตอนนี้)</span>
+  </div>
+  <div class="timeline-bar">
+    <div class="timeline-marker" id="timeMarker" style="left:0%"></div>
+  </div>
+  <div style="text-align:center; font-size:11px; color:#71717a; margin-top:4px">
+    🟦 Old data (training) → 🟧 New data → 🟥 Newer data
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- Column 1: TRAIN FROM SCRATCH -->
+  <div class="col scratch">
+    <h2>🔵 Train from Scratch</h2>
+    <div class="desc">
+      ทุกรอบ — เริ่ม weights ใหม่หมด (random) เทรนยาวๆ บนข้อมูลทั้งหมด (เก่า+ใหม่)
+    </div>
+    <div class="brain-label">Neural Network Weights (8×4 = 32 neurons)</div>
+    <div class="brain" id="brainScratch"></div>
+    <div class="stats">
+      <div class="stat-box">
+        <div class="stat-label">Acc on Old data</div>
+        <div class="stat-value old" id="oldScratch">0%</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Acc on New data</div>
+        <div class="stat-value new" id="newScratch">0%</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label"><span>Old</span><span id="oldScratchPct">0%</span></div>
+      <div class="bar-bg"><div class="bar-fill old" id="oldScratchBar" style="width:0%"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label"><span>New</span><span id="newScratchPct">0%</span></div>
+      <div class="bar-bg"><div class="bar-fill new" id="newScratchBar" style="width:0%"></div></div>
+    </div>
+    <div class="compute-meter">
+      <span>Compute</span>
+      <div class="compute-bars" id="computeScratch"></div>
+      <span style="font-size:11px;color:#71717a">200k steps</span>
+    </div>
+    <div class="log" id="logScratch"></div>
+  </div>
+
+  <!-- Column 2: PURE FINE-TUNE -->
+  <div class="col pure">
+    <h2>🔴 Pure Fine-tune</h2>
+    <div class="desc">
+      โหลด weights เก่ามา → train ต่อด้วยข้อมูลใหม่อย่างเดียว → <b>ลืมเก่า!</b>
+    </div>
+    <div class="brain-label">Neural Network Weights</div>
+    <div class="brain" id="brainPure"></div>
+    <div class="stats">
+      <div class="stat-box">
+        <div class="stat-label">Acc on Old data</div>
+        <div class="stat-value old" id="oldPure">0%</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Acc on New data</div>
+        <div class="stat-value new" id="newPure">0%</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label"><span>Old</span><span id="oldPurePct">0%</span></div>
+      <div class="bar-bg"><div class="bar-fill old" id="oldPureBar" style="width:0%"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label"><span>New</span><span id="newPurePct">0%</span></div>
+      <div class="bar-bg"><div class="bar-fill new" id="newPureBar" style="width:0%"></div></div>
+    </div>
+    <div class="compute-meter">
+      <span>Compute</span>
+      <div class="compute-bars" id="computePure"></div>
+      <span style="font-size:11px;color:#71717a">50k steps</span>
+    </div>
+    <div class="log" id="logPure"></div>
+  </div>
+
+  <!-- Column 3: SMART FINE-TUNE -->
+  <div class="col smart">
+    <h2>🟢 Smart Fine-tune (Mixed)</h2>
+    <div class="desc">
+      โหลด weights เก่ามา → train ต่อด้วย <b>old(30%) + new(70%)</b> → จำเก่าได้ + adapt ใหม่
+    </div>
+    <div class="brain-label">Neural Network Weights</div>
+    <div class="brain" id="brainSmart"></div>
+    <div class="stats">
+      <div class="stat-box">
+        <div class="stat-label">Acc on Old data</div>
+        <div class="stat-value old" id="oldSmart">0%</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Acc on New data</div>
+        <div class="stat-value new" id="newSmart">0%</div>
+      </div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label"><span>Old</span><span id="oldSmartPct">0%</span></div>
+      <div class="bar-bg"><div class="bar-fill old" id="oldSmartBar" style="width:0%"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-label"><span>New</span><span id="newSmartPct">0%</span></div>
+      <div class="bar-bg"><div class="bar-fill new" id="newSmartBar" style="width:0%"></div></div>
+    </div>
+    <div class="compute-meter">
+      <span>Compute</span>
+      <div class="compute-bars" id="computeSmart"></div>
+      <span style="font-size:11px;color:#71717a">50k steps</span>
+    </div>
+    <div class="log" id="logSmart"></div>
+  </div>
+</div>
+
+<!-- Summary -->
+<div class="summary">
+  <h3>📊 สรุปเปรียบเทียบ</h3>
+  <table>
+    <tr>
+      <th></th>
+      <th class="scratch">🔵 Train Scratch</th>
+      <th class="pure">🔴 Pure Fine-tune</th>
+      <th class="smart">🟢 Smart Fine-tune</th>
+    </tr>
+    <tr><td>เริ่ม weights จาก</td><td class="scratch">Random ทุกครั้ง</td><td class="pure">Model เก่า</td><td class="smart">Model เก่า</td></tr>
+    <tr><td>Data ที่ใช้</td><td class="scratch">เก่า + ใหม่ ทั้งหมด</td><td class="pure">ใหม่อย่างเดียว</td><td class="smart">ผสม old(30%)+new(70%)</td></tr>
+    <tr><td>Compute (steps)</td><td class="scratch">200,000 (เปลือง)</td><td class="pure">50,000 (ประหยัด)</td><td class="smart">50,000 (ประหยัด)</td></tr>
+    <tr><td>จำของเก่าได้?</td><td class="scratch">✅ ใช่</td><td class="pure">❌ ลืม! (catastrophic forgetting)</td><td class="smart">✅ จำได้</td></tr>
+    <tr><td>Adapt ของใหม่?</td><td class="scratch">✅ ใช่</td><td class="pure">✅ Over-adapt</td><td class="smart">✅ Balance</td></tr>
+    <tr><td>Production fit</td><td class="scratch">⚠️ Slow & expensive</td><td class="pure">❌ Risky</td><td class="smart">⭐ Best</td></tr>
+  </table>
+</div>
+
+<script>
+const N_CELLS = 32;
+
+// Initial state — ตอน Cycle 0 ทั้ง 3 จะ train scratch เหมือนกัน
+function randomWeights() {
+  return Array.from({length: N_CELLS}, () => Math.random());
+}
+
+// Cell color: weights interpret as
+//   - "Old pattern" weights (red-ish)
+//   - "New pattern" weights (blue-ish)
+//   - Each cell: {old: 0..1, new: 0..1}
+//   represented as HSL color
+function cellColor(old, neu) {
+  const total = old + neu + 0.001;
+  const oldRatio = old / total;
+  const intensity = Math.min(1, (old + neu) * 1.5);
+  // Interpolate hue from red(0) to blue(220) by oldRatio
+  const hue = 220 - oldRatio * 220;
+  const sat = 70 + intensity * 25;
+  const light = 25 + intensity * 35;
+  return `hsl(${hue}, ${sat}%, ${light}%)`;
+}
+
+// Render brain (32 cells)
+function renderBrain(elemId, weights) {
+  const el = document.getElementById(elemId);
+  el.innerHTML = '';
+  weights.forEach(w => {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.style.background = cellColor(w.old, w.new);
+    el.appendChild(cell);
+  });
+}
+
+// Each cell: [oldWeight, newWeight]
+let scratch = [], pure = [], smart = [];
+let cycle = 0;
+let playing = false;
+let interval = null;
+
+function init() {
+  // All start the same — "trained from scratch on old data"
+  // Old weights ~0.6-0.9, New weights 0
+  scratch = Array.from({length: N_CELLS}, () => ({old: 0.6 + Math.random()*0.3, new: 0}));
+  pure = scratch.map(c => ({...c}));
+  smart = scratch.map(c => ({...c}));
+  cycle = 0;
+  updateStats();
+  renderAll();
+  document.getElementById('cycleDisplay').textContent = 'Cycle 0 — Initial Training (200k steps each)';
+  document.getElementById('timeMarker').style.left = '20%';
+  ['logScratch','logPure','logSmart'].forEach(id => document.getElementById(id).innerHTML = '');
+  log('scratch', 'Train from scratch on old data → learned old patterns');
+  log('pure', 'Train from scratch on old data → learned old patterns');
+  log('smart', 'Train from scratch on old data → learned old patterns');
+  computeMeter('scratch', 4);
+  computeMeter('pure', 4);
+  computeMeter('smart', 4);
+}
+
+function renderAll() {
+  renderBrain('brainScratch', scratch);
+  renderBrain('brainPure', pure);
+  renderBrain('brainSmart', smart);
+}
+
+function calcAcc(w, type) {
+  // Acc = average of (relevant weight) for that data type
+  const sum = w.reduce((s, c) => s + c[type], 0) / w.length;
+  return Math.min(1, sum * 1.2 + 0.1);   // 0.1 baseline + scale
+}
+
+function updateStats() {
+  const ms = [
+    {name: 'Scratch', w: scratch, prefix: 'Scratch'},
+    {name: 'Pure',    w: pure,    prefix: 'Pure'},
+    {name: 'Smart',   w: smart,   prefix: 'Smart'},
+  ];
+  ms.forEach(m => {
+    const oldA = calcAcc(m.w, 'old') * 100;
+    const newA = calcAcc(m.w, 'new') * 100;
+    document.getElementById('old' + m.prefix).textContent = oldA.toFixed(0) + '%';
+    document.getElementById('new' + m.prefix).textContent = newA.toFixed(0) + '%';
+    document.getElementById('old' + m.prefix + 'Pct').textContent = oldA.toFixed(0) + '%';
+    document.getElementById('new' + m.prefix + 'Pct').textContent = newA.toFixed(0) + '%';
+    document.getElementById('old' + m.prefix + 'Bar').style.width = oldA + '%';
+    document.getElementById('new' + m.prefix + 'Bar').style.width = newA + '%';
+  });
+}
+
+function log(type, msg) {
+  const el = document.getElementById('log' + (type[0].toUpperCase() + type.slice(1)));
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.textContent = `[Cycle ${cycle}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function computeMeter(type, n) {
+  const id = 'compute' + (type[0].toUpperCase() + type.slice(1));
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  for (let i = 0; i < 8; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'compute-bar' + (i < n ? ' active' : '');
+    el.appendChild(bar);
+  }
+}
+
+// Simulate one cycle of update
+function nextCycle() {
+  cycle++;
+  document.getElementById('cycleDisplay').textContent =
+    `Cycle ${cycle} — New data arrived (training data ${2024 + cycle})`;
+  document.getElementById('timeMarker').style.left = (20 + cycle * 18) + '%';
+
+  // === Method 1: Train from scratch ===
+  // Reset, then learn both old + new patterns from scratch
+  scratch = scratch.map(() => ({
+    old: 0.55 + Math.random() * 0.30,
+    new: 0.50 + Math.random() * 0.30,
+  }));
+  computeMeter('scratch', 8);  // full 200k = 8 bars
+  log('scratch', 'Reset weights → train 200k steps on ALL data (old + new) → ✅ both retained');
+
+  // === Method 2: Pure Fine-tune ===
+  // Continue from previous, train ONLY on new → forgets old
+  pure = pure.map(c => ({
+    old: Math.max(0, c.old * 0.45 + (Math.random() - 0.5) * 0.1),  // forget heavily
+    new: Math.min(0.95, (c.new + 0.7) * 0.7 + Math.random() * 0.1), // learn new
+  }));
+  computeMeter('pure', 2);
+  log('pure', 'Fine-tune 50k on NEW data only → ⚠️ forgets old patterns!');
+
+  // === Method 3: Smart Fine-tune ===
+  // Mix old + new — small adjustment, keeps both
+  smart = smart.map(c => ({
+    old: Math.min(0.95, c.old * 0.92 + Math.random() * 0.05),  // slight retention
+    new: Math.min(0.95, (c.new + 0.65) * 0.65 + Math.random() * 0.1), // learn new
+  }));
+  computeMeter('smart', 2);
+  log('smart', 'Fine-tune 50k on MIXED data (30% old + 70% new) → ✅ adapts + remembers');
+
+  renderAll();
+  updateStats();
+}
+
+document.getElementById('playBtn').onclick = () => {
+  playing = !playing;
+  document.getElementById('playBtn').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if (playing) {
+    interval = setInterval(() => {
+      if (cycle >= 4) {
+        playing = false;
+        document.getElementById('playBtn').textContent = '▶ Play';
+        clearInterval(interval);
+        return;
+      }
+      nextCycle();
+    }, parseInt(document.getElementById('speedSel').value));
+  } else {
+    clearInterval(interval);
+  }
+};
+
+document.getElementById('nextBtn').onclick = () => {
+  if (cycle >= 4) {
+    init();
+  } else {
+    nextCycle();
+  }
+};
+
+document.getElementById('resetBtn').onclick = () => {
+  playing = false;
+  document.getElementById('playBtn').textContent = '▶ Play';
+  if (interval) clearInterval(interval);
+  init();
+};
+
+document.getElementById('speedSel').onchange = () => {
+  if (playing) {
+    clearInterval(interval);
+    interval = setInterval(() => {
+      if (cycle >= 4) {
+        playing = false;
+        document.getElementById('playBtn').textContent = '▶ Play';
+        clearInterval(interval);
+        return;
+      }
+      nextCycle();
+    }, parseInt(document.getElementById('speedSel').value));
+  }
+};
+
+init();
+</script>
+
+</body>
+</html>

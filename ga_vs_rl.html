@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>GA vs RL — Visual Comparison</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #0f1419;
+    color: #e4e4e7;
+    padding: 20px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    margin-bottom: 10px;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle {
+    text-align: center;
+    color: #71717a;
+    margin-bottom: 20px;
+    font-size: 14px;
+  }
+  .controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 20px;
+  }
+  .controls button {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .controls button:hover { background: #3b82f6; }
+  .controls button.reset { background: #52525b; }
+  .controls select {
+    background: #27272a;
+    color: white;
+    border: 1px solid #3f3f46;
+    padding: 8px 12px;
+    border-radius: 6px;
+  }
+  .container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .panel {
+    background: #18181b;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #27272a;
+  }
+  .panel.ga { border-color: #059669; }
+  .panel.rl { border-color: #7c3aed; }
+  .panel h2 {
+    font-size: 22px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .panel.ga h2 { color: #10b981; }
+  .panel.rl h2 { color: #a78bfa; }
+  .panel .desc {
+    color: #a1a1aa;
+    font-size: 13px;
+    margin-bottom: 16px;
+    line-height: 1.6;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat {
+    background: #27272a;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: #71717a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 4px;
+    font-family: 'Consolas', monospace;
+  }
+  canvas {
+    background: #09090b;
+    border-radius: 8px;
+    display: block;
+    width: 100%;
+  }
+  .legend {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .log {
+    background: #09090b;
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 12px;
+    font-family: 'Consolas', monospace;
+    font-size: 12px;
+    height: 120px;
+    overflow-y: auto;
+    border: 1px solid #27272a;
+  }
+  .log-line { padding: 2px 0; }
+  .log-line.ga { color: #34d399; }
+  .log-line.rl { color: #c4b5fd; }
+  .log-line .time { color: #52525b; margin-right: 6px; }
+
+  .comparison {
+    max-width: 1400px;
+    margin: 30px auto 0;
+    background: #18181b;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #27272a;
+  }
+  .comparison h3 {
+    text-align: center;
+    margin-bottom: 16px;
+    color: #fbbf24;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th, td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #27272a;
+  }
+  th {
+    background: #27272a;
+    color: #fbbf24;
+    font-weight: 600;
+  }
+  tr:last-child td { border-bottom: none; }
+  td.ga { color: #34d399; }
+  td.rl { color: #c4b5fd; }
+</style>
+</head>
+<body>
+
+<h1>🧬 Genetic Algorithm vs 🤖 Reinforcement Learning</h1>
+<div class="subtitle">เปรียบเทียบ 2 วิธีที่ "คล้ายกัน" ในการหา strategy ที่ดีสุด</div>
+
+<div class="controls">
+  <button id="playBtn">▶ Play</button>
+  <button id="stepBtn">⏭ Step</button>
+  <button id="resetBtn" class="reset">↻ Reset</button>
+  <select id="speedSel">
+    <option value="1500">🐢 ช้า</option>
+    <option value="700" selected>ปกติ</option>
+    <option value="250">🐇 เร็ว</option>
+  </select>
+</div>
+
+<div class="container">
+  <!-- ============================================================ -->
+  <!-- Genetic Algorithm -->
+  <!-- ============================================================ -->
+  <div class="panel ga">
+    <h2>🧬 Genetic Algorithm (MT4 Optimizer)</h2>
+    <div class="desc">
+      ประชากร 20 ตัว แต่ละตัว = ชุด parameters → backtest → คัดตัวเก่ง → ผสมพันธุ์ → กลายพันธุ์ → ซ้ำ
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Generation</div>
+        <div class="stat-value" id="gaGen">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Best Fitness</div>
+        <div class="stat-value" id="gaBest" style="color:#34d399">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Avg Fitness</div>
+        <div class="stat-value" id="gaAvg">0</div>
+      </div>
+    </div>
+
+    <canvas id="gaCanvas" width="600" height="320"></canvas>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Low fitness</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>Medium</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>High fitness</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#60a5fa"></div>ตัวที่ดีสุด</div>
+    </div>
+
+    <div class="log" id="gaLog"></div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Reinforcement Learning -->
+  <!-- ============================================================ -->
+  <div class="panel rl">
+    <h2>🤖 Reinforcement Learning (PPO/DQN)</h2>
+    <div class="desc">
+      Agent 1 ตัว เห็น state → เลือก action → ได้ reward ทุก step → อัพเดต policy ทันที (gradient descent)
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Episode</div>
+        <div class="stat-value" id="rlEp">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Step</div>
+        <div class="stat-value" id="rlStep">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Total Reward</div>
+        <div class="stat-value" id="rlReward" style="color:#c4b5fd">0</div>
+      </div>
+    </div>
+
+    <canvas id="rlCanvas" width="600" height="320"></canvas>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div>Agent</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#10b981"></div>Good action (+reward)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Bad action (-reward)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fbbf24"></div>Goal (+10)</div>
+    </div>
+
+    <div class="log" id="rlLog"></div>
+  </div>
+</div>
+
+<div class="comparison">
+  <h3>📊 สรุปความต่าง</h3>
+  <table>
+    <tr><th>ประเด็น</th><th class="ga">Genetic Algorithm 🧬</th><th class="rl">Reinforcement Learning 🤖</th></tr>
+    <tr><td>หน่วยที่เรียน</td><td class="ga">Population (หลาย candidates)</td><td class="rl">Single agent</td></tr>
+    <tr><td>สัญญาณ feedback</td><td class="ga">Fitness ต่อ episode (ผลรวม)</td><td class="rl">Reward ต่อ step (ทุก action)</td></tr>
+    <tr><td>วิธีปรับปรุง</td><td class="ga">Selection + Crossover + Mutation</td><td class="rl">Gradient descent บน policy/Q</td></tr>
+    <tr><td>Credit assignment</td><td class="ga">❌ ไม่รู้ว่า action ไหนดี</td><td class="rl">✅ รู้ระดับแต่ละ step</td></tr>
+    <tr><td>Exploration</td><td class="ga">Mutation แบบสุ่ม</td><td class="rl">ε-greedy / entropy</td></tr>
+    <tr><td>ต้องใช้ Neural Network?</td><td class="ga">ไม่จำเป็น</td><td class="rl">ใช่ (deep RL)</td></tr>
+    <tr><td>หมวดหมู่</td><td class="ga">Evolutionary Computation</td><td class="rl">Machine Learning</td></tr>
+    <tr><td>Sample efficiency</td><td class="ga">ต่ำ (ต้องลองเยอะ)</td><td class="rl">ดีกว่า (แต่ก็ยังต้องการข้อมูลเยอะ)</td></tr>
+  </table>
+</div>
+
+<script>
+// ==============================================================
+// GA Simulation
+// ==============================================================
+const POP = 20;
+const gaCanvas = document.getElementById('gaCanvas');
+const gaCtx = gaCanvas.getContext('2d');
+const gaLog = document.getElementById('gaLog');
+
+let gaPop = [];
+let gaGen = 0;
+let gaPhase = 'init'; // init -> eval -> select -> crossover -> mutate -> done
+
+function randomParams() {
+  return {
+    rsi: Math.floor(5 + Math.random() * 25),
+    ema: Math.floor(10 + Math.random() * 40),
+    atr: +(1.0 + Math.random() * 2.0).toFixed(2),
+    rr: +(1.0 + Math.random() * 2.0).toFixed(2),
+  };
+}
+
+function fitness(p) {
+  // Fake fitness landscape with optimum around rsi=14, ema=20, atr=1.5, rr=2.0
+  const score =
+    100 - Math.abs(p.rsi - 14) * 3
+        - Math.abs(p.ema - 20) * 2
+        - Math.abs(p.atr - 1.5) * 20
+        - Math.abs(p.rr - 2.0) * 15
+        + (Math.random() - 0.5) * 10;
+  return Math.max(0, score);
+}
+
+function initGA() {
+  gaPop = [];
+  for (let i = 0; i < POP; i++) {
+    const p = randomParams();
+    gaPop.push({ params: p, fit: fitness(p), x: 0, y: 0, tx: 0, ty: 0, phase: 0 });
+  }
+  gaGen = 0;
+  gaPhase = 'eval';
+  gaLog.innerHTML = '';
+  logGA('สร้างประชากรเริ่มต้น 20 ตัว (สุ่ม parameters)');
+  layoutGA();
+}
+
+function layoutGA() {
+  const cols = 10, rows = 2;
+  const pw = gaCanvas.width / cols;
+  const ph = gaCanvas.height / rows * 0.5;
+  gaPop.forEach((ind, i) => {
+    const c = i % cols;
+    const r = Math.floor(i / cols);
+    ind.tx = c * pw + pw/2;
+    ind.ty = r * ph + ph/2 + 40;
+    if (ind.x === 0) { ind.x = ind.tx; ind.y = ind.ty; }
+  });
+}
+
+function logGA(msg) {
+  const time = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  line.className = 'log-line ga';
+  line.innerHTML = `<span class="time">[Gen ${gaGen}]</span>${msg}`;
+  gaLog.appendChild(line);
+  gaLog.scrollTop = gaLog.scrollHeight;
+}
+
+function stepGA() {
+  if (gaPhase === 'eval') {
+    // already evaluated in init/mutate — sort
+    gaPop.sort((a, b) => b.fit - a.fit);
+    const best = gaPop[0].fit.toFixed(1);
+    const avg = (gaPop.reduce((s, x) => s + x.fit, 0) / POP).toFixed(1);
+    document.getElementById('gaGen').textContent = gaGen;
+    document.getElementById('gaBest').textContent = best;
+    document.getElementById('gaAvg').textContent = avg;
+    logGA(`ประเมิน fitness — best=${best}, avg=${avg}`);
+    gaPhase = 'select';
+  } else if (gaPhase === 'select') {
+    logGA(`คัด top 40% (${Math.floor(POP * 0.4)} ตัว) เป็น parents`);
+    gaPhase = 'crossover';
+  } else if (gaPhase === 'crossover') {
+    // keep top 40% as is, replace bottom 60% with children
+    const keep = Math.floor(POP * 0.4);
+    for (let i = keep; i < POP; i++) {
+      const pa = gaPop[Math.floor(Math.random() * keep)];
+      const pb = gaPop[Math.floor(Math.random() * keep)];
+      const child = {
+        rsi: Math.random() < 0.5 ? pa.params.rsi : pb.params.rsi,
+        ema: Math.random() < 0.5 ? pa.params.ema : pb.params.ema,
+        atr: Math.random() < 0.5 ? pa.params.atr : pb.params.atr,
+        rr: Math.random() < 0.5 ? pa.params.rr : pb.params.rr,
+      };
+      gaPop[i].params = child;
+      gaPop[i].fit = 0; // needs re-eval
+    }
+    logGA('Crossover: ผสม parents สร้าง children');
+    gaPhase = 'mutate';
+  } else if (gaPhase === 'mutate') {
+    // mutate some
+    for (let i = Math.floor(POP * 0.4); i < POP; i++) {
+      if (Math.random() < 0.3) {
+        const p = gaPop[i].params;
+        if (Math.random() < 0.5) p.rsi = Math.max(5, Math.min(30, p.rsi + (Math.random() < 0.5 ? -1 : 1)));
+        else p.atr = Math.max(1.0, Math.min(3.0, +(p.atr + (Math.random() - 0.5) * 0.3).toFixed(2)));
+      }
+      gaPop[i].fit = fitness(gaPop[i].params);
+    }
+    logGA('Mutation: สุ่มเปลี่ยนค่าบางตัวเล็กน้อย');
+    gaGen++;
+    gaPhase = 'eval';
+  }
+}
+
+function drawGA() {
+  const ctx = gaCtx;
+  ctx.fillStyle = '#09090b';
+  ctx.fillRect(0, 0, gaCanvas.width, gaCanvas.height);
+
+  // phase label
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = 'bold 14px Segoe UI';
+  ctx.textAlign = 'left';
+  const phaseNames = {
+    eval: '① ประเมิน fitness (backtest)',
+    select: '② คัดเลือกตัวเก่ง',
+    crossover: '③ ผสมพันธุ์ (Crossover)',
+    mutate: '④ กลายพันธุ์ (Mutation)',
+  };
+  ctx.fillText(phaseNames[gaPhase] || '', 12, 24);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#71717a';
+  ctx.font = '11px Segoe UI';
+  ctx.fillText(`Generation ${gaGen} — Population of ${POP}`, gaCanvas.width/2, 24);
+
+  // animate toward target
+  gaPop.forEach((ind, i) => {
+    ind.x += (ind.tx - ind.x) * 0.15;
+    ind.y += (ind.ty - ind.y) * 0.15;
+
+    // color by fitness
+    const f = ind.fit;
+    let color;
+    if (i === 0 && gaPhase === 'select') color = '#60a5fa';
+    else if (f > 70) color = '#10b981';
+    else if (f > 40) color = '#f59e0b';
+    else color = '#ef4444';
+
+    const size = 12 + f / 10;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(ind.x, ind.y, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // fitness number
+    ctx.fillStyle = '#09090b';
+    ctx.font = 'bold 10px Consolas';
+    ctx.fillText(Math.round(f), ind.x, ind.y + 3);
+  });
+
+  // selection highlight line
+  if (gaPhase === 'crossover' || gaPhase === 'mutate') {
+    const keep = Math.floor(POP * 0.4);
+    ctx.strokeStyle = '#10b981';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 2;
+    const cutoff = gaPop[keep - 1];
+    if (cutoff) {
+      ctx.beginPath();
+      ctx.moveTo(0, cutoff.y + 25);
+      ctx.lineTo(gaCanvas.width, cutoff.y + 25);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // bottom annotation
+  ctx.fillStyle = '#52525b';
+  ctx.font = '11px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText('ขนาด = fitness | สี = ระดับคะแนน', gaCanvas.width/2, gaCanvas.height - 10);
+}
+
+// ==============================================================
+// RL Simulation (Grid world)
+// ==============================================================
+const rlCanvas = document.getElementById('rlCanvas');
+const rlCtx = rlCanvas.getContext('2d');
+const rlLog = document.getElementById('rlLog');
+
+const GRID = 8;
+const CELL = 35;
+let rlQ = {}; // Q-values: "x,y,action" -> value
+let rlAgent = { x: 0, y: 0 };
+let rlGoal = { x: GRID - 1, y: GRID - 1 };
+let rlEp = 0, rlStep = 0, rlTotalReward = 0, rlEpReward = 0;
+let rlEpsilon = 0.3;
+const ACTIONS = [[0,-1],[0,1],[-1,0],[1,0]]; // U D L R
+
+function initRL() {
+  rlQ = {};
+  rlAgent = { x: 0, y: 0 };
+  rlEp = 0; rlStep = 0; rlTotalReward = 0; rlEpReward = 0;
+  rlEpsilon = 0.3;
+  rlLog.innerHTML = '';
+  logRL(`Agent เริ่มต้น ที่ (0,0), Goal ที่ (${rlGoal.x},${rlGoal.y})`);
+}
+
+function qGet(x, y, a) { return rlQ[`${x},${y},${a}`] || 0; }
+function qSet(x, y, a, v) { rlQ[`${x},${y},${a}`] = v; }
+function qBest(x, y) {
+  let best = -Infinity, bestA = 0;
+  for (let a = 0; a < 4; a++) {
+    const v = qGet(x, y, a);
+    if (v > best) { best = v; bestA = a; }
+  }
+  return { value: best, action: bestA };
+}
+
+function logRL(msg) {
+  const line = document.createElement('div');
+  line.className = 'log-line rl';
+  line.innerHTML = `<span class="time">[Ep ${rlEp}, Step ${rlStep}]</span>${msg}`;
+  rlLog.appendChild(line);
+  rlLog.scrollTop = rlLog.scrollHeight;
+  // keep last ~50 lines
+  while (rlLog.children.length > 50) rlLog.removeChild(rlLog.firstChild);
+}
+
+function stepRL() {
+  // choose action (ε-greedy)
+  let a;
+  if (Math.random() < rlEpsilon) {
+    a = Math.floor(Math.random() * 4);
+  } else {
+    a = qBest(rlAgent.x, rlAgent.y).action;
+  }
+
+  const [dx, dy] = ACTIONS[a];
+  const nx = Math.max(0, Math.min(GRID - 1, rlAgent.x + dx));
+  const ny = Math.max(0, Math.min(GRID - 1, rlAgent.y + dy));
+
+  // reward
+  let reward = -0.1;
+  const reachedGoal = (nx === rlGoal.x && ny === rlGoal.y);
+  if (reachedGoal) reward = 10;
+  // penalty for bumping wall
+  if (nx === rlAgent.x && ny === rlAgent.y) reward = -1;
+
+  // Q-learning update
+  const oldQ = qGet(rlAgent.x, rlAgent.y, a);
+  const maxNext = qBest(nx, ny).value;
+  const newQ = oldQ + 0.3 * (reward + 0.9 * maxNext - oldQ);
+  qSet(rlAgent.x, rlAgent.y, a, newQ);
+
+  rlAgent = { x: nx, y: ny };
+  rlStep++;
+  rlTotalReward += reward;
+  rlEpReward += reward;
+
+  const actName = ['Up', 'Down', 'Left', 'Right'][a];
+  const rewardStr = reward > 0 ? `+${reward.toFixed(1)}` : reward.toFixed(2);
+  logRL(`${actName} → (${nx},${ny}) reward=${rewardStr} | Q updated: ${oldQ.toFixed(2)}→${newQ.toFixed(2)}`);
+
+  if (reachedGoal) {
+    logRL(`🎯 ถึง Goal! Episode reward = ${rlEpReward.toFixed(2)}`);
+    rlEp++;
+    rlEpReward = 0;
+    rlStep = 0;
+    rlAgent = { x: 0, y: 0 };
+    rlEpsilon = Math.max(0.05, rlEpsilon * 0.95);
+  }
+
+  document.getElementById('rlEp').textContent = rlEp;
+  document.getElementById('rlStep').textContent = rlStep;
+  document.getElementById('rlReward').textContent = rlTotalReward.toFixed(1);
+}
+
+function drawRL() {
+  const ctx = rlCtx;
+  ctx.fillStyle = '#09090b';
+  ctx.fillRect(0, 0, rlCanvas.width, rlCanvas.height);
+
+  const ox = (rlCanvas.width - GRID * CELL) / 2;
+  const oy = 30;
+
+  // draw grid with Q-value heatmap
+  for (let x = 0; x < GRID; x++) {
+    for (let y = 0; y < GRID; y++) {
+      const cx = ox + x * CELL;
+      const cy = oy + y * CELL;
+
+      const best = qBest(x, y).value;
+      // color by best Q-value
+      let shade;
+      if (best > 0) {
+        const t = Math.min(1, best / 5);
+        shade = `rgba(16, 185, 129, ${0.15 + t * 0.45})`;
+      } else if (best < 0) {
+        shade = `rgba(239, 68, 68, ${Math.min(0.5, -best / 5)})`;
+      } else {
+        shade = '#18181b';
+      }
+      ctx.fillStyle = shade;
+      ctx.fillRect(cx, cy, CELL - 1, CELL - 1);
+
+      // best action arrow
+      if (Math.abs(best) > 0.1) {
+        const bestA = qBest(x, y).action;
+        const arrow = ['↑', '↓', '←', '→'][bestA];
+        ctx.fillStyle = '#a1a1aa';
+        ctx.font = '16px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(arrow, cx + CELL/2, cy + CELL/2 + 5);
+      }
+    }
+  }
+
+  // draw goal
+  const gcx = ox + rlGoal.x * CELL + CELL/2;
+  const gcy = oy + rlGoal.y * CELL + CELL/2;
+  ctx.fillStyle = '#fbbf24';
+  ctx.beginPath();
+  ctx.arc(gcx, gcy, CELL/3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#09090b';
+  ctx.font = 'bold 14px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText('🎯', gcx, gcy + 5);
+
+  // draw agent
+  const acx = ox + rlAgent.x * CELL + CELL/2;
+  const acy = oy + rlAgent.y * CELL + CELL/2;
+  ctx.fillStyle = '#a78bfa';
+  ctx.beginPath();
+  ctx.arc(acx, acy, CELL/3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#c4b5fd';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // header
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = 'bold 14px Segoe UI';
+  ctx.textAlign = 'left';
+  ctx.fillText(`ε = ${rlEpsilon.toFixed(2)} (exploration)`, 12, 20);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#71717a';
+  ctx.font = '11px Segoe UI';
+  ctx.fillText(`Q-Learning | ลูกศร = action ที่ดีสุดในช่องนั้น`, rlCanvas.width - 12, 20);
+
+  ctx.fillStyle = '#52525b';
+  ctx.font = '11px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.fillText('สีเขียว = Q สูง (ดี) | สีแดง = Q ต่ำ (แย่)', rlCanvas.width/2, rlCanvas.height - 10);
+}
+
+// ==============================================================
+// Animation loop
+// ==============================================================
+let playing = false;
+let lastTick = 0;
+
+function animate(now) {
+  if (!lastTick) lastTick = now;
+  const interval = parseInt(document.getElementById('speedSel').value);
+  if (playing && now - lastTick > interval) {
+    stepGA();
+    // run a few RL steps per GA step (since RL runs faster in reality)
+    for (let i = 0; i < 3; i++) stepRL();
+    lastTick = now;
+  }
+  drawGA();
+  drawRL();
+  requestAnimationFrame(animate);
+}
+
+// controls
+document.getElementById('playBtn').onclick = () => {
+  playing = !playing;
+  document.getElementById('playBtn').textContent = playing ? '⏸ Pause' : '▶ Play';
+};
+document.getElementById('stepBtn').onclick = () => {
+  stepGA();
+  for (let i = 0; i < 3; i++) stepRL();
+};
+document.getElementById('resetBtn').onclick = () => {
+  playing = false;
+  document.getElementById('playBtn').textContent = '▶ Play';
+  initGA();
+  initRL();
+};
+
+// init
+initGA();
+initRL();
+requestAnimationFrame(animate);
+</script>
+
+</body>
+</html>

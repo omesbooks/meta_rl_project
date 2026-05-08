@@ -1,0 +1,79 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ============================================================
+# Data files (large, regenerable)
+# ============================================================
+*.csv
+!requirements.txt
+!.gitignore
+
+# Backup files
+*.utf16_backup
+*_backup.csv
+
+# ============================================================
+# Trained Models & Logs (large, generated)
+# ============================================================
+*.zip
+*.pkl
+*_best/
+*_logs/
+*_norm.csv
+
+# Tensorboard
+events.out.tfevents*
+
+# ============================================================
+# Backtest / Chart Outputs (all PNG, generated charts HTML)
+# ============================================================
+*.png
+*_live_bt_trades.csv
+*_backtest_chart.html
+*_chart.html
+wf_*.png
+wf_*.csv
+wf_*_chart.html
+
+# Compiled python (sometimes shows up)
+*.pyc
+
+# ============================================================
+# Logs
+# ============================================================
+*.log
+logs.log
+
+# ============================================================
+# OS files
+# ============================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Allow these (whitelist override)
+# ============================================================
+!example_data_format.csv
+!.github/

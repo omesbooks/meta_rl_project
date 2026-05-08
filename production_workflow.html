@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Production Workflow — MT5 Live Trading</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0e14;
+  --panel: #18181b;
+  --panel2: #27272a;
+  --border: #2d2d33;
+  --text: #e4e4e7;
+  --muted: #71717a;
+  --trade: #60a5fa;
+  --monitor: #fbbf24;
+  --finetune: #a78bfa;
+  --mt5: #34d399;
+  --bad: #ef4444;
+  --good: #10b981;
+}
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.hero {
+  background: linear-gradient(135deg, #0c1322 0%, #1e1b4b 50%, #0c1322 100%);
+  padding: 50px 20px 40px;
+  text-align: center;
+  border-bottom: 2px solid var(--trade);
+}
+.hero h1 {
+  font-size: 36px;
+  background: linear-gradient(90deg, var(--trade), var(--mt5), var(--finetune));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.hero .tagline {
+  color: var(--muted);
+  font-size: 15px;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 30px 20px;
+}
+
+.section-title {
+  font-size: 24px;
+  text-align: center;
+  margin: 50px 0 16px;
+  color: #fbbf24;
+}
+.section-subtitle {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 26px;
+}
+
+/* ARCHITECTURE OVERVIEW */
+.architecture {
+  background: var(--panel);
+  padding: 30px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  margin: 20px 0;
+}
+
+.arch-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 800px) { .arch-grid { grid-template-columns: 1fr; } }
+
+.side {
+  background: var(--panel2);
+  padding: 24px;
+  border-radius: 12px;
+  border: 2px solid;
+}
+.side.python { border-color: var(--trade); }
+.side.mt5 { border-color: var(--mt5); }
+.side h3 {
+  font-size: 18px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.side.python h3 { color: var(--trade); }
+.side.mt5 h3 { color: var(--mt5); }
+
+.component {
+  background: rgba(0,0,0,0.3);
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border-left: 3px solid;
+}
+.component.t1 { border-left-color: var(--trade); }
+.component.t2 { border-left-color: var(--monitor); }
+.component.t3 { border-left-color: var(--finetune); }
+.component .name {
+  font-family: 'Consolas', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.component.t1 .name { color: var(--trade); }
+.component.t2 .name { color: var(--monitor); }
+.component.t3 .name { color: var(--finetune); }
+.component .desc { font-size: 12px; color: var(--muted); }
+
+.bridge {
+  text-align: center;
+  margin: 12px 0;
+  padding: 8px;
+  background: var(--panel2);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bridge code { color: var(--mt5); }
+
+/* 3 LOOPS DIAGRAM */
+.loops {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin: 30px 0;
+}
+@media (max-width: 1000px) { .loops { grid-template-columns: 1fr; } }
+
+.loop {
+  background: var(--panel);
+  padding: 22px;
+  border-radius: 12px;
+  border-top: 4px solid;
+}
+.loop.trade { border-top-color: var(--trade); }
+.loop.monitor { border-top-color: var(--monitor); }
+.loop.finetune { border-top-color: var(--finetune); }
+
+.loop-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.loop-icon {
+  font-size: 32px;
+}
+.loop h3 { font-size: 17px; }
+.loop.trade h3 { color: var(--trade); }
+.loop.monitor h3 { color: var(--monitor); }
+.loop.finetune h3 { color: var(--finetune); }
+.loop .freq {
+  display: inline-block;
+  background: var(--panel2);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+.loop-step {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 12px;
+  border-left: 2px solid var(--border);
+  padding-left: 14px;
+  margin-left: 12px;
+  position: relative;
+}
+.loop-step::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.loop.trade .loop-step::before { background: var(--trade); }
+.loop.monitor .loop-step::before { background: var(--monitor); }
+.loop.finetune .loop-step::before { background: var(--finetune); }
+.loop-step .num { color: var(--muted); font-weight: 700; }
+.loop-step .text { color: var(--text); }
+.loop-step code {
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  background: var(--panel2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #fbbf24;
+}
+
+/* TIMELINE FLOW */
+.timeline-section {
+  background: var(--panel);
+  padding: 24px;
+  border-radius: 12px;
+  margin: 24px 0;
+}
+.timeline-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr 1fr 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.timeline-row:last-child { border-bottom: none; }
+.timeline-row .label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.tl-cell {
+  background: var(--panel2);
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  text-align: center;
+  border: 1px dashed var(--border);
+}
+.tl-cell.active.t1 { background: rgba(96,165,250,0.2); border-color: var(--trade); border-style: solid; color: var(--trade); }
+.tl-cell.active.t2 { background: rgba(251,191,36,0.2); border-color: var(--monitor); border-style: solid; color: var(--monitor); }
+.tl-cell.active.t3 { background: rgba(167,139,250,0.2); border-color: var(--finetune); border-style: solid; color: var(--finetune); }
+
+/* DATA FLOW */
+.flow-box {
+  background: var(--panel);
+  padding: 30px;
+  border-radius: 12px;
+  margin: 24px 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.flow-diagram {
+  min-width: 1100px;
+  margin: 0 auto;
+}
+.flow-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.flow-node {
+  background: var(--panel2);
+  padding: 10px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  border: 2px solid;
+  margin: 0 4px;
+  position: relative;
+}
+.flow-node.input { border-color: var(--mt5); }
+.flow-node.process { border-color: var(--trade); }
+.flow-node.decision { border-color: var(--monitor); }
+.flow-node.output { border-color: var(--finetune); }
+.flow-node::after {
+  content: '→';
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-weight: 700;
+  z-index: 5;
+}
+.flow-node:last-child::after { display: none; }
+.flow-node .icon { font-size: 20px; margin-bottom: 4px; }
+.flow-node .name { font-weight: 700; font-size: 11px; margin-bottom: 2px; }
+.flow-node .det { font-size: 9px; color: var(--muted); }
+
+/* RISK LAYERS */
+.risk-layers {
+  background: var(--panel);
+  padding: 24px;
+  border-radius: 12px;
+  margin: 20px 0;
+}
+.risk-layer {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 14px;
+  padding: 12px;
+  background: var(--panel2);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--bad);
+}
+.risk-layer.l1 { border-left-color: #ef4444; }
+.risk-layer.l2 { border-left-color: #f59e0b; }
+.risk-layer.l3 { border-left-color: #10b981; }
+.risk-layer .level {
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--muted);
+  text-align: center;
+}
+.risk-layer h4 { font-size: 14px; margin-bottom: 4px; }
+.risk-layer p { font-size: 12px; color: var(--muted); }
+.risk-layer code {
+  background: rgba(0,0,0,0.4);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #fbbf24;
+}
+
+/* CHECKLIST */
+.checklist {
+  background: var(--panel);
+  padding: 24px;
+  border-radius: 12px;
+  margin: 20px 0;
+}
+.check-row {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 13px;
+  align-items: flex-start;
+}
+.check-row .ck { color: var(--good); font-weight: 800; }
+.check-row .text { color: var(--text); }
+.check-row .text code {
+  background: var(--panel2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #fbbf24;
+}
+
+/* CODE STARTER */
+.code-starter {
+  background: #09090b;
+  padding: 16px;
+  border-radius: 8px;
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  line-height: 1.7;
+  margin: 14px 0;
+}
+.code-starter .com { color: #6b7280; }
+.code-starter .kw { color: #c084fc; }
+.code-starter .str { color: #4ade80; }
+.code-starter .num { color: #fbbf24; }
+.code-starter .fn { color: #60a5fa; }
+
+/* ALERT BOX */
+.alert {
+  padding: 14px 18px;
+  border-radius: 8px;
+  margin: 16px 0;
+  font-size: 13px;
+  border-left: 4px solid;
+}
+.alert.warning {
+  background: rgba(239,68,68,0.1);
+  border-color: var(--bad);
+  color: #fca5a5;
+}
+.alert.info {
+  background: rgba(96,165,250,0.1);
+  border-color: var(--trade);
+  color: #93c5fd;
+}
+.alert strong { color: white; }
+
+footer {
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 20px;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 60px;
+}
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<section class="hero">
+  <h1>🚀 MT5 Production Workflow</h1>
+  <div class="tagline">
+    Architecture สำหรับ deploy RL model เทรดผ่าน MT5 จริง
+    <br>พร้อม Fine-tuning loop อัตโนมัติ + risk management ครบ
+  </div>
+</section>
+
+<div class="container">
+
+<!-- ARCHITECTURE -->
+<h2 class="section-title">🏗️ ภาพรวม Architecture</h2>
+<div class="section-subtitle">Python ทำเป็น "สมอง" — MT5 ทำเป็น "มือ" ส่งคำสั่งซื้อขาย</div>
+
+<div class="architecture">
+  <div class="arch-grid">
+    <!-- PYTHON SIDE -->
+    <div class="side python">
+      <h3>🐍 Python (Brain)</h3>
+
+      <div class="component t1">
+        <div class="name">live_trader.py</div>
+        <div class="desc">Main loop — ทุก bar predict + execute</div>
+      </div>
+
+      <div class="component t2">
+        <div class="name">monitor.py</div>
+        <div class="desc">วัด live performance + alert</div>
+      </div>
+
+      <div class="component t3">
+        <div class="name">auto_finetune.py</div>
+        <div class="desc">Fine-tune ทุก 1-3 เดือน</div>
+      </div>
+
+      <div class="component t1">
+        <div class="name">rl_v3.zip + rl_v3_norm.csv</div>
+        <div class="desc">Trained model + normalization</div>
+      </div>
+
+      <div class="component t2">
+        <div class="name">live_trades.db (SQLite)</div>
+        <div class="desc">Log ทุก trade + state</div>
+      </div>
+    </div>
+
+    <!-- MT5 SIDE -->
+    <div class="side mt5">
+      <h3>🏦 MT5 (Hands)</h3>
+
+      <div class="component" style="border-left-color: var(--mt5)">
+        <div class="name">MT5 Terminal</div>
+        <div class="desc">Connection ไป broker</div>
+      </div>
+
+      <div class="component" style="border-left-color: var(--mt5)">
+        <div class="name">Broker Account</div>
+        <div class="desc">Demo → Live (start small!)</div>
+      </div>
+
+      <div class="component" style="border-left-color: var(--mt5)">
+        <div class="name">Live Tick Data</div>
+        <div class="desc">Real-time pricing</div>
+      </div>
+
+      <div class="component" style="border-left-color: var(--mt5)">
+        <div class="name">Watchdog EA (optional)</div>
+        <div class="desc">เช็คว่า Python connect ปกติ</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bridge">
+    🔌 <strong>Bridge:</strong> <code>pip install MetaTrader5</code> — Python ↔ MT5 official API
+    <br>(ไม่ต้องใช้ file/socket bridge แบบ MT4)
+  </div>
+</div>
+
+<!-- 3 CONCURRENT LOOPS -->
+<h2 class="section-title">🔄 3 Loops ทำงานพร้อมกัน</h2>
+<div class="section-subtitle">แต่ละ loop ทำงานอิสระ ไม่ block กัน</div>
+
+<div class="loops">
+
+  <!-- TRADING LOOP -->
+  <div class="loop trade">
+    <div class="loop-header">
+      <div class="loop-icon">⚡</div>
+      <div>
+        <h3>Trading Loop</h3>
+        <span class="freq">ทุก H1 bar (รอ candle ปิด)</span>
+      </div>
+    </div>
+
+    <div class="loop-step"><span class="num">1</span><span class="text"><code>mt5.copy_rates_from_pos()</code> ดึง 250 bars ล่าสุด</span></div>
+    <div class="loop-step"><span class="num">2</span><span class="text">คำนวณ 35 features เหมือน DataCollector_v2</span></div>
+    <div class="loop-step"><span class="num">3</span><span class="text">Normalize ด้วย <code>rl_v3_norm.csv</code></span></div>
+    <div class="loop-step"><span class="num">4</span><span class="text">สร้าง state (window 10 + position info)</span></div>
+    <div class="loop-step"><span class="num">5</span><span class="text"><code>model.predict(state)</code> → action + confidence</span></div>
+    <div class="loop-step"><span class="num">6</span><span class="text"><strong>Confidence filter</strong>: skip ถ้า conf &lt; 0.85</span></div>
+    <div class="loop-step"><span class="num">7</span><span class="text"><strong>Risk check</strong>: position size, max DD</span></div>
+    <div class="loop-step"><span class="num">8</span><span class="text"><code>mt5.order_send()</code> ส่ง order</span></div>
+    <div class="loop-step"><span class="num">9</span><span class="text">Log → SQLite (state + action + reward)</span></div>
+    <div class="loop-step"><span class="num">10</span><span class="text">Sleep รอ bar ถัดไป</span></div>
+  </div>
+
+  <!-- MONITORING LOOP -->
+  <div class="loop monitor">
+    <div class="loop-header">
+      <div class="loop-icon">📊</div>
+      <div>
+        <h3>Monitoring Loop</h3>
+        <span class="freq">ทุก 5 นาที</span>
+      </div>
+    </div>
+
+    <div class="loop-step"><span class="num">1</span><span class="text">อ่าน live_trades.db</span></div>
+    <div class="loop-step"><span class="num">2</span><span class="text">คำนวณ rolling metrics:<br>WR, PF, MaxDD (last 50 trades)</span></div>
+    <div class="loop-step"><span class="num">3</span><span class="text">เปรียบเทียบกับ backtest baseline</span></div>
+    <div class="loop-step"><span class="num">4</span><span class="text"><strong>Drift detection:</strong><br>ถ้า PF &lt; 0.9 ติด 30 trades → 🚨 alert</span></div>
+    <div class="loop-step"><span class="num">5</span><span class="text">ส่ง notification (Telegram/Discord/Email)</span></div>
+    <div class="loop-step"><span class="num">6</span><span class="text"><strong>Auto-pause:</strong><br>ถ้า DD &gt; 15% → หยุดเทรด รอ manual review</span></div>
+    <div class="loop-step"><span class="num">7</span><span class="text">Update dashboard (Grafana/HTML)</span></div>
+    <div class="loop-step"><span class="num">8</span><span class="text">Trigger fine-tune ถ้าเงื่อนไขถึง</span></div>
+  </div>
+
+  <!-- FINE-TUNE LOOP -->
+  <div class="loop finetune">
+    <div class="loop-header">
+      <div class="loop-icon">🔄</div>
+      <div>
+        <h3>Fine-tune Loop</h3>
+        <span class="freq">ทุก 1-3 เดือน หรือ on-trigger</span>
+      </div>
+    </div>
+
+    <div class="loop-step"><span class="num">1</span><span class="text">ดึง data ล่าสุด 3 เดือนจาก MT5<br><code>mt5.copy_rates_range()</code></span></div>
+    <div class="loop-step"><span class="num">2</span><span class="text">คำนวณ features + relabel</span></div>
+    <div class="loop-step"><span class="num">3</span><span class="text"><code>rl_finetune.py</code> ด้วย mode=mixed<br>30% old + 70% new, 50k steps</span></div>
+    <div class="loop-step"><span class="num">4</span><span class="text">Walk-forward validate model ใหม่</span></div>
+    <div class="loop-step"><span class="num">5</span><span class="text"><strong>Gate:</strong> deploy เฉพาะถ้า WF ผ่าน &gt;= 4/5 windows</span></div>
+    <div class="loop-step"><span class="num">6</span><span class="text">Backup model เดิม → deploy model ใหม่<br><code>rl_v3 → rl_v3_archive_2026Q2</code></span></div>
+    <div class="loop-step"><span class="num">7</span><span class="text">Hot reload (Trading Loop โหลด model ใหม่)</span></div>
+    <div class="loop-step"><span class="num">8</span><span class="text">Log + alert: "Deployed rl_v4"</span></div>
+  </div>
+</div>
+
+<!-- TIMELINE -->
+<h2 class="section-title">⏰ Timeline — เห็นภาพทั้ง 3 Loops</h2>
+<div class="timeline-section">
+  <div class="timeline-row">
+    <div class="label">Time</div>
+    <div class="tl-cell">12:00</div>
+    <div class="tl-cell">13:00</div>
+    <div class="tl-cell">14:00</div>
+    <div class="tl-cell">...</div>
+    <div class="tl-cell">Sun 02:00</div>
+  </div>
+  <div class="timeline-row">
+    <div class="label" style="color:var(--trade)">Trading</div>
+    <div class="tl-cell active t1">predict +<br>maybe trade</div>
+    <div class="tl-cell active t1">predict +<br>maybe trade</div>
+    <div class="tl-cell active t1">predict +<br>maybe trade</div>
+    <div class="tl-cell">...</div>
+    <div class="tl-cell">predict</div>
+  </div>
+  <div class="timeline-row">
+    <div class="label" style="color:var(--monitor)">Monitor</div>
+    <div class="tl-cell active t2">stats check<br>(every 5 min)</div>
+    <div class="tl-cell active t2">stats check</div>
+    <div class="tl-cell active t2">stats check</div>
+    <div class="tl-cell">...</div>
+    <div class="tl-cell active t2">stats check</div>
+  </div>
+  <div class="timeline-row">
+    <div class="label" style="color:var(--finetune)">Fine-tune</div>
+    <div class="tl-cell">—</div>
+    <div class="tl-cell">—</div>
+    <div class="tl-cell">—</div>
+    <div class="tl-cell">...</div>
+    <div class="tl-cell active t3">🔥 RUN<br>weekly</div>
+  </div>
+</div>
+
+<!-- DATA FLOW (Trading Loop detail) -->
+<h2 class="section-title">📊 Trading Loop — Data Flow</h2>
+<div class="section-subtitle">เกิดอะไรในแต่ละ bar (เรียกว่า "tick" ของ pipeline)</div>
+
+<div class="flow-box">
+  <div class="flow-diagram">
+    <div class="flow-row">
+      <div class="flow-node input">
+        <div class="icon">📡</div>
+        <div class="name">MT5 API</div>
+        <div class="det">copy_rates_from_pos<br>250 bars</div>
+      </div>
+      <div class="flow-node process">
+        <div class="icon">🔧</div>
+        <div class="name">Features</div>
+        <div class="det">35 indicators<br>(RSI, MACD, BB...)</div>
+      </div>
+      <div class="flow-node process">
+        <div class="icon">📐</div>
+        <div class="name">Normalize</div>
+        <div class="det">z-score<br>(saved stats)</div>
+      </div>
+      <div class="flow-node process">
+        <div class="icon">🧠</div>
+        <div class="name">Model</div>
+        <div class="det">PPO<br>predict</div>
+      </div>
+      <div class="flow-node decision">
+        <div class="icon">🎯</div>
+        <div class="name">Filter</div>
+        <div class="det">conf ≥ 0.85?</div>
+      </div>
+      <div class="flow-node decision">
+        <div class="icon">🛡️</div>
+        <div class="name">Risk Check</div>
+        <div class="det">DD &lt; 15%?<br>positions OK?</div>
+      </div>
+      <div class="flow-node output">
+        <div class="icon">💸</div>
+        <div class="name">Order</div>
+        <div class="det">mt5.order_send</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RISK MANAGEMENT -->
+<h2 class="section-title">🛡️ Risk Management (3 ชั้น)</h2>
+
+<div class="risk-layers">
+  <div class="risk-layer l1">
+    <div class="level">L1</div>
+    <div>
+      <h4>🔴 Hard Stop (Critical)</h4>
+      <p>
+        <code>account_equity &lt; initial * 0.85</code> → <strong>ปิดทุก position + หยุดเทรด</strong><br>
+        ป้องกัน catastrophic loss · ต้อง manual restart หลัง review
+      </p>
+    </div>
+  </div>
+
+  <div class="risk-layer l2">
+    <div class="level">L2</div>
+    <div>
+      <h4>🟡 Soft Pause (Warning)</h4>
+      <p>
+        <code>rolling_pf &lt; 0.9 (last 30 trades)</code> → <strong>หยุดเปิด trade ใหม่ 24 ชม</strong><br>
+        ปิด open positions ตามปกติ · trigger auto fine-tune
+      </p>
+    </div>
+  </div>
+
+  <div class="risk-layer l3">
+    <div class="level">L3</div>
+    <div>
+      <h4>🟢 Position Sizing (Always-on)</h4>
+      <p>
+        Per trade: risk &lt;= <code>account * 1%</code> · Max open positions: <code>3</code><br>
+        Lot size = (risk_amt) / (SL_distance × tick_value)
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE_TRADER STARTER CODE -->
+<h2 class="section-title">💻 Starter Code — live_trader.py</h2>
+
+<div class="alert info">
+  <strong>หมายเหตุ:</strong> นี่คือ skeleton — ของจริงต้องเพิ่ม error handling, logging, reconnect logic, etc.
+</div>
+
+<div class="code-starter">
+<span class="com"># live_trader.py — Main trading loop</span>
+<span class="kw">import</span> MetaTrader5 <span class="kw">as</span> mt5
+<span class="kw">import</span> time, sqlite3, numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> stable_baselines3 <span class="kw">import</span> PPO
+<span class="kw">from</span> trading_env <span class="kw">import</span> TradingEnv
+<span class="kw">from</span> features <span class="kw">import</span> calc_features  <span class="com"># เขียนแยก, reuse จาก v2</span>
+
+<span class="com"># === Config ===</span>
+SYMBOL = <span class="str">"XAUUSDm"</span>
+TIMEFRAME = mt5.TIMEFRAME_H1
+MODEL_PATH = <span class="str">"rl_v3.zip"</span>
+NORM_PATH = <span class="str">"rl_v3_norm.csv"</span>
+CONF_THRESHOLD = <span class="num">0.85</span>
+MAX_DD_PCT = <span class="num">0.15</span>
+RISK_PER_TRADE = <span class="num">0.01</span>  <span class="com"># 1%</span>
+
+<span class="com"># === Init ===</span>
+mt5.<span class="fn">initialize</span>()
+model = PPO.<span class="fn">load</span>(MODEL_PATH)
+norm = pd.<span class="fn">read_csv</span>(NORM_PATH, index_col=<span class="num">0</span>)
+db = sqlite3.<span class="fn">connect</span>(<span class="str">"live_trades.db"</span>)
+
+<span class="com"># === Main Loop ===</span>
+<span class="kw">while</span> <span class="kw">True</span>:
+  <span class="kw">try</span>:
+    <span class="com"># 1. Wait for new bar</span>
+    <span class="fn">wait_for_new_bar</span>(SYMBOL, TIMEFRAME)
+
+    <span class="com"># 2. Pull data</span>
+    rates = mt5.<span class="fn">copy_rates_from_pos</span>(SYMBOL, TIMEFRAME, <span class="num">0</span>, <span class="num">250</span>)
+    df = pd.<span class="fn">DataFrame</span>(rates)
+
+    <span class="com"># 3. Calc features</span>
+    df = <span class="fn">calc_features</span>(df)
+
+    <span class="com"># 4. Normalize</span>
+    <span class="kw">for</span> c <span class="kw">in</span> norm.index:
+      df[c] = (df[c] - norm.<span class="fn">at</span>[c, <span class="str">"mean"</span>]) / norm.<span class="fn">at</span>[c, <span class="str">"std"</span>]
+
+    <span class="com"># 5. Build state (window=10 + position info)</span>
+    state = <span class="fn">build_state</span>(df, position=<span class="fn">get_position</span>(SYMBOL))
+
+    <span class="com"># 6. Predict + confidence</span>
+    action, conf = <span class="fn">predict_with_confidence</span>(model, state)
+
+    <span class="com"># 7. Filter + Risk Check</span>
+    <span class="kw">if</span> conf &lt; CONF_THRESHOLD:
+      <span class="kw">continue</span>
+    <span class="kw">if</span> <span class="fn">current_dd</span>() &gt; MAX_DD_PCT:
+      <span class="fn">close_all_and_pause</span>()
+      <span class="kw">continue</span>
+
+    <span class="com"># 8. Calculate position size</span>
+    sl, tp = <span class="fn">calc_sl_tp</span>(action, df)
+    lots = <span class="fn">calc_lot_size</span>(sl, RISK_PER_TRADE)
+
+    <span class="com"># 9. Send order</span>
+    <span class="kw">if</span> action == <span class="num">1</span>:    <span class="fn">send_buy</span>(SYMBOL, lots, sl, tp)
+    <span class="kw">elif</span> action == <span class="num">2</span>:  <span class="fn">send_sell</span>(SYMBOL, lots, sl, tp)
+    <span class="kw">elif</span> action == <span class="num">3</span>:  <span class="fn">close_all</span>(SYMBOL)
+
+    <span class="com"># 10. Log</span>
+    <span class="fn">log_to_db</span>(db, state, action, conf)
+
+  <span class="kw">except</span> Exception <span class="kw">as</span> e:
+    <span class="fn">log_error</span>(e)
+    time.<span class="fn">sleep</span>(<span class="num">60</span>)
+</div>
+
+<!-- DEPLOYMENT CHECKLIST -->
+<h2 class="section-title">✅ Deployment Checklist</h2>
+
+<div class="checklist">
+  <div style="font-weight:700; color:var(--good); margin-bottom:10px">📋 ก่อน go live</div>
+
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Model validated</strong> ผ่าน walk-forward อย่างน้อย <code>4/5 windows PF &gt; 1.0</code></span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Demo account testing</strong> อย่างน้อย <code>1 เดือน</code> · trades ≥ 30 ครั้ง</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Demo vs backtest</strong> เทียบ — ผลใกล้กัน (slippage acceptable)</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Risk parameters</strong> set: <code>RISK_PER_TRADE</code>, <code>MAX_DD</code>, <code>MAX_POSITIONS</code></span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Reconnect logic</strong> ถ้า MT5 disconnect → retry exponential backoff</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Notification</strong> setup: Telegram bot / Discord webhook</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Database</strong> backup ทุกวัน</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Watchdog</strong> — ถ้า Python หยุด → restart อัตโนมัติ (systemd/Task Scheduler)</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Live trading start</strong> ด้วย <code>lot 0.01</code> ก่อน · scale up ค่อยๆ</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><strong>Fine-tune schedule</strong> อย่างน้อยทุก <code>3 เดือน</code></span></div>
+
+  <div style="font-weight:700; color:var(--monitor); margin:16px 0 10px">📋 ต่อเนื่อง (after deploy)</div>
+
+  <div class="check-row"><span class="ck">✓</span><span class="text">Daily: เช็ค dashboard · ดูว่า trade เกิดถูกต้อง</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text">Weekly: ตรวจ rolling PF/WR · วิเคราะห์ trades แย่ๆ</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text">Monthly: เปรียบ live vs backtest baseline · ตัดสินใจ fine-tune</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text">Quarterly: <strong>Fine-tune</strong> ใหม่ + walk-forward + deploy ถ้าผ่าน</span></div>
+  <div class="check-row"><span class="ck">✓</span><span class="text">Yearly: <strong>Retrain scratch</strong> เพื่อ reset drift accumulation</span></div>
+</div>
+
+<!-- COMMON PITFALLS -->
+<h2 class="section-title">⚠️ Common Pitfalls ใน Production</h2>
+
+<div class="alert warning">
+  <strong>🚨 ระวัง 1: Model เก่าไม่อัพเดต norm stats</strong><br>
+  ถ้าเปลี่ยน norm หรือ retrain → ต้องอัพเดตทั้ง <code>.zip</code> และ <code>_norm.csv</code> พร้อมกัน
+</div>
+
+<div class="alert warning">
+  <strong>🚨 ระวัง 2: Slippage / Spread ในตลาดจริง</strong><br>
+  Backtest อาจไม่นับ → live แย่กว่าที่คาด · เพิ่ม buffer ใน confidence threshold
+</div>
+
+<div class="alert warning">
+  <strong>🚨 ระวัง 3: Bar timing ระหว่าง broker</strong><br>
+  Broker A bar ปิดเวลา 12:00:00 · Broker B 12:00:05 · ต้อง sync ให้ดี
+</div>
+
+<div class="alert warning">
+  <strong>🚨 ระวัง 4: Connection ขาด</strong><br>
+  Python disconnect แต่ MT5 ยัง run → mismatch · Watchdog EA ช่วย detect
+</div>
+
+<div class="alert warning">
+  <strong>🚨 ระวัง 5: Fine-tune จู่ๆ deploy โดยไม่ validate</strong><br>
+  ห้าม auto-deploy โดยไม่ผ่าน walk-forward gate · เสี่ยง deploy model พังลงตลาดจริง
+</div>
+
+<!-- FINE-TUNE TRIGGER LOGIC -->
+<h2 class="section-title">🔄 Fine-tune Trigger Logic</h2>
+<div class="section-subtitle">ตัดสินใจเมื่อไหร่ควร fine-tune</div>
+
+<div class="checklist">
+  <div style="font-weight:700; color:var(--finetune); margin-bottom:10px">🎯 เงื่อนไข trigger fine-tune</div>
+
+  <div class="check-row"><span class="ck">⏰</span><span class="text"><strong>Schedule:</strong> ทุก 3 เดือนอัตโนมัติ</span></div>
+  <div class="check-row"><span class="ck">📉</span><span class="text"><strong>Performance drop:</strong> live PF &lt; 0.9 ติด 50 trades</span></div>
+  <div class="check-row"><span class="ck">📊</span><span class="text"><strong>Market regime change:</strong> ATR mean &gt; 2× backtest baseline</span></div>
+  <div class="check-row"><span class="ck">🔄</span><span class="text"><strong>Manual:</strong> เห็น drift ในข่าวเศรษฐกิจสำคัญ (FOMC, NFP)</span></div>
+
+  <div style="font-weight:700; color:var(--good); margin:16px 0 10px">✅ Gate ก่อน deploy fine-tuned model</div>
+
+  <div class="check-row"><span class="ck">1</span><span class="text">Walk-forward 5 windows ผ่าน <strong>≥ 4/5</strong></span></div>
+  <div class="check-row"><span class="ck">2</span><span class="text">PF บน latest data <strong>&gt; 1.05</strong></span></div>
+  <div class="check-row"><span class="ck">3</span><span class="text">Action distribution ใกล้ original (อย่ามี mode shift แปลกๆ)</span></div>
+  <div class="check-row"><span class="ck">4</span><span class="text">Demo testing 1 สัปดาห์ ก่อน switch live</span></div>
+</div>
+
+<!-- FILES NEEDED -->
+<h2 class="section-title">📁 Files ใหม่ที่ต้องสร้างเพิ่ม</h2>
+
+<div class="checklist">
+  <div class="check-row"><span class="ck" style="color:var(--trade)">+</span><span class="text"><code>features.py</code> — extract feature calculation จาก DataCollector_v2 มา reuse ใน Python</span></div>
+  <div class="check-row"><span class="ck" style="color:var(--trade)">+</span><span class="text"><code>live_trader.py</code> — main trading loop (skeleton ด้านบน)</span></div>
+  <div class="check-row"><span class="ck" style="color:var(--trade)">+</span><span class="text"><code>mt5_connector.py</code> — wrap MT5 API (orders, data, errors)</span></div>
+  <div class="check-row"><span class="ck" style="color:var(--monitor)">+</span><span class="text"><code>monitor.py</code> — performance tracking + alerts</span></div>
+  <div class="check-row"><span class="ck" style="color:var(--monitor)">+</span><span class="text"><code>dashboard.html</code> — visualization equity / live trades</span></div>
+  <div class="check-row"><span class="ck" style="color:var(--finetune)">+</span><span class="text"><code>auto_finetune.py</code> — orchestrator (trigger → finetune → validate → deploy)</span></div>
+  <div class="check-row"><span class="ck" style="color:var(--finetune)">+</span><span class="text"><code>model_registry.py</code> — version control model files</span></div>
+  <div class="check-row"><span class="ck">+</span><span class="text"><code>config.yaml</code> — รวม settings ทั้งหมด</span></div>
+  <div class="check-row"><span class="ck">+</span><span class="text"><code>notifier.py</code> — Telegram/Discord alerts</span></div>
+
+  <div style="font-weight:700; color:var(--good); margin:16px 0 10px">📦 ที่มีอยู่แล้ว (reuse)</div>
+  <div class="check-row"><span class="ck">✓</span><span class="text"><code>trading_env.py</code> · <code>rl_train.py</code> · <code>rl_finetune.py</code> · <code>rl_walkforward.py</code></span></div>
+</div>
+
+<!-- TIMELINE EXAMPLE -->
+<h2 class="section-title">📅 ตัวอย่าง 1 ปีของ Production</h2>
+
+<div class="timeline-section">
+  <div class="timeline-row" style="grid-template-columns: 100px 1fr 1fr 1fr 1fr">
+    <div class="label">Quarter</div>
+    <div class="tl-cell">Q1</div>
+    <div class="tl-cell">Q2</div>
+    <div class="tl-cell">Q3</div>
+    <div class="tl-cell">Q4</div>
+  </div>
+  <div class="timeline-row" style="grid-template-columns: 100px 1fr 1fr 1fr 1fr">
+    <div class="label" style="color:var(--trade)">Trading</div>
+    <div class="tl-cell active t1">Trade with rl_v3</div>
+    <div class="tl-cell active t1">Trade with rl_v4 (FT)</div>
+    <div class="tl-cell active t1">Trade with rl_v5 (FT)</div>
+    <div class="tl-cell active t1">Trade with rl_v6 (FT)</div>
+  </div>
+  <div class="timeline-row" style="grid-template-columns: 100px 1fr 1fr 1fr 1fr">
+    <div class="label" style="color:var(--finetune)">Fine-tune</div>
+    <div class="tl-cell">—</div>
+    <div class="tl-cell active t3">v3 → v4<br>(50k steps mixed)</div>
+    <div class="tl-cell active t3">v4 → v5</div>
+    <div class="tl-cell active t3">v5 → v6</div>
+  </div>
+  <div class="timeline-row" style="grid-template-columns: 100px 1fr 1fr 1fr 1fr">
+    <div class="label" style="color:var(--bad)">Retrain</div>
+    <div class="tl-cell">—</div>
+    <div class="tl-cell">—</div>
+    <div class="tl-cell">—</div>
+    <div class="tl-cell active" style="background:rgba(239,68,68,0.2); border-color:var(--bad); color:var(--bad)">📅 EOY: <strong>scratch retrain</strong> (200k)<br>reset drift</div>
+  </div>
+</div>
+
+<div class="alert info">
+  <strong>💡 Strategy:</strong> Fine-tune ทุก quarter (ประหยัด compute) + retrain scratch ปีละ 1 ครั้ง (กัน drift accumulation)
+</div>
+
+</div>
+
+<footer>
+  <p>🚀 MT5 Production Workflow · Built with MetaTrader5 Python API + stable-baselines3</p>
+  <p style="margin-top:8px">รวม: Live Trading · Performance Monitoring · Auto Fine-tuning · Risk Management</p>
+</footer>
+
+</body>
+</html>

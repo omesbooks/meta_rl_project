@@ -82,15 +82,58 @@ Buffer index reference (สำหรับ `CopyBuffer`):
 
 ---
 
-## ⚙️ Inputs (tunable thresholds)
+## ⚙️ Inputs
 
+### **Pattern Toggles (เปิด/ปิดทีละแบบ)**
+```
+InpEnableDoji         = true     [0]
+InpEnableHammer       = true     [1] Hammer / Shooting Star
+InpEnableEngulfing    = true     [2]
+InpEnableInsideBar    = true     [3]
+InpEnableOutsideBar   = true     [4]
+InpEnableStar         = true     [5] Morning / Evening Star
+InpEnableSoldiers     = true     [6] Three Soldiers / Crows
+InpEnableMarubozu     = true     [7]
+InpEnableHarami       = true     [8]
+InpEnablePiercing     = true     [9] Piercing / Dark Cloud
+```
+> ⚠️ ปิดบาง pattern → buffer นั้นเป็น 0 ตลอด (ไม่ทำ detection)
+
+### **Detection Thresholds**
 ```
 InpDojiThreshold     = 0.10   // body < 10% × range = Doji
 InpMarubozuThreshold = 0.95   // body > 95% × range = Marubozu
 InpHammerWickRatio   = 2.0    // wick > 2× body = Hammer
 InpHammerBodyRatio   = 0.30   // body < 30% × range = Hammer-eligible
-InpDrawArrows        = true   // visual markers on chart
 ```
+
+### **Visual Markers**
+```
+InpDrawArrows      = true    // Draw arrow markers on chart
+InpDrawDojiArrow   = false   // Doji is too common — skip arrow by default
+```
+
+---
+
+## 📊 Data Window Integration
+
+ทุก buffer แสดงใน **Data Window** ตามชื่อ pattern:
+
+```
+Data Window:
+  Doji         : 0 หรือ 1
+  Hammer       : -1, 0, +1
+  Engulfing    : -1, 0, +1
+  InsideBar    : 0 หรือ 1
+  OutsideBar   : 0 หรือ 1
+  Star         : -1, 0, +1
+  Soldiers     : -1, 0, +1
+  Marubozu     : -1, 0, +1
+  Harami       : -1, 0, +1
+  Piercing     : -1, 0, +1
+```
+
+→ ใช้สำหรับ debug หรือดูค่าเป็น bar-by-bar ก่อนเอาไปใช้เป็น feature
 
 ---
 

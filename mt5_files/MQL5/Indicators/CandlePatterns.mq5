@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                            CandlePatterns.mq5    |
-//|                 Detects 9 candlestick patterns + visual markers  |
+//|                Detects 10 candlestick patterns + visual markers  |
 //|                                                                  |
 //| Each pattern has:                                                |
 //|   - Toggle input (enable/disable)                                |
@@ -17,18 +17,21 @@
 //|   [6] Marubozu     — -1 / 0 / +1                                 |
 //|   [7] Harami       — -1 / 0 / +1                                 |
 //|   [8] Piercing     — -1 (dark cloud) / 0 / +1 (piercing)         |
+//|   [9] MatHold      — -1 (bearish) / 0 / +1 (bullish)  ⭐ 5-bar  |
 //|                                                                  |
-//| NOTE: Doji removed in v1.20 — overlapping signal with Hammer.    |
-//|       Star [4] is the 3-bar Morning/Evening Star reversal pattern|
+//| NOTE:                                                            |
+//|  - Doji removed in v1.20 (overlapping with Hammer)               |
+//|  - Star [4] = 3-bar Morning/Evening Star reversal                |
+//|  - MatHold [9] = 5-bar continuation pattern (v1.30)              |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.20"
+#property version   "1.30"
 #property copyright "RL Trading Project"
-#property description "9 candlestick patterns — toggleable + Data Window visible"
+#property description "10 candlestick patterns — toggleable + Data Window visible"
 
 #property indicator_chart_window
-#property indicator_buffers 9
-#property indicator_plots   9
+#property indicator_buffers 10
+#property indicator_plots   10
 
 //=== Plot definitions (all DRAW_NONE so visible in Data Window only) ===
 #property indicator_label1  "Hammer"
@@ -49,6 +52,8 @@
 #property indicator_type8   DRAW_NONE
 #property indicator_label9  "Piercing"
 #property indicator_type9   DRAW_NONE
+#property indicator_label10 "MatHold"
+#property indicator_type10  DRAW_NONE
 
 //=== Pattern toggles (enable/disable per pattern) ===
 input group "=== Pattern Toggles ==="
@@ -61,6 +66,7 @@ input bool InpEnableSoldiers   = true;     // [5] Three Soldiers / Crows
 input bool InpEnableMarubozu   = true;     // [6] Marubozu
 input bool InpEnableHarami     = true;     // [7] Harami
 input bool InpEnablePiercing   = true;     // [8] Piercing / Dark Cloud
+input bool InpEnableMatHold    = true;     // [9] Bullish / Bearish Mat Hold (5-bar)
 
 input group "=== Detection Thresholds ==="
 input double InpMarubozuThreshold    = 0.95;   // Marubozu: body > N × range
@@ -70,6 +76,9 @@ input double InpHammerOppWickMaxPct  = 0.10;   // Hammer: OPPOSITE wick ≤ N ×
 input double InpEngulfingMinRatio    = 2.0;    // Engulfing: cur body ≥ N × prev body (2.0 = 200%)
 input double InpStarMidBodyMaxPct    = 0.40;   // Star: middle bar body ≤ N × range
 input double InpStarOuterBodyMinPct  = 0.70;   // Star: outer bars body ≥ N × middle range
+input double InpMatHoldOuterBodyMin  = 0.60;   // MatHold: outer bars body ≥ N × range
+input double InpMatHoldMidBodyMax    = 0.40;   // MatHold: middle 3 bars body ≤ N × range
+input bool   InpMatHoldRequireBreak  = true;   // MatHold: bar0 must close past bar4 high/low
 
 input group "=== Visual Markers ==="
 input bool InpDrawArrows           = true;     // Draw arrow markers on chart
@@ -84,6 +93,7 @@ double BufSoldiers[];
 double BufMarubozu[];
 double BufHarami[];
 double BufPiercing[];
+double BufMatHold[];
 
 //+------------------------------------------------------------------+
 //| OnInit                                                            |
@@ -100,12 +110,13 @@ int OnInit()
    SetIndexBuffer(6, BufMarubozu,    INDICATOR_DATA);
    SetIndexBuffer(7, BufHarami,      INDICATOR_DATA);
    SetIndexBuffer(8, BufPiercing,    INDICATOR_DATA);
+   SetIndexBuffer(9, BufMatHold,     INDICATOR_DATA);
 
    IndicatorSetString(INDICATOR_SHORTNAME, "Candle Patterns");
    IndicatorSetInteger(INDICATOR_DIGITS, 0);
 
    // Display empty value as 0 (cleaner Data Window)
-   for(int i = 0; i < 9; i++)
+   for(int i = 0; i < 10; i++)
       PlotIndexSetDouble(i, PLOT_EMPTY_VALUE, 0.0);
 
    return INIT_SUCCEEDED;
@@ -282,6 +293,70 @@ int IsStar(double o0, double h0, double l0, double c0,
 }
 
 //+------------------------------------------------------------------+
+//| Mat Hold (5-bar continuation pattern)                            |
+//|                                                                  |
+//| Bullish Mat Hold:                                                |
+//|   Bar 4 (oldest):  big bull (body ≥ MatHoldOuterBodyMin × range) |
+//|   Bar 3:           small bear, gap up open (open > c4)           |
+//|   Bar 2:           small bar (body ≤ MatHoldMidBodyMax × range)  |
+//|   Bar 1:           small bar                                     |
+//|   Bar 0 (newest):  big bull, close > h4 (breakout if required)   |
+//|                                                                  |
+//| Bearish Mat Hold = mirror image                                  |
+//|                                                                  |
+//| Strong continuation signal — pause then resume original trend   |
+//+------------------------------------------------------------------+
+int IsMatHold(double o0, double h0, double l0, double c0,    // newest
+              double o1, double h1, double l1, double c1,
+              double o2, double h2, double l2, double c2,
+              double o3, double h3, double l3, double c3,
+              double o4, double h4, double l4, double c4)    // oldest
+{
+   double range0 = h0 - l0;
+   double range4 = h4 - l4;
+   if(range0 < 1e-10 || range4 < 1e-10) return 0;
+
+   double body0 = MathAbs(c0 - o0);
+   double body1 = MathAbs(c1 - o1);
+   double body2 = MathAbs(c2 - o2);
+   double body3 = MathAbs(c3 - o3);
+   double body4 = MathAbs(c4 - o4);
+
+   // Outer bars (4 = oldest, 0 = newest) must be LARGE
+   if(body4 < range4 * InpMatHoldOuterBodyMin) return 0;
+   if(body0 < range0 * InpMatHoldOuterBodyMin) return 0;
+
+   // Middle 3 bars (3, 2, 1) must be SMALL relative to bar4 range
+   double mid_max = range4 * InpMatHoldMidBodyMax;
+   if(body3 > mid_max) return 0;
+   if(body2 > mid_max) return 0;
+   if(body1 > mid_max) return 0;
+
+   //=== Bullish Mat Hold ===
+   //  bar4 big bull, bar3 gap-up open & bearish-ish,
+   //  bars 2,1 stay above bar4 close, bar0 big bull breakout
+   if(c4 > o4 && c0 > o0) {
+      // Gap up after bar4 (bar3 opens above bar4 close)
+      if(o3 <= c4) return 0;
+      // Middle bars should remain above bar4's close (no full retracement)
+      if(MathMin(MathMin(c1, c2), c3) <= c4) return 0;
+      // Bar0 must close past bar4 high (breakout) — optional
+      if(InpMatHoldRequireBreak && c0 <= h4) return 0;
+      return 1;
+   }
+
+   //=== Bearish Mat Hold ===
+   if(c4 < o4 && c0 < o0) {
+      if(o3 >= c4) return 0;
+      if(MathMax(MathMax(c1, c2), c3) >= c4) return 0;
+      if(InpMatHoldRequireBreak && c0 >= l4) return 0;
+      return -1;
+   }
+
+   return 0;
+}
+
+//+------------------------------------------------------------------+
 //| Visual: draw arrow at bar                                         |
 //+------------------------------------------------------------------+
 void DrawArrow(datetime t, int direction, string label)
@@ -344,9 +419,23 @@ int OnCalculate(const int rates_total,
       BufSoldiers[i] = InpEnableSoldiers ? IsThreeSoldiers(o0, c0, o1, c1, o2, c2) : 0;
       BufStar[i]     = InpEnableStar     ? IsStar(o0, h0, l0, c0, o1, h1, l1, c1, o2, h2, l2, c2) : 0;
 
+      //=== Five-bar (Mat Hold — needs i ≥ 4) ===
+      if(i >= 4 && InpEnableMatHold) {
+         double o3 = open[i-3], h3 = high[i-3], l3 = low[i-3], c3 = close[i-3];
+         double o4 = open[i-4], h4 = high[i-4], l4 = low[i-4], c4 = close[i-4];
+         BufMatHold[i] = IsMatHold(o0, h0, l0, c0, o1, h1, l1, c1,
+                                    o2, h2, l2, c2, o3, h3, l3, c3,
+                                    o4, h4, l4, c4);
+      } else {
+         BufMatHold[i] = 0;
+      }
+
       //=== Draw arrows for closed bars (priority order: strongest first) ===
       if(InpDrawArrows && i < rates_total - 1) {
-         if(BufStar[i] != 0)
+         if(BufMatHold[i] != 0)
+            DrawArrow(time[i], (int)BufMatHold[i],
+                      BufMatHold[i] > 0 ? "BullMatHold" : "BearMatHold");
+         else if(BufStar[i] != 0)
             DrawArrow(time[i], (int)BufStar[i],
                       BufStar[i] > 0 ? "MorningStar" : "EveningStar");
          else if(BufSoldiers[i] != 0)

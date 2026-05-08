@@ -1,10 +1,10 @@
 # 🕯️ CandlePatterns.mq5 — Custom Indicator
 
-ตรวจจับ candlestick patterns 9 รูปแบบและส่งเป็น buffers ให้ EA เรียกใช้
+ตรวจจับ candlestick patterns 10 รูปแบบและส่งเป็น buffers ให้ EA เรียกใช้
 
 ---
 
-## 📊 9 Patterns Detected
+## 📊 10 Patterns Detected
 
 | Buffer | Pattern | Encoding | Bars Needed |
 |---|---|---|---|
@@ -17,9 +17,10 @@
 | 6 | Marubozu | -1 / 0 / +1 | 1 |
 | 7 | Harami (Bull/Bear) | -1 / 0 / +1 | 2 |
 | 8 | Piercing / Dark Cloud | -1 / 0 / +1 | 2 |
+| **9** | **Bullish / Bearish Mat Hold** ⭐ | -1 / 0 / +1 | **5** |
 
-> ℹ️ **Doji removed in v1.20** — ค่อนข้างซ้ำซ้อนกับ Hammer (small body + wicks).
->    Star pattern อยู่ที่ buffer [4] = Morning Star (+1) / Evening Star (-1).
+> ℹ️ Doji removed in v1.20 (overlapping with Hammer)
+> ⭐ MatHold added in v1.30 — strong continuation signal (5-bar pattern)
 
 **Encoding convention:**
 - `+1` = Bullish pattern (potential upward signal)
@@ -79,7 +80,7 @@ Buffer index reference (สำหรับ `CopyBuffer`):
 1: Engulfing     6: Marubozu
 2: InsideBar     7: Harami
 3: OutsideBar    8: Piercing/Dark Cloud
-4: Star (Morning/Evening) ⭐
+4: Star          9: MatHold ⭐ (Bull/Bear Mat Hold, 5-bar)
 ```
 
 ---
@@ -92,11 +93,12 @@ InpEnableHammer       = true     [0] Hammer / Shooting Star
 InpEnableEngulfing    = true     [1]
 InpEnableInsideBar    = true     [2]
 InpEnableOutsideBar   = true     [3]
-InpEnableStar         = true     [4] Morning / Evening Star ⭐
+InpEnableStar         = true     [4] Morning / Evening Star
 InpEnableSoldiers     = true     [5] Three Soldiers / Crows
 InpEnableMarubozu     = true     [6]
 InpEnableHarami       = true     [7]
 InpEnablePiercing     = true     [8] Piercing / Dark Cloud
+InpEnableMatHold      = true     [9] Bullish / Bearish Mat Hold ⭐ NEW
 ```
 > ⚠️ ปิดบาง pattern → buffer นั้นเป็น 0 ตลอด (ไม่ทำ detection)
 
@@ -119,6 +121,33 @@ InpEngulfingMinRatio    = 2.0    // cur body ≥ 200% of prev body
 InpStarMidBodyMaxPct    = 0.40   // middle bar body ≤ 40% × middle range
 InpStarOuterBodyMinPct  = 0.70   // outer bars body ≥ 70% × middle range
                                   //   ค่าน้อย = หลวม, ค่ามาก = strict
+
+# Mat Hold (5-bar continuation):  ⭐ NEW
+InpMatHoldOuterBodyMin  = 0.60   // outer bars body ≥ 60% × range
+InpMatHoldMidBodyMax    = 0.40   // middle 3 bars body ≤ 40% × bar4 range
+InpMatHoldRequireBreak  = true   // bar0 must close past bar4 high/low
+                                  //   true  = strict (textbook)
+                                  //   false = loose (easier to detect)
+```
+
+### **Mat Hold Pattern (5-bar continuation)** ⭐
+
+```
+Bullish Mat Hold (continuation in uptrend):
+   ┌──┐                                ┌──┐
+   │  │   ┌─┐  ┌─┐                     │  │
+   │  │   │ │  │ │  ┌─┐                │  │
+   │  │   │ │  │ │  │ │                │  │
+   │  │   └─┘  └─┘  └─┘                │  │
+   │  │                                │  │
+   └──┘                                └──┘
+   bar4    bar3 bar2 bar1               bar0
+   (big      ↓ small consolidation       (big bull
+    bull)    ↓ stays above bar4 close     breakout
+            ↓ gap up after bar4           past h4)
+
+Strong continuation signal — pause, then resume original trend
+"Pullback that fails" — bullish bias persists after small retracement
 ```
 
 ### **Morning / Evening Star Detection**
@@ -195,6 +224,7 @@ Data Window:
   Marubozu     : -1, 0, +1
   Harami       : -1, 0, +1
   Piercing     : -1, 0, +1
+  MatHold      : -1, 0, +1   ⭐ Bullish(+1) / Bearish(-1) Mat Hold
 ```
 
 → ใช้สำหรับ debug หรือดูค่าเป็น bar-by-bar ก่อนเอาไปใช้เป็น feature

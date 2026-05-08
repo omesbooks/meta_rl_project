@@ -50,6 +50,15 @@ input string   InpComment           = "RL_V10";
 input double   InpFixedLot          = 0.01;       // Used if no SL specified
 input bool     InpUseSLTP           = true;       // Set SL/TP on entry
 
+input group "=== Session Filter (avoid Market closed errors) ==="
+input bool     InpFilterSession     = true;       // Filter Buy/Sell by session
+input int      InpEarliestHour      = 1;          // Earliest server hour to trade (≥)
+input int      InpLatestHour        = 21;         // Latest server hour to trade (<)
+input bool     InpSkipSaturday      = true;       // Always skip Saturday
+input bool     InpSkipSunday        = true;       // Skip Sunday (most brokers closed)
+input bool     InpSkipFridayLate    = true;       // Skip Friday after 21:00 server
+input bool     InpCheckMarketOpen   = true;       // Also check broker SYMBOL_TRADE_MODE
+
 //=== Globals ===
 long           g_onnx_handle = INVALID_HANDLE;
 CTrade         g_trade;
@@ -380,6 +389,41 @@ void CheckHardStop()
 }
 
 //+------------------------------------------------------------------+
+//| Check if trading session is open for new entries                 |
+//| (CLOSE action is always allowed regardless)                      |
+//+------------------------------------------------------------------+
+bool IsAllowedSession(datetime bar_time)
+{
+   if(!InpFilterSession) return true;
+
+   MqlDateTime dt;
+   TimeToStruct(bar_time, dt);
+   int dow  = dt.day_of_week;   // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+   int hour = dt.hour;
+
+   // Saturday — Forex closed
+   if(InpSkipSaturday && dow == 6) return false;
+
+   // Sunday — most brokers closed
+   if(InpSkipSunday && dow == 0) return false;
+
+   // Friday late session
+   if(InpSkipFridayLate && dow == 5 && hour >= 21) return false;
+
+   // Hour range
+   if(hour < InpEarliestHour || hour >= InpLatestHour) return false;
+
+   // Also check broker — does symbol allow new orders right now?
+   if(InpCheckMarketOpen) {
+      long mode = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_MODE);
+      if(mode == SYMBOL_TRADE_MODE_DISABLED) return false;
+      if(mode == SYMBOL_TRADE_MODE_CLOSEONLY) return false;
+   }
+
+   return true;
+}
+
+//+------------------------------------------------------------------+
 //| OnTick — main loop                                                |
 //+------------------------------------------------------------------+
 void OnTick()
@@ -440,14 +484,18 @@ void OnTick()
    //   1 = Buy
    //   2 = Sell
    //   3 = Close
+   datetime current_bar_time = iTime(_Symbol, _Period, 0);
+   bool session_ok = IsAllowedSession(current_bar_time);
+
    if(action == 1) {
-      // Skip if already long
-      if(pos_side != 1) OpenPosition(1);
+      // Skip if already long OR market not in session
+      if(pos_side != 1 && session_ok) OpenPosition(1);
    }
    else if(action == 2) {
-      if(pos_side != -1) OpenPosition(2);
+      if(pos_side != -1 && session_ok) OpenPosition(2);
    }
    else if(action == 3) {
+      // CLOSE always allowed (so we can exit before weekend)
       if(pos_side != 0) CloseAllPositions("signal");
    }
 

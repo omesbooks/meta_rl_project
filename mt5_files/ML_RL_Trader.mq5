@@ -25,8 +25,8 @@
 #property description "ML model deployment via ONNX — V10 enriched"
 
 #include <Trade\Trade.mqh>
-#include "rl_prod_v10_enriched_config.mqh"   // generated norm constants
-#include "RL_Indicators.mqh"                 // feature computation
+#include <rl_prod_v10_enriched_config.mqh>   // generated norm constants (in MQL5/Include/)
+#include <RL_Indicators.mqh>                 // feature computation (in MQL5/Include/)
 
 //=== Inputs (must match training!) ===
 input group "=== Model & Inference ==="

@@ -42,6 +42,12 @@ ENV/
 *_logs/
 *_norm.csv
 
+# ONNX export artifacts (generated from .zip via export_to_onnx.py)
+*.onnx
+*.onnx.data
+*_config.mqh
+!**/*_template.mqh
+
 # Tensorboard
 events.out.tfevents*
 

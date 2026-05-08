@@ -66,8 +66,9 @@ input bool InpEnablePiercing   = true;     // [9] Piercing / Dark Cloud
 input group "=== Detection Thresholds ==="
 input double InpDojiThreshold        = 0.10;   // Doji: body < N × range
 input double InpMarubozuThreshold    = 0.95;   // Marubozu: body > N × range
-input double InpHammerWickRatio      = 2.0;    // Hammer: long wick > N × body
-input double InpHammerBodyRatio      = 0.30;   // Hammer: body < N × range
+input double InpHammerWickRatio      = 2.0;    // Hammer: long wick ≥ N × body
+input double InpHammerBodyMaxPct     = 0.30;   // Hammer: body ≤ N × range (0.30 = 30%)
+input double InpHammerOppWickMaxPct  = 0.10;   // Hammer: OPPOSITE wick ≤ N × range (0.10 = 10%)
 input double InpEngulfingMinRatio    = 2.0;    // Engulfing: cur body ≥ N × prev body (2.0 = 200%)
 
 input group "=== Visual Markers ==="
@@ -133,14 +134,24 @@ int IsHammerOrStar(double o, double h, double l, double c)
    double upper_wick = h - MathMax(o, c);
    double lower_wick = MathMin(o, c) - l;
 
-   if(body > range * InpHammerBodyRatio) return 0;
+   // Filter 1: body must be small relative to range
+   //   body ≤ InpHammerBodyMaxPct × range  (e.g., 30%)
+   if(body > range * InpHammerBodyMaxPct) return 0;
 
-   // Hammer: long lower wick, small upper wick
-   if(lower_wick >= body * InpHammerWickRatio && upper_wick < body)
+   // Hammer: long lower wick + small upper wick (opposite)
+   //   - long_wick ≥ InpHammerWickRatio × body  (e.g., 2×)
+   //   - upper_wick ≤ InpHammerOppWickMaxPct × range  (e.g., 10%)
+   if(lower_wick >= body * InpHammerWickRatio &&
+      upper_wick <= range * InpHammerOppWickMaxPct)
       return 1;
-   // Shooting star: long upper wick, small lower wick
-   if(upper_wick >= body * InpHammerWickRatio && lower_wick < body)
+
+   // Shooting star: long upper wick + small lower wick (opposite)
+   //   - upper_wick ≥ InpHammerWickRatio × body
+   //   - lower_wick ≤ InpHammerOppWickMaxPct × range
+   if(upper_wick >= body * InpHammerWickRatio &&
+      lower_wick <= range * InpHammerOppWickMaxPct)
       return -1;
+
    return 0;
 }
 

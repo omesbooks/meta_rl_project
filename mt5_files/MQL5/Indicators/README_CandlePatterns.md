@@ -101,15 +101,53 @@ InpEnablePiercing     = true     [9] Piercing / Dark Cloud
 
 ### **Detection Thresholds**
 ```
-InpDojiThreshold     = 0.10   // body < 10% × range = Doji
-InpMarubozuThreshold = 0.95   // body > 95% × range = Marubozu
-InpHammerWickRatio   = 2.0    // wick > 2× body = Hammer
-InpHammerBodyRatio   = 0.30   // body < 30% × range = Hammer-eligible
-InpEngulfingMinRatio = 2.0    // Engulfing: cur body ≥ 200% of prev body
-                              //   1.0 = ≥ same size (loose, แค่ engulf)
-                              //   2.0 = ≥ 2× larger ⭐ default (recommended)
-                              //   3.0 = ≥ 3× larger (strict, เฉพาะ strong reversal)
+InpDojiThreshold        = 0.10   // body < 10% × range = Doji
+InpMarubozuThreshold    = 0.95   // body > 95% × range = Marubozu
+
+# Hammer / Shooting Star (3 filters):
+InpHammerWickRatio      = 2.0    // long wick ≥ 2× body
+InpHammerBodyMaxPct     = 0.30   // body ≤ 30% × range
+InpHammerOppWickMaxPct  = 0.10   // opposite wick ≤ 10% × range  ⭐ NEW
+
+# Engulfing:
+InpEngulfingMinRatio    = 2.0    // cur body ≥ 200% of prev body
+                                  //   1.0 = ≥ same size (loose)
+                                  //   2.0 = ≥ 2× larger ⭐ default
+                                  //   3.0 = ≥ 3× larger (strict)
 ```
+
+### **Hammer / Shooting Star Tuning**
+
+```
+ตัวอย่างแท่งสมบูรณ์แบบ (Hammer):
+  ─────────  ← high
+       │
+       │     ← upper_wick (ฝั่งตรงข้าม / opposite)  ≤ 10% × range
+       │
+   ┌───┐    ← body (≤ 30% × range)
+   │   │
+   └───┘
+       │
+       │     ← lower_wick (ฝั่งหลัก / dominant) ≥ 2× body
+       │
+       │
+       │
+  ─────────  ← low
+
+3 filters ที่ต้องผ่านพร้อมกัน:
+  1. body ≤ InpHammerBodyMaxPct × range       (เนื้อแท่งเล็ก)
+  2. dominant wick ≥ InpHammerWickRatio × body (หางยาว)
+  3. opposite wick ≤ InpHammerOppWickMaxPct × range (หางตรงข้ามสั้น)
+```
+
+### **Strict vs Loose Hammer Settings**
+
+| Setting | Body % | Opp Wick % | Wick Ratio | Result |
+|---|---|---|---|---|
+| Loose | 0.40 | 0.20 | 1.5× | many detections |
+| **Default** ⭐ | **0.30** | **0.10** | **2.0×** | balanced |
+| Strict | 0.20 | 0.05 | 3.0× | rare, high-conviction |
+| Pure Pin Bar | 0.15 | 0.03 | 4.0× | textbook only |
 
 ### **Visual Markers**
 ```

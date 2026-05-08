@@ -350,10 +350,13 @@ void CloseAllPositions(string reason = "signal")
 
 //+------------------------------------------------------------------+
 //| Force-close positions held > max_hold_bars                       |
+//| (only attempts when session is open)                             |
 //+------------------------------------------------------------------+
 void ManageMaxHold()
 {
    datetime now = iTime(_Symbol, _Period, 0);
+   if(!IsAllowedSession(now)) return;  // can't close if market closed
+
    for(int i = PositionsTotal() - 1; i >= 0; i--) {
       ulong ticket = PositionGetTicket(i);
       if(!PositionSelectByTicket(ticket)) continue;
@@ -371,6 +374,7 @@ void ManageMaxHold()
 
 //+------------------------------------------------------------------+
 //| Hard stop: close all if drawdown > threshold                     |
+//| (only attempts close when session is open)                       |
 //+------------------------------------------------------------------+
 void CheckHardStop()
 {
@@ -379,10 +383,16 @@ void CheckHardStop()
 
    double dd = (g_account_peak > 0) ? (equity - g_account_peak) / g_account_peak : 0;
    if(dd <= -InpHardDD_Pct && !g_paused) {
-      Print("🚨 HARD STOP triggered. DD=", dd*100, "%");
-      CloseAllPositions("hard_stop");
-      g_account_peak = equity;  // reset peak so we can resume
-      g_paused = true;
+      // Try to close — but only if session allows
+      datetime now = iTime(_Symbol, _Period, 0);
+      if(IsAllowedSession(now)) {
+         Print("🚨 HARD STOP triggered. DD=", dd*100, "%");
+         CloseAllPositions("hard_stop");
+         g_account_peak = equity;  // reset peak so we can resume
+         g_paused = true;
+      }
+      // If session closed: just stay paused, will close when market opens
+      // (SL set on entry provides server-side protection)
    } else if(dd > -InpHardDD_Pct * 0.5) {
       g_paused = false;  // resume when DD recovers
    }
@@ -521,15 +531,21 @@ void OnTick()
    datetime current_bar_time = iTime(_Symbol, _Period, 0);
    bool session_ok = IsAllowedSession(current_bar_time);
 
+   if(!session_ok && action != 0) {
+      // Market not in session — skip ALL trade actions (Buy/Sell/Close)
+      // - Open trades stay protected by SL/TP set on entry
+      // - When market reopens, EA re-evaluates on next bar
+      return;
+   }
+
    if(action == 1) {
-      // Skip if already long OR market not in session
-      if(pos_side != 1 && session_ok) OpenPosition(1);
+      // Skip if already long
+      if(pos_side != 1) OpenPosition(1);
    }
    else if(action == 2) {
-      if(pos_side != -1 && session_ok) OpenPosition(2);
+      if(pos_side != -1) OpenPosition(2);
    }
    else if(action == 3) {
-      // CLOSE always allowed (so we can exit before weekend)
       if(pos_side != 0) CloseAllPositions("signal");
    }
 

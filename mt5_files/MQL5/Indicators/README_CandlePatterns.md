@@ -1,23 +1,25 @@
 # 🕯️ CandlePatterns.mq5 — Custom Indicator
 
-ตรวจจับ candlestick patterns 10 รูปแบบและส่งเป็น buffers ให้ EA เรียกใช้
+ตรวจจับ candlestick patterns 9 รูปแบบและส่งเป็น buffers ให้ EA เรียกใช้
 
 ---
 
-## 📊 10 Patterns Detected
+## 📊 9 Patterns Detected
 
 | Buffer | Pattern | Encoding | Bars Needed |
 |---|---|---|---|
-| 0 | Doji | 0 / 1 | 1 |
-| 1 | Hammer / Shooting Star | -1 / 0 / +1 | 1 |
-| 2 | Engulfing (Bull/Bear) | -1 / 0 / +1 | 2 |
-| 3 | Inside Bar | 0 / 1 | 2 |
-| 4 | Outside Bar | 0 / 1 | 2 |
-| 5 | Star (Morning/Evening) | -1 / 0 / +1 | 3 |
-| 6 | Three Soldiers/Crows | -1 / 0 / +1 | 3 |
-| 7 | Marubozu | -1 / 0 / +1 | 1 |
-| 8 | Harami (Bull/Bear) | -1 / 0 / +1 | 2 |
-| 9 | Piercing / Dark Cloud | -1 / 0 / +1 | 2 |
+| 0 | Hammer / Shooting Star | -1 / 0 / +1 | 1 |
+| 1 | Engulfing (Bull/Bear) | -1 / 0 / +1 | 2 |
+| 2 | Inside Bar | 0 / 1 | 2 |
+| 3 | Outside Bar | 0 / 1 | 2 |
+| **4** | **Morning / Evening Star** ⭐ | -1 / 0 / +1 | 3 |
+| 5 | Three Soldiers/Crows | -1 / 0 / +1 | 3 |
+| 6 | Marubozu | -1 / 0 / +1 | 1 |
+| 7 | Harami (Bull/Bear) | -1 / 0 / +1 | 2 |
+| 8 | Piercing / Dark Cloud | -1 / 0 / +1 | 2 |
+
+> ℹ️ **Doji removed in v1.20** — ค่อนข้างซ้ำซ้อนกับ Hammer (small body + wicks).
+>    Star pattern อยู่ที่ buffer [4] = Morning Star (+1) / Evening Star (-1).
 
 **Encoding convention:**
 - `+1` = Bullish pattern (potential upward signal)
@@ -59,25 +61,25 @@ if(g_h_candles == INVALID_HANDLE) {
 }
 
 // In OnTick or feature builder:
-double doji[], hammer[], engulfing[];
-CopyBuffer(g_h_candles, 0, 1, 1, doji);       // BufDoji[1]
-CopyBuffer(g_h_candles, 1, 1, 1, hammer);     // BufHammer[1]
-CopyBuffer(g_h_candles, 2, 1, 1, engulfing);  // BufEngulfing[1]
+double hammer[], engulfing[], star[];
+CopyBuffer(g_h_candles, 0, 1, 1, hammer);     // BufHammer[1]
+CopyBuffer(g_h_candles, 1, 1, 1, engulfing);  // BufEngulfing[1]
+CopyBuffer(g_h_candles, 4, 1, 1, star);       // BufStar[1] — Morning/Evening
 
 // Use as features for RL model:
-features[N+0] = doji[0];
-features[N+1] = hammer[0];
-features[N+2] = engulfing[0];
+features[N+0] = hammer[0];
+features[N+1] = engulfing[0];
+features[N+2] = star[0];
 // ...
 ```
 
 Buffer index reference (สำหรับ `CopyBuffer`):
 ```
-0: Doji          5: Star (Morning/Evening)
-1: Hammer        6: Soldiers/Crows
-2: Engulfing     7: Marubozu
-3: Inside        8: Harami
-4: Outside       9: Piercing/Dark Cloud
+0: Hammer        5: Soldiers/Crows
+1: Engulfing     6: Marubozu
+2: InsideBar     7: Harami
+3: OutsideBar    8: Piercing/Dark Cloud
+4: Star (Morning/Evening) ⭐
 ```
 
 ---
@@ -86,34 +88,56 @@ Buffer index reference (สำหรับ `CopyBuffer`):
 
 ### **Pattern Toggles (เปิด/ปิดทีละแบบ)**
 ```
-InpEnableDoji         = true     [0]
-InpEnableHammer       = true     [1] Hammer / Shooting Star
-InpEnableEngulfing    = true     [2]
-InpEnableInsideBar    = true     [3]
-InpEnableOutsideBar   = true     [4]
-InpEnableStar         = true     [5] Morning / Evening Star
-InpEnableSoldiers     = true     [6] Three Soldiers / Crows
-InpEnableMarubozu     = true     [7]
-InpEnableHarami       = true     [8]
-InpEnablePiercing     = true     [9] Piercing / Dark Cloud
+InpEnableHammer       = true     [0] Hammer / Shooting Star
+InpEnableEngulfing    = true     [1]
+InpEnableInsideBar    = true     [2]
+InpEnableOutsideBar   = true     [3]
+InpEnableStar         = true     [4] Morning / Evening Star ⭐
+InpEnableSoldiers     = true     [5] Three Soldiers / Crows
+InpEnableMarubozu     = true     [6]
+InpEnableHarami       = true     [7]
+InpEnablePiercing     = true     [8] Piercing / Dark Cloud
 ```
 > ⚠️ ปิดบาง pattern → buffer นั้นเป็น 0 ตลอด (ไม่ทำ detection)
 
 ### **Detection Thresholds**
 ```
-InpDojiThreshold        = 0.10   // body < 10% × range = Doji
 InpMarubozuThreshold    = 0.95   // body > 95% × range = Marubozu
 
 # Hammer / Shooting Star (3 filters):
 InpHammerWickRatio      = 2.0    // long wick ≥ 2× body
 InpHammerBodyMaxPct     = 0.30   // body ≤ 30% × range
-InpHammerOppWickMaxPct  = 0.10   // opposite wick ≤ 10% × range  ⭐ NEW
+InpHammerOppWickMaxPct  = 0.10   // opposite wick ≤ 10% × range
 
 # Engulfing:
 InpEngulfingMinRatio    = 2.0    // cur body ≥ 200% of prev body
                                   //   1.0 = ≥ same size (loose)
                                   //   2.0 = ≥ 2× larger ⭐ default
                                   //   3.0 = ≥ 3× larger (strict)
+
+# Morning / Evening Star (3-bar reversal):
+InpStarMidBodyMaxPct    = 0.40   // middle bar body ≤ 40% × middle range
+InpStarOuterBodyMinPct  = 0.70   // outer bars body ≥ 70% × middle range
+                                  //   ค่าน้อย = หลวม, ค่ามาก = strict
+```
+
+### **Morning / Evening Star Detection**
+
+```
+Morning Star (Bullish reversal at downtrend):
+   Bar 2 (oldest):    Bar 1 (middle/star):  Bar 0 (newest):
+   ┌──┐                                      ┌──┐
+   │  │       Big bear        Small body     │  │       Big bull
+   │  │       body ≥ 70%      ≤ 40% range    │  │       body ≥ 70%
+   │  │                       (gap down)     │  │       closes > bar2 mid
+   │  │           ↓                ↓         │  │           ↓
+   │  │         body0          body1         │  │         body2
+   │  │                                      │  │
+   └──┘                                      └──┘
+   bear           gap down star            big bull
+                                            confirms reversal
+
+Evening Star = inverse (bullish trend → small body → big bear closes < mid)
 ```
 
 ### **Hammer / Shooting Star Tuning**
@@ -152,7 +176,6 @@ InpEngulfingMinRatio    = 2.0    // cur body ≥ 200% of prev body
 ### **Visual Markers**
 ```
 InpDrawArrows      = true    // Draw arrow markers on chart
-InpDrawDojiArrow   = false   // Doji is too common — skip arrow by default
 ```
 
 ---
@@ -163,12 +186,11 @@ InpDrawDojiArrow   = false   // Doji is too common — skip arrow by default
 
 ```
 Data Window:
-  Doji         : 0 หรือ 1
   Hammer       : -1, 0, +1
   Engulfing    : -1, 0, +1
   InsideBar    : 0 หรือ 1
   OutsideBar   : 0 หรือ 1
-  Star         : -1, 0, +1
+  Star         : -1, 0, +1   ← Morning(+1) / Evening(-1) Star
   Soldiers     : -1, 0, +1
   Marubozu     : -1, 0, +1
   Harami       : -1, 0, +1
@@ -180,9 +202,6 @@ Data Window:
 ---
 
 ## 🔬 Pattern Definitions
-
-### **Doji** (indecision)
-Body ≤ 10% ของ range → market ลังเล
 
 ### **Hammer** (bullish reversal at downtrend)
 - Small body in upper half

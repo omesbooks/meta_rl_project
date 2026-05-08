@@ -65,16 +65,21 @@ C:\Users\<you>\AppData\Roaming\MetaQuotes\Terminal\<ID>\
 ```
 <MT5_Data>/MQL5/Files/
    └─ rl_prod_v10_enriched.onnx                  ← จาก STEP 1
+                                                    ⭐ ต้องอยู่ที่นี่ตอน COMPILE
+                                                    (จะถูก embed เข้า .ex5)
 
 <MT5_Data>/MQL5/Include/
-   └─ rl_prod_v10_enriched_config.mqh            ← จาก STEP 1
-   └─ RL_Indicators.mqh                           ← จาก mt5_files/
+   ├─ rl_prod_v10_enriched_config.mqh            ← จาก STEP 1
+   └─ RL_Indicators.mqh                          ← จาก mt5_files/
 
 <MT5_Data>/MQL5/Experts/
-   └─ ML_RL_Trader.mq5                            ← จาก mt5_files/
+   └─ ML_RL_Trader.mq5                           ← จาก mt5_files/
 ```
 
-⚠️ **สำคัญ:** ต้องตรงตำแหน่งเป๊ะ ไม่งั้น `#include` จะ error
+⚠️ **สำคัญ:**
+- `.onnx` ต้องอยู่ใน `MQL5/Files/` ตอน compile (`#resource` directive)
+- หลัง compile แล้ว → ONNX จะถูก embed ใน `.ex5` → ไม่ต้องการไฟล์ external อีก
+- ทำงานทั้งใน Terminal และ Strategy Tester (sandbox folder)
 
 ---
 

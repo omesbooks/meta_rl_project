@@ -28,9 +28,12 @@
 #include <rl_prod_v10_enriched_config.mqh>   // generated norm constants (in MQL5/Include/)
 #include <RL_Indicators.mqh>                 // feature computation (in MQL5/Include/)
 
+// ⭐ Embed ONNX model inside the compiled .ex5 (works in both Terminal + Tester)
+// File MUST exist in MQL5/Files/ at COMPILE TIME — embedded into .ex5 binary.
+#resource "\\Files\\rl_prod_v10_enriched.onnx" as uchar ExtModelData[]
+
 //=== Inputs (must match training!) ===
 input group "=== Model & Inference ==="
-input string   InpOnnxFile          = "rl_prod_v10_enriched.onnx";  // ONNX file in MQL5/Files/
 input double   InpConfidence        = 0.95;       // Confidence threshold (filter)
 
 input group "=== Risk Management ==="
@@ -67,16 +70,15 @@ bool           g_paused          = false;
 int OnInit()
 {
    Print("=== ML_RL_Trader Initializing ===");
-   Print("Model: ", InpOnnxFile);
+   Print("Model: embedded via #resource (size=", ArraySize(ExtModelData), " bytes)");
    Print("Input dim: ", RL_INPUT_DIM,
          "  (window=", RL_WINDOW_SIZE,
          " × features=", RL_FEATURE_COUNT, " + 3)");
 
-   // Load ONNX
-   g_onnx_handle = OnnxCreate(InpOnnxFile, ONNX_DEFAULT);
+   // Load ONNX from embedded resource (works in Tester + Terminal)
+   g_onnx_handle = OnnxCreateFromBuffer(ExtModelData, ONNX_DEFAULT);
    if(g_onnx_handle == INVALID_HANDLE) {
-      Print("❌ Failed to load ONNX: ", InpOnnxFile);
-      Print("   Make sure file is in <MT5>/MQL5/Files/");
+      Print("❌ Failed to load ONNX from buffer");
       Print("   Error: ", GetLastError());
       return INIT_FAILED;
    }

@@ -68,6 +68,7 @@ input double InpDojiThreshold        = 0.10;   // Doji: body < N × range
 input double InpMarubozuThreshold    = 0.95;   // Marubozu: body > N × range
 input double InpHammerWickRatio      = 2.0;    // Hammer: long wick > N × body
 input double InpHammerBodyRatio      = 0.30;   // Hammer: body < N × range
+input double InpEngulfingMinRatio    = 2.0;    // Engulfing: cur body ≥ N × prev body (2.0 = 200%)
 
 input group "=== Visual Markers ==="
 input bool InpDrawArrows           = true;     // Draw arrow markers on chart
@@ -164,8 +165,18 @@ int IsEngulfing(double o0, double c0, double o1, double c1)
    double prev_top = MathMax(o1, c1);
    double prev_bot = MathMin(o1, c1);
 
+   double cur_body  = MathAbs(c0 - o0);
+   double prev_body = MathAbs(c1 - o1);
+
+   // Body size filter: current must be ≥ N × previous body
+   // (e.g., 2.0 = 200% — engulfing candle must be at least double the size)
+   if(prev_body < 1e-10) return 0;
+   if(cur_body < prev_body * InpEngulfingMinRatio) return 0;
+
+   // Bullish engulfing: prev bear, current bull, current body engulfs prev body
    if(prev_bear && cur_bull && cur_top >= prev_top && cur_bot <= prev_bot)
       return 1;
+   // Bearish engulfing: prev bull, current bear, current body engulfs prev body
    if(prev_bull && cur_bear && cur_top >= prev_top && cur_bot <= prev_bot)
       return -1;
    return 0;

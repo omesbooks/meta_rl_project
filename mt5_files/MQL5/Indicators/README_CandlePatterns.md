@@ -105,6 +105,10 @@ InpDojiThreshold     = 0.10   // body < 10% × range = Doji
 InpMarubozuThreshold = 0.95   // body > 95% × range = Marubozu
 InpHammerWickRatio   = 2.0    // wick > 2× body = Hammer
 InpHammerBodyRatio   = 0.30   // body < 30% × range = Hammer-eligible
+InpEngulfingMinRatio = 2.0    // Engulfing: cur body ≥ 200% of prev body
+                              //   1.0 = ≥ same size (loose, แค่ engulf)
+                              //   2.0 = ≥ 2× larger ⭐ default (recommended)
+                              //   3.0 = ≥ 3× larger (strict, เฉพาะ strong reversal)
 ```
 
 ### **Visual Markers**

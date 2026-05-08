@@ -745,13 +745,70 @@ class RLTradingStudio(ctk.CTk):
             ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
         # =====================================================
-        # CARD 5: Log
+        # CARD 5: Export to MT5 (ONNX) ⭐ NEW
         # =====================================================
-        c5 = Card(page, title="📝 Tools Log")
-        c5.grid(row=5, column=0, sticky="ew")
+        c5 = Card(page, title="⑤ 🚀 Export to MT5 (ONNX)")
+        c5.grid(row=5, column=0, sticky="ew", pady=(0, 12))
         c5.grid_columnconfigure(0, weight=1)
 
-        log_frame = ctk.CTkFrame(c5, fg_color="#0a0e14", corner_radius=8,
+        ctk.CTkLabel(c5,
+            text="แปลง model PPO → ONNX + สร้างไฟล์ MT5 (EA + config + helpers) พร้อมใช้",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
+            wraplength=900, justify="left"
+            ).grid(row=1, column=0, sticky="w", padx=18, pady=(2, 12))
+
+        # Source model + deploy name
+        ex_grid = ctk.CTkFrame(c5, fg_color="transparent")
+        ex_grid.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
+        ex_grid.grid_columnconfigure(0, weight=2)
+        ex_grid.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(ex_grid, text="Source model", text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12)).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ctk.CTkLabel(ex_grid, text="Deploy name (filename prefix)",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12)).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
+
+        self.tool_export_model = ctk.CTkOptionMenu(ex_grid, values=["(none)"],
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            command=self._on_export_model_change)
+        self.tool_export_model.grid(row=1, column=0, sticky="ew")
+
+        self.tool_export_name = ctk.CTkEntry(ex_grid,
+            placeholder_text="rl_v10",
+            font=ctk.CTkFont(family="Consolas", size=12))
+        self.tool_export_name.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+
+        # Output dir
+        ctk.CTkLabel(c5, text="Output folder",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
+            ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
+
+        self.tool_export_outdir = ctk.CTkEntry(c5,
+            font=ctk.CTkFont(family="Consolas", size=11))
+        default_outdir = str(WORK_DIR / "mt5_files" / "MQL5")
+        self.tool_export_outdir.insert(0, default_outdir)
+        self.tool_export_outdir.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 8))
+
+        ctk.CTkLabel(c5,
+            text="(สร้าง Files/, Include/, Experts/ ภายใน folder นี้ — copy ไป MT5/MQL5/ ได้เลย)",
+            font=ctk.CTkFont(size=10), text_color=COLOR_DIM
+            ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 8))
+
+        ctk.CTkButton(c5, text="🚀 Export to ONNX + Generate MT5 Files",
+            command=self._export_onnx,
+            fg_color=COLOR_PURPLE, hover_color="#8b5cf6",
+            height=40, font=ctk.CTkFont(size=14, weight="bold")
+            ).grid(row=6, column=0, sticky="ew", padx=18, pady=(4, 16))
+
+        # =====================================================
+        # CARD 6: Log
+        # =====================================================
+        c6 = Card(page, title="📝 Tools Log")
+        c6.grid(row=6, column=0, sticky="ew")
+        c6.grid_columnconfigure(0, weight=1)
+
+        log_frame = ctk.CTkFrame(c6, fg_color="#0a0e14", corner_radius=8,
                                    border_width=1, border_color="#30363d")
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
 
@@ -1104,6 +1161,118 @@ class RLTradingStudio(ctk.CTk):
                 if menu.get() in ("(none)", "") and csvs[0] != "(none)":
                     menu.set(csvs[0])
             except: pass
+
+        # Refresh model dropdown for export (find .zip + _best/)
+        if hasattr(self, 'tool_export_model'):
+            models = set()
+            for p in WORK_DIR.glob("*.zip"):
+                models.add(p.stem)
+            for p in WORK_DIR.glob("*_best"):
+                if p.is_dir() and (p / "best_model.zip").exists():
+                    models.add(p.name.replace("_best", ""))
+            model_list = sorted(models) or ["(none)"]
+            try:
+                self.tool_export_model.configure(values=model_list)
+                if self.tool_export_model.get() in ("(none)", "") and model_list[0] != "(none)":
+                    self.tool_export_model.set(model_list[0])
+            except: pass
+
+    def _on_export_model_change(self, choice):
+        """When user picks a model, default deploy_name to the same"""
+        if choice in ("(none)", ""):
+            return
+        # Don't overwrite if user has typed something
+        current = self.tool_export_name.get().strip()
+        if not current or current in ("rl_v10", ""):
+            self.tool_export_name.delete(0, "end")
+            self.tool_export_name.insert(0, choice)
+
+    def _export_onnx(self):
+        threading.Thread(target=self._export_onnx_worker, daemon=True).start()
+
+    def _export_onnx_worker(self):
+        try:
+            model_name = self.tool_export_model.get()
+            if model_name in ("(none)", ""):
+                self._log(self.tools_log, "Please select a source model", "error")
+                return
+
+            deploy_name = self.tool_export_name.get().strip() or model_name
+            outdir = self.tool_export_outdir.get().strip()
+            if not outdir:
+                outdir = str(WORK_DIR / "mt5_files" / "MQL5")
+
+            self._log(self.tools_log,
+                f"\n=== Exporting {model_name} -> {deploy_name} ===", "info")
+            self._log(self.tools_log, f"Output: {outdir}", "info")
+
+            # Verify model exists
+            zip_paths = [
+                WORK_DIR / f"{model_name}_best" / "best_model.zip",
+                WORK_DIR / f"{model_name}.zip",
+            ]
+            model_path = None
+            for p in zip_paths:
+                if p.exists():
+                    model_path = p
+                    break
+            if model_path is None:
+                self._log(self.tools_log,
+                    f"❌ Model not found: {model_name}", "error")
+                return
+            self._log(self.tools_log, f"Found model: {model_path.name}", "info")
+
+            # Run export script as subprocess (so it inherits clean python env)
+            cmd = [
+                sys.executable, "export_to_onnx.py",
+                model_name,
+                "--name", deploy_name,
+                "--output_dir", outdir,
+            ]
+            self._log(self.tools_log, f"$ {' '.join(cmd)}", "info")
+
+            import subprocess
+            proc = subprocess.Popen(cmd,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                cwd=str(WORK_DIR), text=True,
+                bufsize=1, encoding='utf-8', errors='replace')
+
+            for line in proc.stdout:
+                line = line.rstrip()
+                tag = "info"
+                if "✅" in line or "[ok]" in line.lower(): tag = "success"
+                elif "❌" in line or "error" in line.lower(): tag = "error"
+                elif "⚠️" in line or "warn" in line.lower(): tag = "warn"
+                elif "[" in line and "]" in line: tag = "metric"
+                self._log(self.tools_log, line, tag)
+
+            proc.wait()
+
+            if proc.returncode == 0:
+                # Show files generated
+                out_path = Path(outdir)
+                self._log(self.tools_log,
+                    f"\n✅ Export complete! Files in {out_path}", "success")
+                self._log(self.tools_log,
+                    f"  Files/{deploy_name}.onnx", "metric")
+                self._log(self.tools_log,
+                    f"  Include/{deploy_name}_config.mqh", "metric")
+                self._log(self.tools_log,
+                    f"  Include/RL_Indicators.mqh", "metric")
+                self._log(self.tools_log,
+                    f"  Experts/{deploy_name}_EA.mq5", "metric")
+                self._log(self.tools_log,
+                    f"\n📋 Next: copy {out_path}/* to MT5's MQL5/ folder",
+                    "info")
+            else:
+                self._log(self.tools_log,
+                    f"❌ Export failed (exit code {proc.returncode})",
+                    "error")
+
+        except Exception as e:
+            import traceback
+            self._log(self.tools_log, f"Error: {e}", "error")
+            self._log(self.tools_log, traceback.format_exc(), "error")
 
     # --------------------------------------------------------
     # ⭐ Smart CSV reader — auto-detect UTF-16 / UTF-8

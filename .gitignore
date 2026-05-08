@@ -48,6 +48,10 @@ ENV/
 *_config.mqh
 !**/*_template.mqh
 
+# Auto-generated MT5 EAs (from template)
+# Keep template, ignore generated EA per-deployment
+mt5_files/MQL5/Experts/*_EA.mq5
+
 # Tensorboard
 events.out.tfevents*
 

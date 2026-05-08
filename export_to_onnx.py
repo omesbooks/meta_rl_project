@@ -1,24 +1,36 @@
 """
-export_to_onnx.py — Convert PPO model to ONNX for MT5 deployment
-==================================================================
+export_to_onnx.py — Convert PPO model to ONNX + generate MT5 deployment package
+================================================================================
 
 Pipeline:
   1. Load trained PPO model (PyTorch via stable_baselines3)
   2. Wrap policy network with softmax output
-  3. Export to ONNX format (compatible with MT5 5.0+ OnnxRun)
-  4. Verify ONNX output matches PyTorch output
-  5. Generate MQL5 header (.mqh) with normalization constants
-  6. Print setup instructions
+  3. Export to ONNX (single-file, MT5-compatible)
+  4. Verify ONNX output matches PyTorch
+  5. Generate MQL5 config header (norm stats)
+  6. Generate customized EA from template (with model name baked in)
+
+Output structure (in --output_dir):
+    MQL5/
+    ├── Files/
+    │   └── <deploy_name>.onnx
+    ├── Include/
+    │   ├── <deploy_name>_config.mqh
+    │   └── RL_Indicators.mqh   (copied from template)
+    └── Experts/
+        └── <deploy_name>_EA.mq5
 
 Usage:
-    python export_to_onnx.py <model_name>
+    python export_to_onnx.py <model_name> [--name <deploy_name>] [--output_dir <path>]
 
-Example:
+Examples:
+    # Default: deploy_name = model_name, output to mt5_files/MQL5/
     python export_to_onnx.py rl_prod_v10_enriched
-    # → produces: rl_prod_v10_enriched.onnx
-    # →           rl_prod_v10_enriched_config.mqh
+
+    # Custom deploy name and output dir
+    python export_to_onnx.py rl_prod_v10_enriched --name rl_v10 --output_dir mt5_files/MQL5
 """
-import sys, io, argparse
+import sys, io, argparse, shutil
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -29,10 +41,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='repla
 
 
 class PolicyWrapper(nn.Module):
-    """Wraps SB3 policy to output softmax probabilities directly.
-    Input:  (batch, obs_dim) - observation vector
-    Output: (batch, n_actions) - action probabilities
-    """
+    """Wraps SB3 policy to output softmax probabilities directly."""
     def __init__(self, policy):
         super().__init__()
         self.features_extractor = policy.pi_features_extractor
@@ -40,24 +49,47 @@ class PolicyWrapper(nn.Module):
         self.action_net = policy.action_net
 
     def forward(self, obs):
-        # SB3 policy forward pass for actor:
-        # obs -> features_extractor -> mlp_extractor.policy_net -> action_net -> logits
         features = self.features_extractor(obs)
         latent_pi = self.mlp_extractor.forward_actor(features)
         logits = self.action_net(latent_pi)
-        # Apply softmax to get action probabilities
         return torch.softmax(logits, dim=-1)
 
 
-def export_model(model_name: str):
+# Path to template files (relative to this script)
+SCRIPT_DIR = Path(__file__).parent.resolve()
+TEMPLATE_EA  = SCRIPT_DIR / "mt5_files" / "MQL5" / "Experts" / "ML_RL_Trader_template.mq5"
+TEMPLATE_INC = SCRIPT_DIR / "mt5_files" / "MQL5" / "Include"  / "RL_Indicators.mqh"
+
+
+def export_model(model_name: str, deploy_name: str = None, output_dir: str = None):
     print("=" * 70)
-    print(f"  Exporting {model_name} to ONNX")
+    print(f"  Exporting {model_name} → MT5 deployment package")
     print("=" * 70)
+
+    if deploy_name is None:
+        deploy_name = model_name
+
+    if output_dir is None:
+        output_dir = SCRIPT_DIR / "mt5_files" / "MQL5"
+    else:
+        output_dir = Path(output_dir)
+
+    out_files   = output_dir / "Files"
+    out_include = output_dir / "Include"
+    out_experts = output_dir / "Experts"
+    for d in [out_files, out_include, out_experts]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    # === Verify templates exist ===
+    if not TEMPLATE_EA.exists():
+        print(f"❌ Template EA not found: {TEMPLATE_EA}")
+        return 1
+    if not TEMPLATE_INC.exists():
+        print(f"❌ Template indicators not found: {TEMPLATE_INC}")
+        return 1
 
     # === Load PPO model ===
     from stable_baselines3 import PPO
-
-    # Try best checkpoint first, fall back to direct
     candidates = [
         f"{model_name}_best/best_model.zip",
         f"{model_name}.zip",
@@ -80,19 +112,18 @@ def export_model(model_name: str):
     print(f"  Input dim:  {obs_dim}")
     print(f"  Actions:    {n_actions}")
 
-    # === Wrap policy with softmax ===
+    # === Wrap policy ===
     wrapped = PolicyWrapper(model.policy)
     wrapped.eval()
 
     # === Export to ONNX ===
-    onnx_path = f"{model_name}.onnx"
-    dummy = torch.randn(1, obs_dim, dtype=torch.float32)
+    onnx_filename = f"{deploy_name}.onnx"
+    onnx_path = out_files / onnx_filename
 
     print(f"\n[export] -> {onnx_path}")
+    dummy = torch.randn(1, obs_dim, dtype=torch.float32)
     torch.onnx.export(
-        wrapped,
-        dummy,
-        onnx_path,
+        wrapped, dummy, str(onnx_path),
         export_params=True,
         opset_version=14,
         do_constant_folding=True,
@@ -105,26 +136,23 @@ def export_model(model_name: str):
     )
 
     # === Consolidate external data into single file (MT5 requires this!) ===
-    # PyTorch's new dynamo exporter sometimes splits weights into .onnx.data
-    # MT5's OnnxCreate() does NOT support external data → must merge
     print(f"\n[consolidate] merging external data into single .onnx file...")
     import onnx as onnx_pkg
-    loaded = onnx_pkg.load(onnx_path, load_external_data=True)
+    loaded = onnx_pkg.load(str(onnx_path), load_external_data=True)
     onnx_pkg.save_model(
-        loaded, onnx_path,
+        loaded, str(onnx_path),
         save_as_external_data=False,
     )
-    data_file = Path(f"{onnx_path}.data")
+    data_file = onnx_path.with_suffix(onnx_path.suffix + ".data")
     if data_file.exists():
         data_file.unlink()
-        print(f"  removed: {data_file.name}")
-    print(f"  ✅ Single-file ONNX: {Path(onnx_path).stat().st_size / 1024:.1f} KB")
+    onnx_size_kb = onnx_path.stat().st_size / 1024
+    print(f"  ✅ Single-file ONNX: {onnx_size_kb:.1f} KB")
 
     # === Verify ONNX matches PyTorch ===
     print(f"\n[verify] comparing PyTorch vs ONNX outputs...")
     import onnxruntime as ort
-    sess = ort.InferenceSession(onnx_path)
-
+    sess = ort.InferenceSession(str(onnx_path))
     test_inputs = [
         torch.randn(1, obs_dim, dtype=torch.float32),
         torch.zeros(1, obs_dim, dtype=torch.float32),
@@ -137,9 +165,8 @@ def export_model(model_name: str):
         onnx_out = sess.run(None, {'state': t.numpy()})[0]
         diff = np.abs(torch_out - onnx_out).max()
         max_diff = max(max_diff, diff)
-        print(f"  Test {i+1}: max diff = {diff:.2e}")
     if max_diff < 1e-5:
-        print(f"  ✅ ONNX output matches PyTorch (max diff: {max_diff:.2e})")
+        print(f"  ✅ ONNX matches PyTorch (max diff: {max_diff:.2e})")
     else:
         print(f"  ⚠️  Max diff = {max_diff:.2e} — investigate!")
 
@@ -147,28 +174,22 @@ def export_model(model_name: str):
     norm_path = f"{model_name}_norm.csv"
     if not Path(norm_path).exists():
         print(f"\n⚠️  Norm stats not found: {norm_path}")
-        print(f"     EA will not be able to normalize features correctly!")
         return 1
 
     print(f"\n[norm] {norm_path}")
     norm = pd.read_csv(norm_path, index_col=0)
     feat_count = len(norm)
-    print(f"  Features: {feat_count}")
-
-    # Calculate window size from input dim
-    # input_dim = window * features + 3 (position info)
-    extras = 3  # position, unrealized_pnl, bars_in_position
+    extras = 3
     if (obs_dim - extras) % feat_count != 0:
-        print(f"⚠️  obs_dim ({obs_dim}) - 3 not divisible by features ({feat_count})!")
-        print(f"     Cannot determine window size automatically")
+        print(f"⚠️  obs_dim mismatch — cannot determine window size!")
         window = 0
     else:
         window = (obs_dim - extras) // feat_count
-        print(f"  Window size: {window}")
+    print(f"  Features: {feat_count}, Window: {window}")
 
-    # === Generate MQL5 config header ===
-    mqh_path = f"{model_name}_config.mqh"
-    print(f"\n[generate] -> {mqh_path}")
+    # === Generate config.mqh ===
+    config_filename = f"{deploy_name}_config.mqh"
+    config_path = out_include / config_filename
 
     feat_names = list(norm.index)
     means = norm['mean'].values
@@ -176,13 +197,14 @@ def export_model(model_name: str):
 
     mqh = []
     mqh.append("//+------------------------------------------------------------------+")
-    mqh.append(f"//| {model_name}_config.mqh — Auto-generated by export_to_onnx.py |")
+    mqh.append(f"//| {config_filename} — Auto-generated by export_to_onnx.py")
     mqh.append(f"//| Model: {model_name}")
-    mqh.append(f"//| Input dim: {obs_dim} = window({window}) x features({feat_count}) + 3")
+    mqh.append(f"//| Deploy: {deploy_name}")
+    mqh.append(f"//| Input dim: {obs_dim} = window({window}) × features({feat_count}) + 3")
     mqh.append(f"//| Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
     mqh.append("//+------------------------------------------------------------------+")
-    mqh.append("#ifndef RL_CONFIG_MQH")
-    mqh.append("#define RL_CONFIG_MQH")
+    mqh.append(f"#ifndef {deploy_name.upper()}_CONFIG_MQH")
+    mqh.append(f"#define {deploy_name.upper()}_CONFIG_MQH")
     mqh.append("")
     mqh.append(f"#define RL_INPUT_DIM     {obs_dim}")
     mqh.append(f"#define RL_OUTPUT_DIM    {n_actions}")
@@ -210,46 +232,59 @@ def export_model(model_name: str):
         mqh.append(f"   {s:+.10f}{comma}  // {feat_names[i]}")
     mqh.append("};")
     mqh.append("")
-    mqh.append("#endif // RL_CONFIG_MQH")
+    mqh.append(f"#endif // {deploy_name.upper()}_CONFIG_MQH")
 
-    Path(mqh_path).write_text('\n'.join(mqh), encoding='utf-8')
-    print(f"  ✅ Generated {mqh_path}")
+    config_path.write_text('\n'.join(mqh), encoding='utf-8')
+    print(f"\n[config] -> {config_path}")
+
+    # === Generate EA from template ===
+    ea_filename = f"{deploy_name}_EA.mq5"
+    ea_path = out_experts / ea_filename
+
+    template_text = TEMPLATE_EA.read_text(encoding='utf-8')
+    customized = (template_text
+        .replace("__MODEL_NAME__",    deploy_name)
+        .replace("__CONFIG_HEADER__", config_filename)
+        .replace("__ONNX_FILE__",     onnx_filename))
+    ea_path.write_text(customized, encoding='utf-8')
+    print(f"[EA]     -> {ea_path}")
+
+    # === Copy RL_Indicators.mqh (if not already there) ===
+    indicators_dest = out_include / "RL_Indicators.mqh"
+    if not indicators_dest.exists() or indicators_dest != TEMPLATE_INC:
+        if indicators_dest.exists() and indicators_dest.samefile(TEMPLATE_INC):
+            pass  # same file, no copy needed
+        else:
+            shutil.copy2(TEMPLATE_INC, indicators_dest)
+    print(f"[helpers]-> {indicators_dest}")
 
     # === Summary ===
     print()
     print("=" * 70)
-    print("  EXPORT COMPLETE")
+    print(f"  ✅ EXPORT COMPLETE — {deploy_name}")
     print("=" * 70)
+    print(f"\nOutput structure:")
+    print(f"  {output_dir}/")
+    print(f"  ├── Files/")
+    print(f"  │   └── {onnx_filename}        ({onnx_size_kb:.1f} KB)")
+    print(f"  ├── Include/")
+    print(f"  │   ├── {config_filename}")
+    print(f"  │   └── RL_Indicators.mqh")
+    print(f"  └── Experts/")
+    print(f"      └── {ea_filename}")
 
-    onnx_size = Path(onnx_path).stat().st_size / 1024
-    mqh_size = Path(mqh_path).stat().st_size / 1024
+    print(f"\n📋 To deploy in MT5:")
+    print(f"  1. Open MT5 → File → Open Data Folder")
+    print(f"  2. Copy {output_dir}/* contents → MQL5/")
+    print(f"     (mirrors structure: Files/, Include/, Experts/)")
+    print(f"  3. Open MetaEditor → Experts/{ea_filename}")
+    print(f"  4. Compile (F7)")
+    print(f"  5. Strategy Tester → select {deploy_name}_EA")
 
-    print(f"\n  📦 Files generated:")
-    print(f"    {onnx_path}        ({onnx_size:.1f} KB)")
-    print(f"    {mqh_path}  ({mqh_size:.1f} KB)")
-
-    print(f"\n  📊 Model info:")
-    print(f"    Input:    {obs_dim} floats (window={window}, features={feat_count}, +3 pos)")
-    print(f"    Output:   {n_actions} probabilities (Hold/Buy/Sell/Close)")
-    print(f"    Features: {feat_count}")
-
-    print(f"\n  🚀 Next steps for MT5 deployment:")
-    print(f"    1. Copy {onnx_path} to: <MT5>/MQL5/Files/")
-    print(f"    2. Copy {mqh_path} to: <MT5>/MQL5/Include/")
-    print(f"    3. Copy ML_RL_Trader.mq5 + RL_Indicators.mqh to: <MT5>/MQL5/Experts/")
-    print(f"    4. Compile in MetaEditor (F7)")
-    print(f"    5. Open Strategy Tester → select EA → Run")
-
-    print(f"\n  ⚙️  Required EA inputs (must match training):")
-    print(f"    - Symbol:     EURUSD (or what you trained on)")
-    print(f"    - Timeframe:  H4")
-    print(f"    - Window:     {window}")
-    print(f"    - Conf:       0.95")
-
-    # Print first few features for verification
-    print(f"\n  🔍 First 10 features (for verification):")
-    for i in range(min(10, feat_count)):
-        print(f"    [{i:2d}] {feat_names[i]:25s}  μ={means[i]:+.4f}  σ={stds[i]:+.4f}")
+    print(f"\n⚙️  EA Settings to match training:")
+    print(f"  • Window:     {window}")
+    print(f"  • Confidence: 0.95 (recommended)")
+    print(f"  • Symbol/TF:  match training data")
 
     return 0
 
@@ -257,8 +292,12 @@ def export_model(model_name: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("model_name", help="Model name (without .zip)")
+    ap.add_argument("--name", dest="deploy_name", default=None,
+                    help="Deployment name (default: same as model_name)")
+    ap.add_argument("--output_dir", default=None,
+                    help="Output directory (default: mt5_files/MQL5/)")
     args = ap.parse_args()
-    return export_model(args.model_name)
+    return export_model(args.model_name, args.deploy_name, args.output_dir)
 
 
 if __name__ == "__main__":

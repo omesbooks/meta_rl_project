@@ -22,15 +22,15 @@
 #property strict
 #property version   "1.00"
 #property copyright "RL Trading Project"
-#property description "ML model deployment via ONNX — V10 enriched"
+#property description "ML model deployment via ONNX — __MODEL_NAME__"
 
 #include <Trade\Trade.mqh>
-#include <rl_prod_v10_enriched_config.mqh>   // generated norm constants (in MQL5/Include/)
+#include <__CONFIG_HEADER__>                 // generated norm constants (in MQL5/Include/)
 #include <RL_Indicators.mqh>                 // feature computation (in MQL5/Include/)
 
 // ⭐ Embed ONNX model inside the compiled .ex5 (works in both Terminal + Tester)
 // File MUST exist in MQL5/Files/ at COMPILE TIME — embedded into .ex5 binary.
-#resource "\\Files\\rl_prod_v10_enriched.onnx" as uchar ExtModelData[]
+#resource "\\Files\\__ONNX_FILE__" as uchar ExtModelData[]
 
 //=== Inputs (must match training!) ===
 input group "=== Model & Inference ==="

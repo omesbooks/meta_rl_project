@@ -104,6 +104,22 @@ def export_model(model_name: str):
         },
     )
 
+    # === Consolidate external data into single file (MT5 requires this!) ===
+    # PyTorch's new dynamo exporter sometimes splits weights into .onnx.data
+    # MT5's OnnxCreate() does NOT support external data → must merge
+    print(f"\n[consolidate] merging external data into single .onnx file...")
+    import onnx as onnx_pkg
+    loaded = onnx_pkg.load(onnx_path, load_external_data=True)
+    onnx_pkg.save_model(
+        loaded, onnx_path,
+        save_as_external_data=False,
+    )
+    data_file = Path(f"{onnx_path}.data")
+    if data_file.exists():
+        data_file.unlink()
+        print(f"  removed: {data_file.name}")
+    print(f"  ✅ Single-file ONNX: {Path(onnx_path).stat().st_size / 1024:.1f} KB")
+
     # === Verify ONNX matches PyTorch ===
     print(f"\n[verify] comparing PyTorch vs ONNX outputs...")
     import onnxruntime as ort

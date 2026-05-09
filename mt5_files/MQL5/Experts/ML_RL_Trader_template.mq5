@@ -110,6 +110,13 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   // ⭐ Build feature index map (matches model's RL_FEATURE_NAMES → master list)
+   //    Auto-loads CandlePatterns indicator if model uses any candle_* feature.
+   if(!RL_BuildFeatureMap(_Symbol, _Period)) {
+      Print("Failed to build feature map");
+      return INIT_FAILED;
+   }
+
    // Init feature buffer
    ArrayResize(g_feat_buffer, RL_WINDOW_SIZE * RL_FEATURE_COUNT);
    ArrayInitialize(g_feat_buffer, 0.0);
@@ -483,7 +490,7 @@ void OnTick()
 
    // 3) Build features for last closed bar
    double features[];
-   if(!RL_BuildFeatures(_Symbol, _Period, 1, features)) {
+   if(!RL_BuildModelFeatures(_Symbol, _Period, 1, features)) {
       Print("Failed to build features");
       return;
    }

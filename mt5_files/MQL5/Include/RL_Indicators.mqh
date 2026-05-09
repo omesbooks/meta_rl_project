@@ -26,6 +26,54 @@
 #ifndef RL_INDICATORS_MQH
 #define RL_INDICATORS_MQH
 
+//=== ALL_FEATURE_NAMES — master list of every feature this helper can compute
+// Order matters! Used to map RL_FEATURE_NAMES (from config.mqh) → array index.
+// If model uses ANY of these, it'll be computed. Subset selected per RL_FEATURE_NAMES.
+#define RL_ALL_FEATURES_COUNT 75
+const string RL_ALL_FEATURES[RL_ALL_FEATURES_COUNT] = {
+   // [0-3] RSI aggregate
+   "rsi_min", "rsi_max", "rsi_mean", "rsi_std",
+   // [4-7] EMA MULTI
+   "ema_20", "ema_50", "ema_100", "ema_200",
+   // [8-11] ATR aggregate
+   "atr_min", "atr_max", "atr_mean", "atr_std",
+   // [12-15] Stoch aggregate
+   "stoch_min", "stoch_max", "stoch_mean", "stoch_std",
+   // [16-19] CCI aggregate
+   "cci_min", "cci_max", "cci_mean", "cci_std",
+   // [20-23] WPR aggregate
+   "wpr_min", "wpr_max", "wpr_mean", "wpr_std",
+   // [24-27] ADX aggregate
+   "adx_min", "adx_max", "adx_mean", "adx_std",
+   // [28] EMA(200)
+   "ema_long",
+   // [29-31] MACD
+   "macd", "macd_signal", "macd_hist",
+   // [32] BB
+   "bb_position",
+   // [33-37] Time
+   "hour", "dow", "session_london", "session_ny", "session_asia",
+   // [38-42] Returns
+   "ret_1", "ret_3", "ret_5", "ret_10", "ret_20",
+   // [43-45] Statistical
+   "close_zscore", "pct_rank", "sharpe_20",
+   // [46-47] Bar shape
+   "hl_range", "body_size",
+   // [48-55] Phase A — D1 multi-TF
+   "d1_rsi", "d1_ema_fast", "d1_ema_slow", "d1_trend_dir",
+   "d1_atr", "d1_atr_pct", "d1_adx", "d1_alignment",
+   // [56-60] Phase A — Volatility regime
+   "atr_percentile_100", "atr_zscore_100", "vol_state",
+   "adx_trending", "adx_strong",
+   // [61-64] Phase A — Range / distance
+   "range_pos_50", "range_pos_20", "dist_ema50", "dist_ema200",
+   // [65-74] ⭐ Candle patterns (via iCustom CandlePatterns)
+   "candle_hammer", "candle_engulfing", "candle_inside",
+   "candle_outside", "candle_star", "candle_soldiers",
+   "candle_marubozu", "candle_harami", "candle_piercing",
+   "candle_mathold"
+};
+
 //=== Indicator periods (MUST match DataCollector_v3.mq5) ===
 #define RSI_PMIN    4
 #define RSI_PMAX    30   // 27 periods
@@ -68,6 +116,14 @@ int g_h_macd, g_h_bb;
 // D1 handles
 int g_h_d1_rsi, g_h_d1_ema_fast, g_h_d1_ema_slow;
 int g_h_d1_atr, g_h_d1_adx;
+
+// ⭐ Candle Patterns indicator handle (loaded via iCustom)
+int g_h_candles = INVALID_HANDLE;
+
+// Feature name → all_values index map (built once from RL_FEATURE_NAMES)
+// -1 means feature not found in master list (will use 0 as fallback)
+int g_feature_idx_map[];
+bool g_uses_candles = false;   // true if any candle_* feature in model
 
 //+------------------------------------------------------------------+
 //| Initialize all indicator handles (call from OnInit)              |
@@ -160,6 +216,76 @@ bool RL_InitIndicators(string symbol, ENUM_TIMEFRAMES tf)
 }
 
 //+------------------------------------------------------------------+
+//| Build feature index map from RL_FEATURE_NAMES (config.mqh)       |
+//| → maps each model-feature to its index in RL_ALL_FEATURES         |
+//| Detects if any candle_* feature is needed → triggers iCustom load |
+//+------------------------------------------------------------------+
+bool RL_BuildFeatureMap(string symbol, ENUM_TIMEFRAMES tf)
+{
+   ArrayResize(g_feature_idx_map, RL_FEATURE_COUNT);
+   g_uses_candles = false;
+   int unknown_count = 0;
+
+   for(int i = 0; i < RL_FEATURE_COUNT; i++) {
+      string want = RL_FEATURE_NAMES[i];
+      int idx = -1;
+      for(int j = 0; j < RL_ALL_FEATURES_COUNT; j++) {
+         if(RL_ALL_FEATURES[j] == want) {
+            idx = j;
+            break;
+         }
+      }
+      g_feature_idx_map[i] = idx;
+      if(idx < 0) {
+         PrintFormat("[RL] ⚠️ Unknown feature in model: '%s' (will use 0)", want);
+         unknown_count++;
+      } else if(idx >= 65) {  // candle_* features start at index 65
+         g_uses_candles = true;
+      }
+   }
+
+   if(unknown_count > 0) {
+      PrintFormat("[RL] ⚠️ %d unknown feature(s) — predictions may be unreliable",
+                   unknown_count);
+   }
+
+   // Load CandlePatterns indicator only if needed
+   if(g_uses_candles) {
+      // Use indicator's default settings — must match what was used at training time!
+      g_h_candles = iCustom(symbol, tf, "CandlePatterns",
+         // Pattern toggles (10) — all true (let model decide)
+         true, true, true, true, true, true, true, true, true, true,
+         // Detection thresholds (8)
+         0.95,    // marubozu_threshold
+         2.0,     // hammer_wick_ratio
+         0.30,    // hammer_body_max_pct
+         0.10,    // hammer_opp_wick_max_pct
+         2.0,     // engulfing_min_ratio
+         0.40,    // star_mid_body_max_pct
+         0.70,    // star_outer_body_min_pct
+         0.60,    // mathold_outer_body_min
+         0.40,    // mathold_mid_body_max
+         true,    // mathold_require_break
+         true,    // inside_outside_strict
+         0.5,     // piercing_min_body_ratio
+         // Visual markers (always off in EA)
+         false
+      );
+      if(g_h_candles == INVALID_HANDLE) {
+         Print("[RL] ❌ Failed to load CandlePatterns indicator (err=",
+               GetLastError(), ")");
+         Print("     Make sure CandlePatterns.mq5 is compiled in MQL5/Indicators/");
+         return false;
+      }
+      Print("[RL] ✅ CandlePatterns loaded for candle_* features");
+   }
+
+   PrintFormat("[RL] Feature mapping: %d model features → %d known, %d unknown",
+                RL_FEATURE_COUNT, RL_FEATURE_COUNT - unknown_count, unknown_count);
+   return true;
+}
+
+//+------------------------------------------------------------------+
 //| Release all indicator handles                                    |
 //+------------------------------------------------------------------+
 void RL_DeinitIndicators()
@@ -182,6 +308,7 @@ void RL_DeinitIndicators()
    IndicatorRelease(g_h_d1_ema_slow);
    IndicatorRelease(g_h_d1_atr);
    IndicatorRelease(g_h_d1_adx);
+   if(g_h_candles != INVALID_HANDLE) IndicatorRelease(g_h_candles);
 }
 
 //+------------------------------------------------------------------+
@@ -223,12 +350,13 @@ void CalcAggregate(double &values[], double &out_min, double &out_max,
 }
 
 //+------------------------------------------------------------------+
-//| Build feature vector for current bar                             |
-//| Returns 65 features in normalized order (matching norm.csv)      |
+//| Build ALL 75 possible features (for use with RL_BuildModelFeatures)|
+//| Output: features[0..74] in RL_ALL_FEATURES order                  |
 //+------------------------------------------------------------------+
-bool RL_BuildFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift, double &features[])
+bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
+                          double &features[])
 {
-   ArrayResize(features, 65);
+   ArrayResize(features, RL_ALL_FEATURES_COUNT);
 
    //=== [0-3] RSI aggregate (4-30) ===
    {
@@ -482,6 +610,44 @@ bool RL_BuildFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift, double &feat
    //   dist_ema200
    features[64] = (features[7] > 1e-9) ? (c0 - features[7]) / features[7] : 0;
 
+   //=== [65-74] ⭐ Candle patterns (10) — only if model uses them ===
+   if(g_uses_candles && g_h_candles != INVALID_HANDLE) {
+      // Each pattern is one buffer (0..9), index in CandlePatterns matches:
+      // 0:Hammer 1:Engulfing 2:Inside 3:Outside 4:Star
+      // 5:Soldiers 6:Marubozu 7:Harami 8:Piercing 9:MatHold
+      for(int b = 0; b < 10; b++) {
+         features[65 + b] = GetVal(g_h_candles, b, shift);
+      }
+   } else {
+      // Fill with 0 if not loaded — won't affect models that don't use candles
+      for(int b = 0; b < 10; b++) features[65 + b] = 0.0;
+   }
+
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Build feature vector for the SPECIFIC model (subset of 75)        |
+//| Uses g_feature_idx_map (built by RL_BuildFeatureMap) to pick      |
+//| only features the model expects, in correct order.                |
+//|                                                                   |
+//| MUST call RL_BuildFeatureMap() once in OnInit before this!        |
+//+------------------------------------------------------------------+
+bool RL_BuildModelFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
+                            double &features[])
+{
+   double all_values[];
+   if(!RL_BuildAllFeatures(symbol, tf, shift, all_values)) return false;
+
+   ArrayResize(features, RL_FEATURE_COUNT);
+   for(int i = 0; i < RL_FEATURE_COUNT; i++) {
+      int idx = g_feature_idx_map[i];
+      if(idx >= 0 && idx < RL_ALL_FEATURES_COUNT) {
+         features[i] = all_values[idx];
+      } else {
+         features[i] = 0.0;  // unknown feature → fallback
+      }
+   }
    return true;
 }
 

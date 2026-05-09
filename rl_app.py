@@ -14,7 +14,7 @@ from pathlib import Path
 from datetime import datetime
 
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, colorchooser
 import tkinter as tk
 
 # Force UTF-8 stdout
@@ -3340,24 +3340,29 @@ class RLTradingStudio(ctk.CTk):
             sub.grid(row=row, column=col, sticky="ew", padx=4, pady=4)
             sub.grid_columnconfigure(1, weight=1)
 
-            # Color swatch
-            swatch = ctk.CTkFrame(sub, width=24, height=24,
-                fg_color=cur_colors[key], corner_radius=4)
+            # ⭐ Clickable color swatch — opens color picker dialog
+            swatch = ctk.CTkFrame(sub, width=28, height=28,
+                fg_color=cur_colors[key], corner_radius=4,
+                border_width=1, border_color="#30363d",
+                cursor="hand2")
             swatch.grid(row=0, column=0, padx=(0, 6), pady=(2, 0))
             swatch.grid_propagate(False)
+            # Bind click → open color picker
+            swatch.bind("<Button-1>",
+                lambda e, k=key: self._open_color_picker(k))
 
             entry = ctk.CTkEntry(sub, placeholder_text="#xxxxxx",
                 font=ctk.CTkFont(family="Consolas", size=11), width=90)
             entry.insert(0, cur_colors[key])
             entry.grid(row=0, column=1, sticky="ew")
 
-            ctk.CTkLabel(sub, text=f"{label} — {hint}",
+            ctk.CTkLabel(sub, text=f"{label} — {hint}  (คลิก swatch)",
                 text_color=COLOR_DIM, font=ctk.CTkFont(size=9),
                 anchor="w"
                 ).grid(row=1, column=0, columnspan=2, sticky="w", padx=(0, 0))
 
             self.brand_color_inputs[key] = (entry, swatch)
-            # Update swatch when entry changes
+            # Update swatch when entry changes (typing hex)
             entry.bind("<KeyRelease>",
                 lambda e, k=key: self._update_swatch(k))
 
@@ -3449,6 +3454,27 @@ Built with: CustomTkinter + stable-baselines3
             return
         try:
             swatch.configure(fg_color=val)
+        except: pass
+
+    def _open_color_picker(self, key):
+        """Open native color picker dialog → update entry + swatch"""
+        entry, swatch = self.brand_color_inputs[key]
+        current = entry.get().strip() or "#888888"
+        # askcolor returns ((r,g,b), '#rrggbb') or (None, None) if cancelled
+        try:
+            result = colorchooser.askcolor(
+                color=current,
+                title=f"Pick color for {key}",
+                parent=self)
+        except Exception:
+            return
+        if result is None or result[1] is None:
+            return  # user cancelled
+        new_hex = result[1]   # already in #rrggbb format
+        entry.delete(0, "end")
+        entry.insert(0, new_hex)
+        try:
+            swatch.configure(fg_color=new_hex)
         except: pass
 
     def _save_branding(self):

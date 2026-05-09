@@ -43,13 +43,22 @@ WORK_DIR = Path(__file__).parent.resolve()
 # ============================================================
 BRANDING = {
     # Window title
-    "window_title":   "RL Trading Studio",
+    "window_title":   "Metafxclub RL Studio",
 
-    # Sidebar logo
-    "logo_emoji":     "🤖",
-    "logo_text":      "RL Studio",
-    "logo_color":     COLOR_ACCENT,    # สีตัวอักษร logo
-    "logo_size":      20,               # ขนาดฟอนต์ logo
+    # Window icon (taskbar/title bar) — PNG/ICO path, empty = system default
+    "window_icon":    "",                  # e.g. "assets/icon.ico"
+
+    # Sidebar logo IMAGE (PNG/JPG/GIF) — recommended for branding
+    # Empty string = ใช้ emoji แทน (ดู logo_emoji)
+    # Path: relative to project root OR absolute path
+    "logo_image":      "",                  # e.g. "assets/logo.png"
+    "logo_image_size": (32, 32),            # (width, height) in pixels
+
+    # Sidebar logo TEXT (ใช้คู่กับ image, หรือ emoji ถ้าไม่มี image)
+    "logo_emoji":     "🤖",                 # emoji prefix (ใช้ถ้าไม่มี image)
+    "logo_text":      "Metafxclub RL",      # ชื่อใน sidebar
+    "logo_color":     COLOR_ACCENT,         # สีตัวอักษร logo
+    "logo_size":      20,                   # ขนาดฟอนต์ logo
 
     # Subtitle (under logo)
     "subtitle":       "v1.0 · Trading AI",
@@ -338,6 +347,57 @@ class RLTradingStudio(ctk.CTk):
         self.title(BRANDING["window_title"])
         self.geometry("1280x800")
         self.minsize(1100, 700)
+        # Window icon (titlebar/taskbar)
+        self._set_window_icon()
+
+    # ---------- Branding helpers ----------
+    def _set_window_icon(self):
+        """Set window icon from BRANDING['window_icon'] if specified"""
+        icon_path = BRANDING.get("window_icon", "")
+        if not icon_path:
+            return
+        full_path = Path(icon_path)
+        if not full_path.is_absolute():
+            full_path = WORK_DIR / icon_path
+        if not full_path.exists():
+            print(f"[branding] window_icon not found: {full_path}")
+            return
+        try:
+            if full_path.suffix.lower() == ".ico":
+                self.iconbitmap(str(full_path))
+            else:
+                # PNG/JPG → use iconphoto
+                from PIL import Image, ImageTk
+                img = ImageTk.PhotoImage(Image.open(full_path))
+                self.iconphoto(True, img)
+                self._icon_ref = img  # keep reference (avoid garbage collection)
+        except Exception as e:
+            print(f"[branding] Failed to set window icon: {e}")
+
+    def _load_logo_image(self):
+        """Load sidebar logo image as CTkImage. Returns None if not configured."""
+        path = BRANDING.get("logo_image", "")
+        if not path:
+            return None
+        full_path = Path(path)
+        if not full_path.is_absolute():
+            full_path = WORK_DIR / path
+        if not full_path.exists():
+            print(f"[branding] logo_image not found: {full_path}")
+            return None
+        try:
+            from PIL import Image
+            size = BRANDING.get("logo_image_size", (32, 32))
+            if isinstance(size, int):
+                size = (size, size)
+            return ctk.CTkImage(
+                light_image=Image.open(full_path),
+                dark_image=Image.open(full_path),
+                size=size,
+            )
+        except Exception as e:
+            print(f"[branding] Failed to load logo image: {e}")
+            return None
 
         # State
         self.current_page = "train"
@@ -365,18 +425,37 @@ class RLTradingStudio(ctk.CTk):
         side.grid_propagate(False)
         side.grid_rowconfigure(99, weight=1)
 
-        # Logo
+        # === Logo container ===
         logo_frame = ctk.CTkFrame(side, fg_color="transparent")
         logo_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 16))
-        logo_text = f"{BRANDING['logo_emoji']} {BRANDING['logo_text']}".strip()
-        ctk.CTkLabel(logo_frame, text=logo_text,
+
+        # Try to load image logo
+        logo_image_obj = self._load_logo_image()
+
+        # Inner row: image (optional) + text logo
+        logo_row = ctk.CTkFrame(logo_frame, fg_color="transparent")
+        logo_row.pack(anchor="w")
+
+        if logo_image_obj is not None:
+            # Image present — show image + text (no emoji)
+            ctk.CTkLabel(logo_row, image=logo_image_obj, text=""
+                          ).pack(side="left", padx=(0, 8))
+            display_text = BRANDING["logo_text"]
+        else:
+            # No image — fall back to emoji + text
+            display_text = f"{BRANDING['logo_emoji']} {BRANDING['logo_text']}".strip()
+
+        ctk.CTkLabel(logo_row, text=display_text,
                       font=ctk.CTkFont(size=BRANDING["logo_size"], weight="bold"),
                       text_color=BRANDING["logo_color"]
-                      ).pack(anchor="w")
-        ctk.CTkLabel(logo_frame, text=BRANDING["subtitle"],
-                      font=ctk.CTkFont(size=BRANDING["subtitle_size"]),
-                      text_color=BRANDING["subtitle_color"]
-                      ).pack(anchor="w")
+                      ).pack(side="left")
+
+        # Subtitle
+        if BRANDING.get("subtitle"):
+            ctk.CTkLabel(logo_frame, text=BRANDING["subtitle"],
+                          font=ctk.CTkFont(size=BRANDING["subtitle_size"]),
+                          text_color=BRANDING["subtitle_color"]
+                          ).pack(anchor="w", pady=(2, 0))
 
         # Separator
         ctk.CTkFrame(side, height=1, fg_color="#30363d"

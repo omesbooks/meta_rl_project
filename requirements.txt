@@ -1,3 +1,24 @@
 pycaret>=3.3.0
 pandas>=2.0.0
 openpyxl>=3.1.0
+
+# RL training stack
+stable-baselines3>=2.0.0
+gymnasium>=1.0.0
+torch>=2.0.0
+matplotlib>=3.5.0
+plotly>=5.0.0
+
+# GUI
+customtkinter>=5.2.0
+
+# ONNX export (for MT5 deployment)
+onnx>=1.20.0
+onnxscript>=0.7.0
+onnxruntime>=1.20.0
+
+# PowerPoint slide generation (optional)
+python-pptx>=0.6.21
+
+# Tensorboard (optional, for training logs)
+tensorboard>=2.10.0

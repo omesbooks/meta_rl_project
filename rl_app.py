@@ -38,6 +38,46 @@ COLOR_BG_INPUT = "#22272e"
 
 WORK_DIR = Path(__file__).parent.resolve()
 
+# ============================================================
+# 🎨 BRANDING — แก้ได้ตามต้องการ
+# ============================================================
+BRANDING = {
+    # Window title
+    "window_title":   "RL Trading Studio",
+
+    # Sidebar logo
+    "logo_emoji":     "🤖",
+    "logo_text":      "RL Studio",
+    "logo_color":     COLOR_ACCENT,    # สีตัวอักษร logo
+    "logo_size":      20,               # ขนาดฟอนต์ logo
+
+    # Subtitle (under logo)
+    "subtitle":       "v1.0 · Trading AI",
+    "subtitle_color": COLOR_DIM,
+    "subtitle_size":  11,
+
+    # Sidebar background color
+    "sidebar_bg":     "#161b22",
+
+    # Theme toggle label (bottom of sidebar)
+    "theme_label":    "Dark Mode",
+}
+
+# ============================================================
+# 📋 NAVIGATION — แก้ icon / label ของแต่ละหน้าได้
+# ============================================================
+NAV_ITEMS = [
+    # (key,        icon,    sidebar label,           top-bar title)
+    ("tools",     "🛠️",    "Data Tools",            "🛠️ Data Tools"),
+    ("train",     "🎯",    "Train",                 "🎯 Train New Model"),
+    ("backtest",  "📊",    "Backtest",              "📊 Backtest Model"),
+    ("walkfwd",   "🔬",    "Walk-Forward",          "🔬 Walk-Forward Validation"),
+    ("finetune",  "🔄",    "Fine-tune",             "🔄 Fine-tune Existing Model"),
+    ("analyze",   "🔍",    "Analyze",               "🔍 Confidence Analysis"),
+    ("models",    "🗂️",    "Models",                "🗂️ Model Library"),
+    ("settings",  "⚙️",    "Settings",              "⚙️ Settings"),
+]
+
 
 # ============================================================
 # Metric Health Thresholds + Recommendations
@@ -289,31 +329,13 @@ class StatCard(ctk.CTkFrame):
 # ============================================================
 class RLTradingStudio(ctk.CTk):
 
-    PAGES = [
-        ("tools",    "🛠️", "Data Tools"),
-        ("train",    "🎯", "Train"),
-        ("backtest", "📊", "Backtest"),
-        ("walkfwd",  "🔬", "Walk-Forward"),
-        ("finetune", "🔄", "Fine-tune"),
-        ("analyze",  "🔍", "Analyze"),
-        ("models",   "🗂️", "Models"),
-        ("settings", "⚙️", "Settings"),
-    ]
-
-    PAGE_TITLES = {
-        "tools":    "🛠️ Data Tools",
-        "train":    "🎯 Train New Model",
-        "backtest": "📊 Backtest Model",
-        "walkfwd":  "🔬 Walk-Forward Validation",
-        "finetune": "🔄 Fine-tune Existing Model",
-        "analyze":  "🔍 Confidence Analysis",
-        "models":   "🗂️ Model Library",
-        "settings": "⚙️ Settings",
-    }
+    # Build PAGES + PAGE_TITLES from NAV_ITEMS config
+    PAGES = [(k, icon, label) for (k, icon, label, _) in NAV_ITEMS]
+    PAGE_TITLES = {k: title for (k, _, _, title) in NAV_ITEMS}
 
     def __init__(self):
         super().__init__()
-        self.title("RL Trading Studio")
+        self.title(BRANDING["window_title"])
         self.geometry("1280x800")
         self.minsize(1100, 700)
 
@@ -336,7 +358,8 @@ class RLTradingStudio(ctk.CTk):
         self._build_main()
 
     def _build_sidebar(self):
-        side = ctk.CTkFrame(self, width=240, fg_color="#161b22",
+        side = ctk.CTkFrame(self, width=240,
+                             fg_color=BRANDING["sidebar_bg"],
                              corner_radius=0)
         side.grid(row=0, column=0, sticky="nsew")
         side.grid_propagate(False)
@@ -345,13 +368,14 @@ class RLTradingStudio(ctk.CTk):
         # Logo
         logo_frame = ctk.CTkFrame(side, fg_color="transparent")
         logo_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 16))
-        ctk.CTkLabel(logo_frame, text="🤖 RL Studio",
-                      font=ctk.CTkFont(size=20, weight="bold"),
-                      text_color=COLOR_ACCENT
+        logo_text = f"{BRANDING['logo_emoji']} {BRANDING['logo_text']}".strip()
+        ctk.CTkLabel(logo_frame, text=logo_text,
+                      font=ctk.CTkFont(size=BRANDING["logo_size"], weight="bold"),
+                      text_color=BRANDING["logo_color"]
                       ).pack(anchor="w")
-        ctk.CTkLabel(logo_frame, text="v1.0 · Trading AI",
-                      font=ctk.CTkFont(size=11),
-                      text_color=COLOR_DIM
+        ctk.CTkLabel(logo_frame, text=BRANDING["subtitle"],
+                      font=ctk.CTkFont(size=BRANDING["subtitle_size"]),
+                      text_color=BRANDING["subtitle_color"]
                       ).pack(anchor="w")
 
         # Separator
@@ -382,7 +406,7 @@ class RLTradingStudio(ctk.CTk):
                       ).pack(fill="x", pady=(0, 10))
 
         self.theme_switch = ctk.CTkSwitch(theme_frame,
-            text="Dark Mode",
+            text=BRANDING["theme_label"],
             command=self._toggle_theme,
             font=ctk.CTkFont(size=12),
             text_color=COLOR_DIM,

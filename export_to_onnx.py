@@ -122,6 +122,9 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
 
     print(f"\n[export] -> {onnx_path}")
     dummy = torch.randn(1, obs_dim, dtype=torch.float32)
+    # NOTE: not using dynamic_axes / dynamic_shapes since MT5 always
+    # inferences with batch_size=1 (one bar at a time).
+    # Fixed shape avoids dynamo deprecation warning + simpler ONNX graph.
     torch.onnx.export(
         wrapped, dummy, str(onnx_path),
         export_params=True,
@@ -129,10 +132,6 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
         do_constant_folding=True,
         input_names=['state'],
         output_names=['action_probs'],
-        dynamic_axes={
-            'state':        {0: 'batch_size'},
-            'action_probs': {0: 'batch_size'},
-        },
     )
 
     # === Consolidate external data into single file (MT5 requires this!) ===

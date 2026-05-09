@@ -51,7 +51,7 @@ BRANDING = {
     # Sidebar logo IMAGE (PNG/JPG/GIF) — recommended for branding
     # Empty string = ใช้ emoji แทน (ดู logo_emoji)
     # Path: relative to project root OR absolute path
-    "logo_image":      "",                  # e.g. "assets/logo.png"
+    "logo_image":      "assets/metafx.png",                  # e.g. "assets/logo.png"
     "logo_image_size": (32, 32),            # (width, height) in pixels
 
     # Sidebar logo TEXT (ใช้คู่กับ image, หรือ emoji ถ้าไม่มี image)
@@ -350,6 +350,16 @@ class RLTradingStudio(ctk.CTk):
         # Window icon (titlebar/taskbar)
         self._set_window_icon()
 
+        # State
+        self.current_page = "train"
+        self.runner = ProcessRunner()
+        self.nav_buttons = {}
+        self.pages = {}
+
+        self._build_ui()
+        self.show_page("train")
+        self._poll_queue()
+
     # ---------- Branding helpers ----------
     def _set_window_icon(self):
         """Set window icon from BRANDING['window_icon'] if specified"""
@@ -398,16 +408,6 @@ class RLTradingStudio(ctk.CTk):
         except Exception as e:
             print(f"[branding] Failed to load logo image: {e}")
             return None
-
-        # State
-        self.current_page = "train"
-        self.runner = ProcessRunner()
-        self.nav_buttons = {}
-        self.pages = {}
-
-        self._build_ui()
-        self.show_page("train")
-        self._poll_queue()
 
     # --------------------------------------------------------
     def _build_ui(self):

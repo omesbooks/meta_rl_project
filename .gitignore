@@ -52,6 +52,9 @@ ENV/
 # Keep template, ignore generated EA per-deployment
 mt5_files/MQL5/Experts/*_EA.mq5
 
+# Per-user branding overrides (saved from Settings page)
+branding_config.json
+
 # Tensorboard
 events.out.tfevents*
 

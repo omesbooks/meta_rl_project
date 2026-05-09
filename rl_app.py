@@ -87,6 +87,117 @@ NAV_ITEMS = [
     ("settings",  "⚙️",    "Settings",              "⚙️ Settings"),
 ]
 
+# ============================================================
+# 🎨 COLOR PRESETS — เลือกธีมสีสำเร็จได้ใน Settings page
+# ============================================================
+COLOR_PRESETS = {
+    "Default (Blue)": {
+        "ACCENT":   "#2f81f7",
+        "GREEN":    "#3fb950",
+        "RED":      "#f85149",
+        "YELLOW":   "#d29922",
+        "PURPLE":   "#a371f7",
+        "DIM":      "#8b949e",
+        "BG_CARD":  "#1c2128",
+        "BG_INPUT": "#22272e",
+        "SIDEBAR_BG": "#161b22",
+    },
+    "Warm (Orange/Red)": {
+        "ACCENT":   "#fb923c",
+        "GREEN":    "#84cc16",
+        "RED":      "#dc2626",
+        "YELLOW":   "#facc15",
+        "PURPLE":   "#ec4899",
+        "DIM":      "#a8a29e",
+        "BG_CARD":  "#1c1917",
+        "BG_INPUT": "#292524",
+        "SIDEBAR_BG": "#171513",
+    },
+    "Ocean (Cyan/Teal)": {
+        "ACCENT":   "#06b6d4",
+        "GREEN":    "#10b981",
+        "RED":      "#ef4444",
+        "YELLOW":   "#eab308",
+        "PURPLE":   "#8b5cf6",
+        "DIM":      "#94a3b8",
+        "BG_CARD":  "#0f172a",
+        "BG_INPUT": "#1e293b",
+        "SIDEBAR_BG": "#0a1428",
+    },
+    "Pure Black (Minimal)": {
+        "ACCENT":   "#ffffff",
+        "GREEN":    "#22c55e",
+        "RED":      "#dc2626",
+        "YELLOW":   "#eab308",
+        "PURPLE":   "#737373",
+        "DIM":      "#525252",
+        "BG_CARD":  "#000000",
+        "BG_INPUT": "#171717",
+        "SIDEBAR_BG": "#000000",
+    },
+    "Metafxclub (Brand)": {
+        "ACCENT":   "#00d4ff",
+        "GREEN":    "#3fb950",
+        "RED":      "#f85149",
+        "YELLOW":   "#fbbf24",
+        "PURPLE":   "#c084fc",
+        "DIM":      "#94a3b8",
+        "BG_CARD":  "#0a1628",
+        "BG_INPUT": "#0f1f37",
+        "SIDEBAR_BG": "#050d18",
+    },
+}
+
+# ============================================================
+# 💾 Branding persistence — save/load to branding_config.json
+# ============================================================
+BRANDING_CONFIG_FILE = WORK_DIR / "branding_config.json"
+
+def _load_branding_config():
+    """Load saved branding from JSON file (if exists) and override BRANDING + colors"""
+    global BRANDING
+    global COLOR_ACCENT, COLOR_GREEN, COLOR_RED, COLOR_YELLOW
+    global COLOR_PURPLE, COLOR_DIM, COLOR_BG_CARD, COLOR_BG_INPUT
+    if not BRANDING_CONFIG_FILE.exists():
+        return
+    try:
+        import json
+        cfg = json.loads(BRANDING_CONFIG_FILE.read_text(encoding="utf-8"))
+        if "branding" in cfg:
+            BRANDING.update(cfg["branding"])
+        if "colors" in cfg:
+            c = cfg["colors"]
+            COLOR_ACCENT  = c.get("ACCENT",   COLOR_ACCENT)
+            COLOR_GREEN   = c.get("GREEN",    COLOR_GREEN)
+            COLOR_RED     = c.get("RED",      COLOR_RED)
+            COLOR_YELLOW  = c.get("YELLOW",   COLOR_YELLOW)
+            COLOR_PURPLE  = c.get("PURPLE",   COLOR_PURPLE)
+            COLOR_DIM     = c.get("DIM",      COLOR_DIM)
+            COLOR_BG_CARD = c.get("BG_CARD",  COLOR_BG_CARD)
+            COLOR_BG_INPUT = c.get("BG_INPUT", COLOR_BG_INPUT)
+            # Update sidebar_bg in BRANDING too if present
+            if "SIDEBAR_BG" in c:
+                BRANDING["sidebar_bg"] = c["SIDEBAR_BG"]
+            # Update logo_color if it was COLOR_ACCENT (most common case)
+            BRANDING["logo_color"] = c.get("ACCENT", BRANDING.get("logo_color"))
+            BRANDING["subtitle_color"] = c.get("DIM", BRANDING.get("subtitle_color"))
+        print(f"[branding] Loaded from {BRANDING_CONFIG_FILE.name}")
+    except Exception as e:
+        print(f"[branding] Failed to load config: {e}")
+
+def _save_branding_config(branding_overrides: dict, colors: dict):
+    """Save current branding + colors to JSON file"""
+    import json
+    cfg = {
+        "branding": branding_overrides,
+        "colors":   colors,
+    }
+    BRANDING_CONFIG_FILE.write_text(
+        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+
+# Apply saved config on import (before classes/widgets created)
+_load_branding_config()
+
 
 # ============================================================
 # Metric Health Thresholds + Recommendations
@@ -3120,8 +3231,166 @@ class RLTradingStudio(ctk.CTk):
         page.grid_columnconfigure(0, weight=1)
         self.pages["settings"] = page
 
+        # ============================================================
+        # CARD 1: Branding Customization ⭐ NEW
+        # ============================================================
+        c0 = Card(page, title="🎨 Branding Customization")
+        c0.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        c0.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(c0,
+            text="ปรับ logo / ชื่อ / สี ของ app — กด Save แล้ว Restart เพื่อใช้งาน",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
+            wraplength=900, justify="left"
+            ).grid(row=1, column=0, sticky="w", padx=18, pady=(2, 12))
+
+        # === Color Preset Dropdown ===
+        preset_row = ctk.CTkFrame(c0, fg_color="transparent")
+        preset_row.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
+        preset_row.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(preset_row, text="🎨 Color Preset:",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
+            ).grid(row=0, column=0, sticky="w")
+
+        self.brand_preset = ctk.CTkOptionMenu(preset_row,
+            values=list(COLOR_PRESETS.keys()),
+            command=self._apply_color_preset,
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            width=240)
+        self.brand_preset.grid(row=0, column=1, sticky="w", padx=(8, 0))
+
+        ctk.CTkLabel(preset_row,
+            text="(เปลี่ยน preset จะอัปเดตช่องสีด้านล่างทันที)",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=10)
+            ).grid(row=0, column=2, sticky="w", padx=(12, 0))
+
+        # === Branding Text Fields ===
+        text_grid = ctk.CTkFrame(c0, fg_color="transparent")
+        text_grid.grid(row=3, column=0, sticky="ew", padx=18, pady=(8, 8))
+        text_grid.grid_columnconfigure(0, weight=1)
+        text_grid.grid_columnconfigure(1, weight=1)
+
+        # Helper to add labeled entries
+        self.brand_inputs = {}
+        text_fields = [
+            ("window_title",    "Window Title",            "ชื่อหน้าต่าง app"),
+            ("logo_text",       "Logo Text",                "ชื่อใน sidebar"),
+            ("logo_emoji",      "Logo Emoji (ถ้าไม่มี image)", "เช่น 🤖 ⚡ 🚀"),
+            ("subtitle",        "Subtitle",                 "ข้อความใต้ logo"),
+            ("logo_image",      "Logo Image Path",          "เช่น assets/logo.png"),
+            ("window_icon",     "Window Icon Path",         "เช่น assets/icon.ico"),
+            ("theme_label",     "Theme Toggle Label",       "ข้อความปุ่มล่าง sidebar"),
+        ]
+        for i, (key, label, hint) in enumerate(text_fields):
+            row = i // 2
+            col = i % 2
+            sub = ctk.CTkFrame(text_grid, fg_color="transparent")
+            sub.grid(row=row, column=col, sticky="ew", padx=4, pady=4)
+            sub.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(sub, text=label, text_color=COLOR_DIM,
+                font=ctk.CTkFont(size=11)
+                ).grid(row=0, column=0, sticky="w", pady=(0, 2))
+            entry = ctk.CTkEntry(sub, placeholder_text=hint,
+                font=ctk.CTkFont(size=11))
+            entry.insert(0, str(BRANDING.get(key, "")))
+            entry.grid(row=1, column=0, sticky="ew")
+            ctk.CTkLabel(sub, text=hint,
+                text_color=COLOR_DIM, font=ctk.CTkFont(size=9)
+                ).grid(row=2, column=0, sticky="w")
+            self.brand_inputs[key] = entry
+
+        # === Color Pickers ===
+        ctk.CTkLabel(c0, text="🎨 Custom Colors (hex):",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=13, weight="bold")
+            ).grid(row=4, column=0, sticky="w", padx=18, pady=(12, 4))
+
+        color_grid = ctk.CTkFrame(c0, fg_color="transparent")
+        color_grid.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 12))
+        for i in range(4):
+            color_grid.grid_columnconfigure(i, weight=1)
+
+        self.brand_color_inputs = {}
+        color_fields = [
+            ("ACCENT",     "Primary",     "สี brand หลัก, ปุ่ม"),
+            ("GREEN",      "Success",     "metric ดี, win trade"),
+            ("RED",        "Error",       "metric แย่, loss"),
+            ("YELLOW",     "Warning",     "metric เตือน"),
+            ("PURPLE",     "Special",     "Export/Chart buttons"),
+            ("DIM",        "Secondary",   "text รอง, hint"),
+            ("BG_CARD",    "Card BG",     "พื้นหลังการ์ด"),
+            ("BG_INPUT",   "Input BG",    "พื้นหลัง input"),
+            ("SIDEBAR_BG", "Sidebar BG",  "พื้นหลัง sidebar"),
+        ]
+
+        # Build current color map (from globals + BRANDING)
+        cur_colors = {
+            "ACCENT": COLOR_ACCENT,  "GREEN": COLOR_GREEN,
+            "RED": COLOR_RED,        "YELLOW": COLOR_YELLOW,
+            "PURPLE": COLOR_PURPLE,  "DIM": COLOR_DIM,
+            "BG_CARD": COLOR_BG_CARD, "BG_INPUT": COLOR_BG_INPUT,
+            "SIDEBAR_BG": BRANDING.get("sidebar_bg", "#161b22"),
+        }
+
+        for i, (key, label, hint) in enumerate(color_fields):
+            row = i // 4
+            col = i % 4
+            sub = ctk.CTkFrame(color_grid, fg_color="transparent")
+            sub.grid(row=row, column=col, sticky="ew", padx=4, pady=4)
+            sub.grid_columnconfigure(1, weight=1)
+
+            # Color swatch
+            swatch = ctk.CTkFrame(sub, width=24, height=24,
+                fg_color=cur_colors[key], corner_radius=4)
+            swatch.grid(row=0, column=0, padx=(0, 6), pady=(2, 0))
+            swatch.grid_propagate(False)
+
+            entry = ctk.CTkEntry(sub, placeholder_text="#xxxxxx",
+                font=ctk.CTkFont(family="Consolas", size=11), width=90)
+            entry.insert(0, cur_colors[key])
+            entry.grid(row=0, column=1, sticky="ew")
+
+            ctk.CTkLabel(sub, text=f"{label} — {hint}",
+                text_color=COLOR_DIM, font=ctk.CTkFont(size=9),
+                anchor="w"
+                ).grid(row=1, column=0, columnspan=2, sticky="w", padx=(0, 0))
+
+            self.brand_color_inputs[key] = (entry, swatch)
+            # Update swatch when entry changes
+            entry.bind("<KeyRelease>",
+                lambda e, k=key: self._update_swatch(k))
+
+        # === Action buttons ===
+        btn_row = ctk.CTkFrame(c0, fg_color="transparent")
+        btn_row.grid(row=6, column=0, sticky="ew", padx=18, pady=(8, 16))
+        btn_row.grid_columnconfigure(0, weight=1)
+        btn_row.grid_columnconfigure(1, weight=1)
+        btn_row.grid_columnconfigure(2, weight=1)
+
+        ctk.CTkButton(btn_row, text="💾 Save & Restart",
+            command=self._save_branding,
+            fg_color=COLOR_ACCENT, hover_color="#4493f8",
+            height=42, font=ctk.CTkFont(size=13, weight="bold")
+            ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+
+        ctk.CTkButton(btn_row, text="↩ Reset to Default",
+            command=self._reset_branding,
+            fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
+            height=42, font=ctk.CTkFont(size=13)
+            ).grid(row=0, column=1, sticky="ew", padx=4)
+
+        ctk.CTkButton(btn_row, text="📂 Open Config File",
+            command=self._open_branding_config,
+            fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
+            height=42, font=ctk.CTkFont(size=13)
+            ).grid(row=0, column=2, sticky="ew", padx=(4, 0))
+
+        # ============================================================
+        # CARD 2: Application Settings (existing)
+        # ============================================================
         c1 = Card(page, title="⚙️ Application Settings")
-        c1.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        c1.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         c1.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(c1, text="Working Directory", text_color=COLOR_DIM
@@ -3130,8 +3399,11 @@ class RLTradingStudio(ctk.CTk):
             text_color=COLOR_ACCENT, font=ctk.CTkFont(size=12, family="Consolas")
             ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 16))
 
+        # ============================================================
+        # CARD 3: About
+        # ============================================================
         c2 = Card(page, title="ℹ️ About")
-        c2.grid(row=1, column=0, sticky="ew")
+        c2.grid(row=2, column=0, sticky="ew")
         c2.grid_columnconfigure(0, weight=1)
 
         about = """RL Trading Studio v1.0
@@ -3150,6 +3422,83 @@ Built with: CustomTkinter + stable-baselines3
         ctk.CTkLabel(c2, text=about, text_color=COLOR_DIM,
             font=ctk.CTkFont(size=12), justify="left", anchor="w"
             ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 16))
+
+    # --------------------------------------------------------
+    # Branding settings handlers
+    # --------------------------------------------------------
+    def _apply_color_preset(self, preset_name):
+        """Load a preset's colors into the entry fields"""
+        preset = COLOR_PRESETS.get(preset_name)
+        if not preset:
+            return
+        for key, (entry, swatch) in self.brand_color_inputs.items():
+            val = preset.get(key, "")
+            if val:
+                entry.delete(0, "end")
+                entry.insert(0, val)
+                try:
+                    swatch.configure(fg_color=val)
+                except: pass
+
+    def _update_swatch(self, key):
+        """Update color swatch when entry changes"""
+        entry, swatch = self.brand_color_inputs[key]
+        val = entry.get().strip()
+        # Validate hex format
+        if not (val.startswith("#") and len(val) in (4, 7)):
+            return
+        try:
+            swatch.configure(fg_color=val)
+        except: pass
+
+    def _save_branding(self):
+        """Save branding to JSON + ask user to restart"""
+        # Collect text inputs
+        branding_overrides = {}
+        for key, entry in self.brand_inputs.items():
+            val = entry.get().strip()
+            branding_overrides[key] = val
+
+        # Collect color inputs
+        colors = {}
+        for key, (entry, _) in self.brand_color_inputs.items():
+            val = entry.get().strip()
+            if val.startswith("#") and len(val) in (4, 7):
+                colors[key] = val
+
+        # Save to JSON
+        try:
+            _save_branding_config(branding_overrides, colors)
+            messagebox.showinfo("Saved",
+                f"✓ Branding saved to:\n{BRANDING_CONFIG_FILE}\n\n"
+                f"⚠️ ปิด + เปิด app ใหม่เพื่อให้สีและ branding มีผล")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save: {e}")
+
+    def _reset_branding(self):
+        """Delete config file → revert to default on next start"""
+        if messagebox.askyesno("Reset",
+                "ลบไฟล์ branding_config.json แล้ว restart?\n"
+                "(ค่า branding จะกลับเป็น default)"):
+            try:
+                if BRANDING_CONFIG_FILE.exists():
+                    BRANDING_CONFIG_FILE.unlink()
+                messagebox.showinfo("Reset",
+                    "✓ ลบ config สำเร็จ\nปิด + เปิด app ใหม่")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+
+    def _open_branding_config(self):
+        """Open config file in default editor"""
+        if not BRANDING_CONFIG_FILE.exists():
+            messagebox.showinfo("No file",
+                "ยังไม่มีไฟล์ config — กด 'Save & Restart' ก่อน เพื่อสร้างไฟล์")
+            return
+        try:
+            import os
+            os.startfile(str(BRANDING_CONFIG_FILE))
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
     # --------------------------------------------------------
     # Helpers

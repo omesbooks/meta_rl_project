@@ -814,15 +814,7 @@ class RLTradingStudio(ctk.CTk):
                                    border_width=1, border_color="#30363d")
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
 
-        self.tools_log = tk.Text(log_frame, bg="#0a0e14", fg=COLOR_DIM,
-            font=("Consolas", 11), bd=0, height=10,
-            insertbackground="white", highlightthickness=0)
-        self.tools_log.pack(fill="both", expand=True, padx=10, pady=10)
-        self.tools_log.tag_configure("info", foreground=COLOR_DIM)
-        self.tools_log.tag_configure("success", foreground=COLOR_GREEN)
-        self.tools_log.tag_configure("warn", foreground=COLOR_YELLOW)
-        self.tools_log.tag_configure("error", foreground=COLOR_RED)
-        self.tools_log.tag_configure("metric", foreground=COLOR_ACCENT)
+        self.tools_log = self._make_log_widget(log_frame, height=10)
 
     # --------------------------------------------------------
     # Tools functions
@@ -1985,17 +1977,7 @@ class RLTradingStudio(ctk.CTk):
                                    border_width=1, border_color="#30363d")
         log_frame.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 16))
 
-        self.train_log = tk.Text(log_frame,
-            bg="#0a0e14", fg=COLOR_DIM,
-            font=("Consolas", 11), bd=0, height=14,
-            insertbackground="white",
-            highlightthickness=0)
-        self.train_log.pack(fill="both", expand=True, padx=10, pady=10)
-        self.train_log.tag_configure("info", foreground=COLOR_DIM)
-        self.train_log.tag_configure("success", foreground=COLOR_GREEN)
-        self.train_log.tag_configure("warn", foreground=COLOR_YELLOW)
-        self.train_log.tag_configure("error", foreground=COLOR_RED)
-        self.train_log.tag_configure("metric", foreground=COLOR_ACCENT)
+        self.train_log = self._make_log_widget(log_frame, height=14)
 
     def _toggle_advanced(self):
         """Show/hide advanced PPO settings"""
@@ -2604,15 +2586,7 @@ class RLTradingStudio(ctk.CTk):
                                    border_width=1, border_color="#30363d")
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
 
-        self.bt_log = tk.Text(log_frame, bg="#0a0e14", fg=COLOR_DIM,
-            font=("Consolas", 11), bd=0, height=12,
-            insertbackground="white", highlightthickness=0)
-        self.bt_log.pack(fill="both", expand=True, padx=10, pady=10)
-        self.bt_log.tag_configure("info", foreground=COLOR_DIM)
-        self.bt_log.tag_configure("success", foreground=COLOR_GREEN)
-        self.bt_log.tag_configure("warn", foreground=COLOR_YELLOW)
-        self.bt_log.tag_configure("error", foreground=COLOR_RED)
-        self.bt_log.tag_configure("metric", foreground=COLOR_ACCENT)
+        self.bt_log = self._make_log_widget(log_frame, height=12)
 
     def _generate_chart(self):
         """Generate backtest chart"""
@@ -2775,14 +2749,7 @@ class RLTradingStudio(ctk.CTk):
 
         log_frame = ctk.CTkFrame(c2, fg_color="#0a0e14", corner_radius=8)
         log_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
-        self.wf_log = tk.Text(log_frame, bg="#0a0e14", fg=COLOR_DIM,
-            font=("Consolas", 11), bd=0, height=10,
-            highlightthickness=0)
-        self.wf_log.pack(fill="both", expand=True, padx=10, pady=10)
-        self.wf_log.tag_configure("info", foreground=COLOR_DIM)
-        self.wf_log.tag_configure("success", foreground=COLOR_GREEN)
-        self.wf_log.tag_configure("warn", foreground=COLOR_YELLOW)
-        self.wf_log.tag_configure("metric", foreground=COLOR_ACCENT)
+        self.wf_log = self._make_log_widget(log_frame, height=10)
 
     def _run_walkforward(self):
         if self.runner.is_running():
@@ -2881,13 +2848,7 @@ class RLTradingStudio(ctk.CTk):
         c4.grid_columnconfigure(0, weight=1)
         log_frame = ctk.CTkFrame(c4, fg_color="#0a0e14", corner_radius=8)
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
-        self.ft_log = tk.Text(log_frame, bg="#0a0e14", fg=COLOR_DIM,
-            font=("Consolas", 11), bd=0, height=10, highlightthickness=0)
-        self.ft_log.pack(fill="both", expand=True, padx=10, pady=10)
-        self.ft_log.tag_configure("info", foreground=COLOR_DIM)
-        self.ft_log.tag_configure("success", foreground=COLOR_GREEN)
-        self.ft_log.tag_configure("warn", foreground=COLOR_YELLOW)
-        self.ft_log.tag_configure("error", foreground=COLOR_RED)
+        self.ft_log = self._make_log_widget(log_frame, height=10)
 
     def _run_finetune(self):
         if self.runner.is_running():
@@ -2961,13 +2922,7 @@ class RLTradingStudio(ctk.CTk):
 
         log_frame = ctk.CTkFrame(c2, fg_color="#0a0e14", corner_radius=8)
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
-        self.an_log = tk.Text(log_frame, bg="#0a0e14", fg=COLOR_DIM,
-            font=("Consolas", 11), bd=0, height=20, highlightthickness=0)
-        self.an_log.pack(fill="both", expand=True, padx=10, pady=10)
-        self.an_log.tag_configure("info", foreground=COLOR_DIM)
-        self.an_log.tag_configure("success", foreground=COLOR_GREEN)
-        self.an_log.tag_configure("warn", foreground=COLOR_YELLOW)
-        self.an_log.tag_configure("metric", foreground=COLOR_ACCENT)
+        self.an_log = self._make_log_widget(log_frame, height=20)
 
     def _run_analyze(self):
         if self.runner.is_running():
@@ -3115,6 +3070,52 @@ Built with: CustomTkinter + stable-baselines3
                 if menu.get() in ("(none)", "") and csvs[0] != "(none)":
                     menu.set(csvs[0])
             except: pass
+
+    def _make_log_widget(self, parent, height=10):
+        """Create a Text log widget with:
+          - vertical scrollbar
+          - isolated mousewheel (doesn't bubble up to parent scroll)
+          - color tags configured
+        Returns the Text widget (for backwards compat — still passed to _log)
+        """
+        # Container frame to hold Text + scrollbar side-by-side
+        container = tk.Frame(parent, bg="#0a0e14", bd=0, highlightthickness=0)
+        container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Vertical scrollbar
+        scrollbar = ttk.Scrollbar(container, orient="vertical")
+        scrollbar.pack(side="right", fill="y")
+
+        # Text widget
+        text = tk.Text(container,
+            bg="#0a0e14", fg=COLOR_DIM,
+            font=("Consolas", 11), bd=0, height=height,
+            insertbackground="white", highlightthickness=0,
+            yscrollcommand=scrollbar.set)
+        text.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=text.yview)
+
+        # Color tags
+        text.tag_configure("info",    foreground=COLOR_DIM)
+        text.tag_configure("success", foreground=COLOR_GREEN)
+        text.tag_configure("warn",    foreground=COLOR_YELLOW)
+        text.tag_configure("error",   foreground=COLOR_RED)
+        text.tag_configure("metric",  foreground=COLOR_ACCENT)
+
+        # ⭐ Isolate mousewheel: when hovering Text widget, scroll Text itself
+        # and STOP propagation to parent scrollable frame.
+        def _on_mousewheel(event):
+            text.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            return "break"  # prevent parent from also scrolling
+
+        # Bind both for Text and Scrollbar (so user can use either)
+        text.bind("<MouseWheel>", _on_mousewheel)
+        scrollbar.bind("<MouseWheel>", _on_mousewheel)
+        # Linux compatibility (Button-4 = up, Button-5 = down)
+        text.bind("<Button-4>", lambda e: (text.yview_scroll(-1, "units"), "break")[1])
+        text.bind("<Button-5>", lambda e: (text.yview_scroll(1, "units"), "break")[1])
+
+        return text
 
     def _log(self, widget, text, tag="info"):
         widget.configure(state="normal")

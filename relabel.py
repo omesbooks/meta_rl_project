@@ -13,16 +13,28 @@ output: EURUSD_H1_relabeled.csv
 """
 
 import sys
+import argparse
 from pathlib import Path
 import pandas as pd
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python relabel.py <csv_file>")
-        return
+    ap = argparse.ArgumentParser()
+    ap.add_argument("csv_file", help="CSV file with future_return column")
+    ap.add_argument("--mode", default=None,
+                    choices=["quantile", "fixed", "binary"],
+                    help="non-interactive relabel mode")
+    ap.add_argument("--threshold", type=float, default=0.001,
+                    help="threshold for --mode fixed")
+    args = ap.parse_args()
 
-    src = sys.argv[1]
+    src = args.csv_file
     df = pd.read_csv(src)
 
     if "future_return" not in df.columns:
@@ -35,12 +47,15 @@ def main():
     print("\nfuture_return stats:")
     print(df["future_return"].describe())
 
-    print("\n" + "=" * 50)
-    print("เลือกวิธี re-label:")
-    print("  1) Quantile (33/33/33) — balance ดีสุด [แนะนำ]")
-    print("  2) Fixed threshold — เลือกเอง")
-    print("  3) Binary UP/DOWN — ข้าม FLAT")
-    choice = input("เลือก (1/2/3) [default=1]: ").strip() or "1"
+    if args.mode:
+        choice = {"quantile": "1", "fixed": "2", "binary": "3"}[args.mode]
+    else:
+        print("\n" + "=" * 50)
+        print("เลือกวิธี re-label:")
+        print("  1) Quantile (33/33/33) — balance ดีสุด [แนะนำ]")
+        print("  2) Fixed threshold — เลือกเอง")
+        print("  3) Binary UP/DOWN — ข้าม FLAT")
+        choice = input("เลือก (1/2/3) [default=1]: ").strip() or "1"
 
     fr = df["future_return"]
 
@@ -56,8 +71,11 @@ def main():
         )
 
     elif choice == "2":
-        t = input("  threshold (เช่น 0.001): ").strip()
-        t = float(t) if t else 0.001
+        if args.mode:
+            t = args.threshold
+        else:
+            t = input("  threshold (เช่น 0.001): ").strip()
+            t = float(t) if t else 0.001
         print(f"\n  using +/- {t}")
         df["target"] = "FLAT"
         df.loc[fr >= t, "target"] = "UP"

@@ -35,6 +35,13 @@ COLOR_PURPLE  = "#a371f7"
 COLOR_DIM     = "#8b949e"
 COLOR_BG_CARD = "#1c2128"
 COLOR_BG_INPUT = "#22272e"
+COLOR_BG_APP = "#0d1117"
+COLOR_BG_PANEL = "#161b22"
+COLOR_BG_TERMINAL = "#070b10"
+COLOR_BORDER = "#30363d"
+COLOR_HOVER = "#2d333b"
+COLOR_SELECTED = "#1f3a5f"
+COLOR_TEXT = "#f0f6fc"
 
 WORK_DIR = Path(__file__).parent.resolve()
 
@@ -78,6 +85,7 @@ BRANDING = {
 NAV_ITEMS = [
     # (key,        icon,    sidebar label,           top-bar title)
     ("tools",     "🛠️",    "Data Tools",            "🛠️ Data Tools"),
+    ("pipeline",  "▶",      "Pipeline",              "▶ Full Pipeline"),
     ("train",     "🎯",    "Train",                 "🎯 Train New Model"),
     ("backtest",  "📊",    "Backtest",              "📊 Backtest Model"),
     ("walkfwd",   "🔬",    "Walk-Forward",          "🔬 Walk-Forward Validation"),
@@ -378,10 +386,12 @@ class ProcessRunner:
             return False
 
         def worker():
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
             self.proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace',
-                cwd=str(WORK_DIR), bufsize=1,
+                cwd=str(WORK_DIR), bufsize=1, env=env,
             )
             for line in iter(self.proc.stdout.readline, ''):
                 line = line.rstrip()
@@ -416,20 +426,21 @@ class ProcessRunner:
 class Card(ctk.CTkFrame):
     """Styled card container"""
     def __init__(self, master, title=None, **kwargs):
-        super().__init__(master, fg_color=COLOR_BG_CARD, corner_radius=12,
-                          border_width=1, border_color="#30363d", **kwargs)
+        super().__init__(master, fg_color=COLOR_BG_CARD, corner_radius=8,
+                          border_width=1, border_color=COLOR_BORDER, **kwargs)
         self.grid_columnconfigure(0, weight=1)
         if title:
             self.title_label = ctk.CTkLabel(self, text=title,
-                font=ctk.CTkFont(size=15, weight="bold"))
-            self.title_label.grid(row=0, column=0, sticky="w", padx=18, pady=(14, 4))
+                font=ctk.CTkFont(size=15, weight="bold"),
+                text_color=COLOR_TEXT)
+            self.title_label.grid(row=0, column=0, sticky="w", padx=18, pady=(16, 6))
 
 
 class StatCard(ctk.CTkFrame):
     """Metric stat card"""
     def __init__(self, master, label, value, change="", color=None, **kwargs):
         super().__init__(master, fg_color=COLOR_BG_INPUT, corner_radius=8,
-                          border_width=1, border_color="#30363d", **kwargs)
+                          border_width=1, border_color=COLOR_BORDER, **kwargs)
         ctk.CTkLabel(self, text=label.upper(), text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=10, weight="bold")
                       ).pack(anchor="w", padx=14, pady=(10, 0))
@@ -529,7 +540,7 @@ class RLTradingStudio(ctk.CTk):
         self._build_main()
 
     def _build_sidebar(self):
-        side = ctk.CTkFrame(self, width=240,
+        side = ctk.CTkFrame(self, width=250,
                              fg_color=BRANDING["sidebar_bg"],
                              corner_radius=0)
         side.grid(row=0, column=0, sticky="nsew")
@@ -538,7 +549,7 @@ class RLTradingStudio(ctk.CTk):
 
         # === Logo container ===
         logo_frame = ctk.CTkFrame(side, fg_color="transparent")
-        logo_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 16))
+        logo_frame.grid(row=0, column=0, sticky="ew", padx=18, pady=(22, 18))
 
         # Try to load image logo
         logo_image_obj = self._load_logo_image()
@@ -569,8 +580,8 @@ class RLTradingStudio(ctk.CTk):
                           ).pack(anchor="w", pady=(2, 0))
 
         # Separator
-        ctk.CTkFrame(side, height=1, fg_color="#30363d"
-                      ).grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+        ctk.CTkFrame(side, height=1, fg_color=COLOR_BORDER
+                      ).grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 10))
 
         # Nav items
         for i, (key, icon, label) in enumerate(self.PAGES):
@@ -579,20 +590,20 @@ class RLTradingStudio(ctk.CTk):
                 anchor="w",
                 fg_color="transparent",
                 text_color=COLOR_DIM,
-                hover_color="#2d333b",
-                corner_radius=0,
-                height=42,
+                hover_color=COLOR_HOVER,
+                corner_radius=8,
+                height=38,
                 font=ctk.CTkFont(size=14),
                 command=lambda k=key: self.show_page(k),
             )
-            btn.grid(row=2 + i, column=0, sticky="ew", padx=0, pady=1)
+            btn.grid(row=2 + i, column=0, sticky="ew", padx=12, pady=2)
             self.nav_buttons[key] = btn
 
         # Theme toggle (bottom)
         theme_frame = ctk.CTkFrame(side, fg_color="transparent")
         theme_frame.grid(row=100, column=0, sticky="ew", padx=15, pady=15)
 
-        ctk.CTkFrame(theme_frame, height=1, fg_color="#30363d"
+        ctk.CTkFrame(theme_frame, height=1, fg_color=COLOR_BORDER
                       ).pack(fill="x", pady=(0, 10))
 
         self.theme_switch = ctk.CTkSwitch(theme_frame,
@@ -606,39 +617,45 @@ class RLTradingStudio(ctk.CTk):
 
     def _build_main(self):
         # Container for top bar + content
-        self.main = ctk.CTkFrame(self, fg_color="#0f1419", corner_radius=0)
+        self.main = ctk.CTkFrame(self, fg_color=COLOR_BG_APP, corner_radius=0)
         self.main.grid(row=0, column=1, sticky="nsew")
         self.main.grid_columnconfigure(0, weight=1)
         self.main.grid_rowconfigure(1, weight=1)
 
         # Top bar
-        topbar = ctk.CTkFrame(self.main, fg_color="#0f1419",
-                               border_width=0, corner_radius=0, height=70)
+        topbar = ctk.CTkFrame(self.main, fg_color=COLOR_BG_APP,
+                               border_width=0, corner_radius=0, height=76)
         topbar.grid(row=0, column=0, sticky="ew")
         topbar.grid_propagate(False)
         topbar.grid_columnconfigure(0, weight=1)
 
         self.page_title_label = ctk.CTkLabel(topbar, text="🎯 Train New Model",
-            font=ctk.CTkFont(size=22, weight="bold"))
-        self.page_title_label.grid(row=0, column=0, sticky="w", padx=30, pady=20)
+            font=ctk.CTkFont(size=23, weight="bold"),
+            text_color=COLOR_TEXT)
+        self.page_title_label.grid(row=0, column=0, sticky="w", padx=30, pady=22)
 
         self.status_label = ctk.CTkLabel(topbar, text="● Idle",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color=COLOR_DIM)
+            text_color=COLOR_DIM,
+            fg_color=COLOR_BG_PANEL,
+            corner_radius=14,
+            height=28,
+            width=96)
         self.status_label.grid(row=0, column=1, sticky="e", padx=30, pady=20)
 
         # Separator
-        ctk.CTkFrame(self.main, height=1, fg_color="#30363d"
+        ctk.CTkFrame(self.main, height=1, fg_color=COLOR_BORDER
                       ).grid(row=0, column=0, sticky="sew")
 
         # Content area (scrollable)
         self.content = ctk.CTkScrollableFrame(self.main,
-            fg_color="#0f1419", corner_radius=0)
+            fg_color=COLOR_BG_APP, corner_radius=0)
         self.content.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
         self.content.grid_columnconfigure(0, weight=1)
 
         # Build pages
         self._build_tools_page()
+        self._build_pipeline_page()
         self._build_train_page()
         self._build_backtest_page()
         self._build_walkfwd_page()
@@ -662,7 +679,7 @@ class RLTradingStudio(ctk.CTk):
         # Update nav buttons
         for k, btn in self.nav_buttons.items():
             if k == key:
-                btn.configure(fg_color="#2d333b", text_color=COLOR_ACCENT)
+                btn.configure(fg_color=COLOR_SELECTED, text_color=COLOR_TEXT)
             else:
                 btn.configure(fg_color="transparent", text_color=COLOR_DIM)
 
@@ -682,8 +699,1167 @@ class RLTradingStudio(ctk.CTk):
             self._refresh_models_list()
         elif key == "tools":
             self._refresh_tools_dropdowns()
+        elif key == "pipeline":
+            self._refresh_dropdowns()
+            self._refresh_model_comparison()
+            self._refresh_equity_viewer()
         elif key in ("backtest", "walkfwd", "finetune", "analyze"):
             self._refresh_dropdowns()
+
+    # --------------------------------------------------------
+    # PAGE: FULL PIPELINE
+    # --------------------------------------------------------
+    def _build_pipeline_page(self):
+        page = ctk.CTkFrame(self.content, fg_color="transparent")
+        page.grid_columnconfigure(0, weight=1)
+        self.pages["pipeline"] = page
+
+        self.pipeline_running = False
+        self.pipeline_stop_requested = False
+        self.pipeline_proc = None
+        self.pipeline_equity_image = None
+        self.pipeline_stage_labels = []
+
+        intro = ctk.CTkLabel(
+            page,
+            text="Run one flow: dataset -> optional relabel -> train PPO -> backtest -> chart/report.",
+            text_color=COLOR_ACCENT,
+            font=ctk.CTkFont(size=13),
+            wraplength=900,
+            justify="left",
+        )
+        intro.grid(row=0, column=0, sticky="w", padx=8, pady=(0, 16))
+
+        setup = Card(page, title="1. Run Full Pipeline")
+        setup.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        setup.grid_columnconfigure(1, weight=1)
+        setup.grid_columnconfigure(3, weight=1)
+
+        ctk.CTkLabel(setup, text="Train CSV", text_color=COLOR_DIM).grid(
+            row=1, column=0, sticky="w", padx=18, pady=(10, 6))
+        csvs = sorted([p.name for p in WORK_DIR.glob("*.csv")]) or ["(none)"]
+        self.pipe_csv = ctk.CTkOptionMenu(
+            setup, values=csvs, width=260,
+            command=lambda _: self._on_pipeline_train_csv_change())
+        self.pipe_csv.grid(row=1, column=1, sticky="ew", padx=(8, 18), pady=(10, 6))
+        if csvs[0] != "(none)":
+            self.pipe_csv.set(csvs[0])
+
+        ctk.CTkLabel(setup, text="Model name", text_color=COLOR_DIM).grid(
+            row=1, column=2, sticky="w", padx=18, pady=(10, 6))
+        self.pipe_model_name = ctk.CTkEntry(setup, placeholder_text="rl_pipeline_v1")
+        self.pipe_model_name.insert(0, "rl_pipeline_v1")
+        self.pipe_model_name.grid(row=1, column=3, sticky="ew", padx=(8, 18), pady=(10, 6))
+
+        ctk.CTkLabel(setup, text="Backtest CSV", text_color=COLOR_DIM).grid(
+            row=2, column=0, sticky="w", padx=18, pady=6)
+        self.pipe_bt_csv = ctk.CTkOptionMenu(setup, values=csvs, width=260)
+        self.pipe_bt_csv.grid(row=2, column=1, sticky="ew", padx=(8, 18), pady=6)
+        if csvs[0] != "(none)":
+            self.pipe_bt_csv.set(csvs[0])
+
+        ctk.CTkLabel(setup, text="Train pct", text_color=COLOR_DIM).grid(
+            row=2, column=2, sticky="w", padx=18, pady=6)
+        self.pipe_train_pct = ctk.CTkEntry(setup, width=120)
+        self.pipe_train_pct.insert(0, "1.0")
+        self.pipe_train_pct.grid(row=2, column=3, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(setup, text="Train steps", text_color=COLOR_DIM).grid(
+            row=3, column=0, sticky="w", padx=18, pady=6)
+        self.pipe_steps = ctk.CTkEntry(setup, width=120)
+        self.pipe_steps.insert(0, "200000")
+        self.pipe_steps.grid(row=3, column=1, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(setup, text="Window size", text_color=COLOR_DIM).grid(
+            row=3, column=2, sticky="w", padx=18, pady=6)
+        self.pipe_window = ctk.CTkEntry(setup, width=120)
+        self.pipe_window.insert(0, "10")
+        self.pipe_window.grid(row=3, column=3, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(setup, text="Backtest confidence", text_color=COLOR_DIM).grid(
+            row=4, column=0, sticky="w", padx=18, pady=6)
+        self.pipe_conf = ctk.CTkEntry(setup, width=120)
+        self.pipe_conf.insert(0, "0.85")
+        self.pipe_conf.grid(row=4, column=1, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(setup, text="Backtest mode", text_color=COLOR_DIM).grid(
+            row=4, column=2, sticky="w", padx=18, pady=6)
+        self.pipe_bt_mode = ctk.CTkOptionMenu(
+            setup, values=["Agent + SL/TP", "Pure Agent"], width=180)
+        self.pipe_bt_mode.set("Agent + SL/TP")
+        self.pipe_bt_mode.grid(row=4, column=3, sticky="w", padx=(8, 18), pady=6)
+
+        self.pipe_relabel = ctk.CTkCheckBox(
+            setup,
+            text="Relabel first with quantile 33/33/33",
+            text_color=COLOR_DIM,
+        )
+        self.pipe_relabel.grid(row=5, column=0, columnspan=2, sticky="w",
+                               padx=18, pady=(8, 12))
+
+        btns = ctk.CTkFrame(setup, fg_color="transparent")
+        btns.grid(row=5, column=2, columnspan=2, sticky="e", padx=18, pady=(8, 12))
+        self.pipe_run_btn = ctk.CTkButton(
+            btns, text="Run full pipeline", command=self._run_full_pipeline,
+            fg_color=COLOR_GREEN, hover_color="#2ea043", width=170)
+        self.pipe_run_btn.pack(side="left", padx=(0, 8))
+        self.pipe_stop_btn = ctk.CTkButton(
+            btns, text="Stop", command=self._stop_pipeline,
+            fg_color=COLOR_RED, hover_color="#da3633", width=90, state="disabled")
+        self.pipe_stop_btn.pack(side="left")
+
+        progress = Card(page, title="2. Progress")
+        progress.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        progress.grid_columnconfigure(0, weight=1)
+        self.pipe_progress = ctk.CTkProgressBar(
+            progress,
+            height=12,
+            progress_color=COLOR_ACCENT,
+            fg_color=COLOR_HOVER)
+        self.pipe_progress.set(0)
+        self.pipe_progress.grid(row=1, column=0, sticky="ew", padx=18, pady=(12, 6))
+        self.pipe_status = ctk.CTkLabel(progress, text="Idle", text_color=COLOR_DIM)
+        self.pipe_status.grid(row=2, column=0, sticky="w", padx=18, pady=(0, 12))
+
+        stage_row = ctk.CTkFrame(progress, fg_color="transparent")
+        stage_row.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
+        for label in ["Relabel", "Train PPO", "Backtest", "Chart"]:
+            pill = ctk.CTkLabel(
+                stage_row, text=label, height=30, corner_radius=8,
+                fg_color=COLOR_BG_INPUT, text_color=COLOR_DIM,
+                font=ctk.CTkFont(size=11, weight="bold"))
+            pill.pack(side="left", padx=(0, 8), ipadx=12)
+            self.pipeline_stage_labels.append(pill)
+
+        health = Card(page, title="3. Live Metric Health")
+        health.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        health.grid_columnconfigure(0, weight=1)
+
+        self.pipeline_health_frame = ctk.CTkFrame(
+            health, fg_color=COLOR_BG_INPUT, corner_radius=8)
+        self.pipeline_health_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(10, 12))
+        self.pipeline_health_frame.grid_columnconfigure(0, weight=1)
+
+        self.pipeline_health_pills_frame = ctk.CTkFrame(
+            self.pipeline_health_frame, fg_color="transparent")
+        self.pipeline_health_pills_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+        self.pipeline_health_pills = {}
+        self._build_pipeline_health_pills()
+
+        pipe_graph = ctk.CTkFrame(
+            self.pipeline_health_frame, fg_color="#0a0e14", corner_radius=8,
+            border_width=1, border_color="#30363d")
+        pipe_graph.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+        pipe_graph.grid_columnconfigure(0, weight=1)
+
+        pipe_graph_head = ctk.CTkFrame(pipe_graph, fg_color="transparent")
+        pipe_graph_head.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
+        pipe_graph_head.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            pipe_graph_head, text="Reward Trend",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=COLOR_DIM).grid(row=0, column=0, sticky="w")
+        self.pipeline_reward_trend_status = ctk.CTkLabel(
+            pipe_graph_head, text="-",
+            font=ctk.CTkFont(size=10, family="Consolas"),
+            text_color=COLOR_DIM)
+        self.pipeline_reward_trend_status.grid(row=0, column=1, sticky="e")
+
+        self.pipeline_reward_canvas = tk.Canvas(
+            pipe_graph, height=60, bg="#0a0e14", highlightthickness=0, bd=0)
+        self.pipeline_reward_canvas.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+        self.pipeline_reward_canvas.bind(
+            "<Configure>", lambda e: self._draw_pipeline_reward_sparkline())
+
+        self.pipeline_health_recs_frame = ctk.CTkFrame(
+            self.pipeline_health_frame, fg_color="transparent")
+        self.pipeline_health_recs_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(2, 10))
+        self.pipeline_health_recs_frame.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            self.pipeline_health_recs_frame,
+            text="Waiting for PPO training metrics...",
+            font=ctk.CTkFont(size=11, family="Consolas"),
+            text_color=COLOR_DIM,
+            anchor="w").grid(row=0, column=0, sticky="ew", padx=4, pady=4)
+        self._reset_pipeline_metrics()
+
+        compare = Card(page, title="4. Model Comparison")
+        compare.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        compare.grid_columnconfigure(0, weight=1)
+
+        compare_btns = ctk.CTkFrame(compare, fg_color="transparent")
+        compare_btns.grid(row=1, column=0, sticky="ew", padx=18, pady=(10, 8))
+        ctk.CTkButton(compare_btns, text="Refresh table", command=self._refresh_model_comparison,
+                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
+                      corner_radius=8, height=34, width=130).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(compare_btns, text="Open equity image", command=self._open_selected_equity,
+                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
+                      corner_radius=8, height=34, width=150).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(compare_btns, text="Open HTML chart", command=self._open_selected_chart,
+                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
+                      corner_radius=8, height=34, width=140).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(compare_btns, text="Export report PDF", command=self._export_pipeline_pdf,
+                      fg_color=COLOR_PURPLE, hover_color="#8957e5",
+                      corner_radius=8, height=34, width=150).pack(side="right")
+
+        tree_frame = tk.Frame(compare, bg=COLOR_BG_CARD)
+        tree_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 14))
+        tree_frame.grid_columnconfigure(0, weight=1)
+
+        style = ttk.Style()
+        try:
+            style.theme_use("default")
+        except Exception:
+            pass
+        style.configure(
+            "Pipeline.Treeview",
+            background=COLOR_BG_TERMINAL,
+            foreground="#c9d1d9",
+            fieldbackground=COLOR_BG_TERMINAL,
+            borderwidth=0,
+            rowheight=30,
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Pipeline.Treeview.Heading",
+            background=COLOR_BG_INPUT,
+            foreground=COLOR_TEXT,
+            font=("Segoe UI", 9, "bold"),
+            relief="flat",
+        )
+        style.map("Pipeline.Treeview", background=[("selected", COLOR_SELECTED)])
+
+        columns = ("model", "source", "trades", "win_rate", "profit_factor",
+                   "return", "max_dd", "chart")
+        self.model_tree = ttk.Treeview(
+            tree_frame, columns=columns, show="headings", height=9,
+            style="Pipeline.Treeview")
+        headings = {
+            "model": "Model",
+            "source": "Result source",
+            "trades": "Trades",
+            "win_rate": "Win rate",
+            "profit_factor": "PF",
+            "return": "Return",
+            "max_dd": "Max DD",
+            "chart": "Chart",
+        }
+        widths = {
+            "model": 190, "source": 170, "trades": 70, "win_rate": 80,
+            "profit_factor": 70, "return": 80, "max_dd": 80, "chart": 70,
+        }
+        for col in columns:
+            self.model_tree.heading(col, text=headings[col])
+            self.model_tree.column(col, width=widths[col], anchor="center")
+        self.model_tree.column("model", anchor="w")
+        self.model_tree.column("source", anchor="w")
+
+        yscroll = ttk.Scrollbar(tree_frame, orient="vertical",
+                                command=self.model_tree.yview)
+        self.model_tree.configure(yscrollcommand=yscroll.set)
+        self.model_tree.grid(row=0, column=0, sticky="ew")
+        yscroll.grid(row=0, column=1, sticky="ns")
+        self.model_tree.bind("<<TreeviewSelect>>", self._refresh_equity_viewer)
+
+        equity = Card(page, title="5. Equity Curve Viewer")
+        equity.grid(row=5, column=0, sticky="ew", pady=(0, 12))
+        equity.grid_columnconfigure(0, weight=1)
+        self.pipeline_equity_label = ctk.CTkLabel(
+            equity, text="Select a model result to preview equity curve.",
+            text_color=COLOR_DIM, height=360)
+        self.pipeline_equity_label.grid(row=1, column=0, sticky="ew", padx=18, pady=12)
+
+        log_card = Card(page, title="6. Pipeline Log")
+        log_card.grid(row=6, column=0, sticky="ew", pady=(0, 12))
+        log_frame = ctk.CTkFrame(log_card, fg_color="transparent")
+        log_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(4, 12))
+        self.pipeline_log = self._make_log_widget(log_frame, height=12)
+        self._on_pipeline_train_csv_change()
+
+    def _on_pipeline_train_csv_change(self):
+        if not hasattr(self, "pipe_bt_csv"):
+            return
+        train_csv = self.pipe_csv.get().strip()
+        if not train_csv or train_csv == "(none)":
+            return
+
+        train_path = Path(train_csv)
+        candidates = []
+        stem = train_path.stem
+        if stem.endswith("_train"):
+            candidates.append(train_path.with_stem(stem[:-len("_train")] + "_test").name)
+        candidates.append(train_csv)
+
+        for name in candidates:
+            if (WORK_DIR / name).exists():
+                self.pipe_bt_csv.set(name)
+                return
+
+    def _run_full_pipeline(self):
+        if self.runner.is_running() or getattr(self, "pipeline_running", False):
+            messagebox.showwarning("Busy", "Another process is already running.")
+            return
+
+        csv_name = self.pipe_csv.get().strip()
+        if not csv_name or csv_name == "(none)":
+            messagebox.showerror("Missing CSV", "Please select a dataset CSV first.")
+            return
+        csv_path = WORK_DIR / csv_name
+        if not csv_path.exists():
+            messagebox.showerror("CSV not found", str(csv_path))
+            return
+
+        bt_csv = self.pipe_bt_csv.get().strip()
+        if not bt_csv or bt_csv == "(none)":
+            bt_csv = csv_name
+        bt_csv_path = WORK_DIR / bt_csv
+        if not bt_csv_path.exists():
+            messagebox.showerror("Backtest CSV not found", str(bt_csv_path))
+            return
+
+        model_name = self.pipe_model_name.get().strip() or "rl_pipeline_v1"
+        model_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", model_name).strip("._-")
+        if not model_name:
+            messagebox.showerror("Invalid name", "Model name is empty after cleanup.")
+            return
+        self.pipe_model_name.delete(0, "end")
+        self.pipe_model_name.insert(0, model_name)
+
+        try:
+            steps = int(float(self.pipe_steps.get().strip() or "200000"))
+            window = int(float(self.pipe_window.get().strip() or "10"))
+            conf = float(self.pipe_conf.get().strip() or "0.85")
+            train_pct = float(self.pipe_train_pct.get().strip() or "1.0")
+        except ValueError:
+            messagebox.showerror("Invalid settings", "Steps/window/confidence/train_pct must be numeric.")
+            return
+
+        if steps <= 0 or window <= 0:
+            messagebox.showerror("Invalid settings", "Steps and window must be greater than 0.")
+            return
+        if not (0 < train_pct <= 1.0):
+            messagebox.showerror("Invalid settings", "Train pct must be > 0 and <= 1.0.")
+            return
+
+        if (WORK_DIR / f"{model_name}.zip").exists():
+            ok = messagebox.askyesno(
+                "Overwrite model?",
+                f"{model_name}.zip already exists. Continue and overwrite it?")
+            if not ok:
+                return
+
+        use_relabel = bool(self.pipe_relabel.get())
+        mode = "pure_agent" if "Pure" in self.pipe_bt_mode.get() else "agent_sltp"
+
+        self.pipeline_running = True
+        self.pipeline_stop_requested = False
+        self.pipe_run_btn.configure(state="disabled")
+        self.pipe_stop_btn.configure(state="normal")
+        self.pipeline_log.configure(state="normal")
+        self.pipeline_log.delete("1.0", "end")
+        self.pipeline_log.configure(state="disabled")
+        self._set_pipeline_progress(0, "Starting pipeline...")
+        self._set_pipeline_stage(-1)
+        self._reset_pipeline_metrics(steps)
+        self.status_label.configure(text="Running pipeline", text_color=COLOR_GREEN)
+
+        t = threading.Thread(
+            target=self._pipeline_worker,
+            args=(csv_name, bt_csv, use_relabel, model_name, steps, window, conf, mode, train_pct),
+            daemon=True,
+        )
+        t.start()
+
+    def _stop_pipeline(self):
+        self.pipeline_stop_requested = True
+        self._pipeline_log("Stop requested. Terminating current stage...", "warn")
+        if self.pipeline_proc and self.pipeline_proc.poll() is None:
+            try:
+                self.pipeline_proc.terminate()
+            except Exception:
+                pass
+
+    def _pipeline_worker(self, csv_name, bt_csv, use_relabel, model_name,
+                         steps, window, conf, mode, train_pct):
+        train_csv = csv_name
+        stages_total = 3
+        if use_relabel and not Path(csv_name).stem.endswith("_relabeled"):
+            stages_total += 1
+
+        stage = 1
+        try:
+            if use_relabel:
+                if Path(csv_name).stem.endswith("_relabeled"):
+                    self._pipeline_log("Relabel skipped because source already ends with _relabeled.", "warn")
+                else:
+                    relabel_cmd = [sys.executable, "relabel.py", csv_name, "--mode", "quantile"]
+                    self._pipeline_run_cmd(relabel_cmd, stage, "Relabel", stages_total)
+                    train_csv = self._expected_relabeled_path(csv_name).name
+                    stage += 1
+
+            train_cmd = [
+                sys.executable, "rl_train.py", train_csv,
+                "--steps", str(steps),
+                "--window", str(window),
+                "--name", model_name,
+                "--train_pct", str(train_pct),
+                "--eval_csv", bt_csv,
+            ]
+            self._pipeline_run_cmd(train_cmd, stage, "Train PPO", stages_total)
+            stage += 1
+
+            backtest_cmd = [
+                sys.executable, "backtest_live.py", model_name, bt_csv,
+                "--conf", str(conf),
+                "--window", str(window),
+                "--mode", mode,
+            ]
+            self._pipeline_run_cmd(backtest_cmd, stage, "Backtest", stages_total)
+            stage += 1
+
+            chart_cmd = [
+                sys.executable, "backtest_chart.py", model_name, bt_csv,
+                "--limit", "5000",
+            ]
+            self._pipeline_run_cmd(chart_cmd, stage, "Chart", stages_total)
+
+            self.after(0, lambda: self._finish_pipeline(True, "Pipeline complete."))
+        except Exception as e:
+            self.after(0, lambda err=e: self._finish_pipeline(False, str(err)))
+
+    def _pipeline_run_cmd(self, cmd, stage_idx, stage_name, stages_total):
+        if self.pipeline_stop_requested:
+            raise RuntimeError("Pipeline stopped.")
+
+        base = (stage_idx - 1) / max(stages_total, 1)
+        span = 1 / max(stages_total, 1)
+        self._set_pipeline_stage(stage_name)
+        self._set_pipeline_progress(base, f"{stage_name} started")
+        self._pipeline_log("")
+        self._pipeline_log(f"=== {stage_name} ===", "metric")
+        self._pipeline_log("$ " + self._format_cmd(cmd), "info")
+
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        self.pipeline_proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=str(WORK_DIR),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            env=env,
+        )
+
+        assert self.pipeline_proc.stdout is not None
+        for line in iter(self.pipeline_proc.stdout.readline, ""):
+            line = line.rstrip()
+            if not line:
+                continue
+            tag = self._classify_log(line)
+            self._pipeline_log(line, tag)
+
+            if stage_name == "Train PPO":
+                self._handle_pipeline_metric_line(line)
+
+            prog = self._parse_progress(line)
+            if not prog and stage_name == "Train PPO":
+                prog = self._parse_pipeline_progress(line)
+            if prog:
+                cur, tot = prog
+                pct = min(max(cur / tot, 0), 1) if tot else 0
+                if stage_name == "Train PPO":
+                    self.pipeline_train_step_count = cur
+                self._set_pipeline_progress(
+                    base + span * pct,
+                    f"{stage_name}: {cur:,} / {tot:,} ({pct * 100:.1f}%)",
+                )
+
+            if self.pipeline_stop_requested and self.pipeline_proc.poll() is None:
+                self.pipeline_proc.terminate()
+
+        self.pipeline_proc.wait()
+        rc = self.pipeline_proc.returncode
+        self.pipeline_proc = None
+
+        if self.pipeline_stop_requested:
+            raise RuntimeError("Pipeline stopped.")
+        if rc != 0:
+            raise RuntimeError(f"{stage_name} failed with exit code {rc}.")
+
+        self._set_pipeline_progress(stage_idx / max(stages_total, 1), f"{stage_name} done")
+        self._pipeline_log(f"{stage_name} done.", "success")
+
+    def _finish_pipeline(self, ok, message):
+        self.pipeline_running = False
+        self.pipeline_proc = None
+        self.pipe_run_btn.configure(state="normal")
+        self.pipe_stop_btn.configure(state="disabled")
+        self.status_label.configure(text="Idle", text_color=COLOR_DIM)
+
+        if ok:
+            self._set_pipeline_progress(1, message)
+            self._set_pipeline_stage("done")
+            self._pipeline_log(message, "success")
+            self._refresh_dropdowns()
+            self._refresh_model_comparison()
+            self._refresh_equity_viewer()
+        else:
+            self._set_pipeline_progress(self.pipe_progress.get(), "Pipeline stopped/failed")
+            self._pipeline_log(message, "error")
+            self._set_pipeline_stage("failed")
+
+    def _pipeline_log(self, text, tag="info"):
+        if threading.current_thread() is not threading.main_thread():
+            self.after(0, lambda: self._pipeline_log(text, tag))
+            return
+        if hasattr(self, "pipeline_log"):
+            self._log(self.pipeline_log, text, tag)
+
+    def _set_pipeline_progress(self, pct, text=None):
+        if threading.current_thread() is not threading.main_thread():
+            self.after(0, lambda: self._set_pipeline_progress(pct, text))
+            return
+        pct = min(max(float(pct), 0.0), 1.0)
+        if hasattr(self, "pipe_progress"):
+            self.pipe_progress.set(pct)
+        if text and hasattr(self, "pipe_status"):
+            self.pipe_status.configure(text=f"{text} ({pct * 100:.1f}%)")
+
+    def _set_pipeline_stage(self, active):
+        if threading.current_thread() is not threading.main_thread():
+            self.after(0, lambda: self._set_pipeline_stage(active))
+            return
+        if not hasattr(self, "pipeline_stage_labels"):
+            return
+        for lbl in self.pipeline_stage_labels:
+            name = lbl.cget("text")
+            if active == "done":
+                lbl.configure(fg_color="#16351f", text_color=COLOR_GREEN)
+            elif active == "failed":
+                lbl.configure(fg_color="#3a1717", text_color=COLOR_RED)
+            elif active == name:
+                lbl.configure(fg_color=COLOR_SELECTED, text_color=COLOR_TEXT)
+            else:
+                lbl.configure(fg_color=COLOR_BG_INPUT, text_color=COLOR_DIM)
+
+    def _format_cmd(self, cmd):
+        parts = []
+        for item in cmd:
+            s = str(item)
+            parts.append(f'"{s}"' if " " in s else s)
+        return " ".join(parts)
+
+    def _build_pipeline_health_pills(self):
+        metrics_to_show = [
+            ("ep_rew_mean", "Reward"),
+            ("approx_kl", "KL"),
+            ("clip_fraction", "Clip%"),
+            ("explained_variance", "EV"),
+            ("entropy_loss", "Entropy"),
+            ("value_loss", "V-Loss"),
+        ]
+        for i, (key, label) in enumerate(metrics_to_show):
+            self.pipeline_health_pills_frame.grid_columnconfigure(i, weight=1)
+            pill = ctk.CTkFrame(
+                self.pipeline_health_pills_frame,
+                fg_color="#0a0e14",
+                corner_radius=6,
+                border_width=1,
+                border_color="#30363d",
+            )
+            pill.grid(row=0, column=i, sticky="ew", padx=3)
+
+            ctk.CTkLabel(
+                pill,
+                text=label,
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=COLOR_DIM,
+            ).pack(pady=(6, 0))
+            value_lbl = ctk.CTkLabel(
+                pill,
+                text="-",
+                font=ctk.CTkFont(size=14, family="Consolas", weight="bold"),
+                text_color=COLOR_DIM,
+            )
+            value_lbl.pack(pady=(2, 6))
+            self.pipeline_health_pills[key] = value_lbl
+
+    def _reset_pipeline_metrics(self, total_steps=None):
+        self.pipeline_current_metrics = {}
+        self.pipeline_reward_history = []
+        self.pipeline_reward_peak = None
+        self.pipeline_reward_alert_shown = False
+        self.pipeline_train_step_count = 0
+        if total_steps is not None:
+            self.pipeline_train_steps_total = int(total_steps)
+            self._train_steps_total = int(total_steps)
+        elif not hasattr(self, "pipeline_train_steps_total"):
+            self.pipeline_train_steps_total = 0
+
+        if hasattr(self, "pipeline_health_pills"):
+            for lbl in self.pipeline_health_pills.values():
+                lbl.configure(text="-", text_color=COLOR_DIM)
+
+        if hasattr(self, "pipeline_reward_trend_status"):
+            self.pipeline_reward_trend_status.configure(text="-", text_color=COLOR_DIM)
+        self._draw_pipeline_reward_sparkline()
+
+        if hasattr(self, "pipeline_health_recs_frame"):
+            for w in self.pipeline_health_recs_frame.winfo_children():
+                w.destroy()
+            ctk.CTkLabel(
+                self.pipeline_health_recs_frame,
+                text="Waiting for PPO training metrics...",
+                font=ctk.CTkFont(size=11, family="Consolas"),
+                text_color=COLOR_DIM,
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew", padx=4, pady=4)
+
+    def _handle_pipeline_metric_line(self, line):
+        if threading.current_thread() is not threading.main_thread():
+            self.after(0, lambda: self._handle_pipeline_metric_line(line))
+            return
+
+        mm = re.match(r'\|\s*([a-z_]+)\s*\|\s*([+\-\d\.eE]+)\s*\|', line)
+        if not mm:
+            return
+
+        name = mm.group(1)
+        if name not in METRIC_INFO:
+            return
+
+        try:
+            value = float(mm.group(2))
+        except ValueError:
+            return
+
+        self._update_pipeline_health_pill(name, value)
+        self.pipeline_current_metrics[name] = value
+        self._refresh_pipeline_recommendations()
+
+        if name == "ep_rew_mean":
+            self._track_pipeline_reward(value)
+
+    def _parse_pipeline_progress(self, line):
+        total = int(getattr(self, "pipeline_train_steps_total", 0) or 0)
+        if total <= 0:
+            return None
+
+        m = re.search(r'\|\s*total_timesteps\s*\|\s*(\d[\d,]*)\s*\|', line)
+        if m:
+            try:
+                return int(m.group(1).replace(",", "")), total
+            except Exception:
+                return None
+
+        m = re.search(r'total_timesteps\s*[=:]\s*(\d[\d,]*)', line, re.I)
+        if m:
+            try:
+                return int(m.group(1).replace(",", "")), total
+            except Exception:
+                return None
+
+        m = re.search(r'\bstep\s+(\d[\d,]*)\b', line, re.I)
+        if m:
+            try:
+                return int(m.group(1).replace(",", "")), total
+            except Exception:
+                return None
+
+        return None
+
+    def _update_pipeline_health_pill(self, name, value):
+        if not hasattr(self, "pipeline_health_pills") or name not in self.pipeline_health_pills:
+            return
+        status = classify_metric(name, value)
+        color = {
+            "good": COLOR_GREEN,
+            "warn": COLOR_YELLOW,
+            "bad": COLOR_RED,
+        }.get(status, COLOR_DIM)
+
+        if abs(value) >= 100:
+            txt = f"{value:.0f}"
+        elif abs(value) >= 1:
+            txt = f"{value:.2f}"
+        elif abs(value) >= 0.001:
+            txt = f"{value:.3f}"
+        else:
+            txt = f"{value:.2e}"
+        self.pipeline_health_pills[name].configure(text=txt, text_color=color)
+
+    def _track_pipeline_reward(self, value):
+        self.pipeline_reward_history.append(float(value))
+        if len(self.pipeline_reward_history) > 200:
+            self.pipeline_reward_history = self.pipeline_reward_history[-200:]
+
+        if self.pipeline_reward_peak is None or value > self.pipeline_reward_peak:
+            self.pipeline_reward_peak = float(value)
+
+        n = len(self.pipeline_reward_history)
+        trend_txt, trend_color = "-", COLOR_DIM
+        if n >= 5:
+            recent = self.pipeline_reward_history[-5:]
+            slope = recent[-1] - recent[0]
+            if slope > 0.05:
+                trend_txt, trend_color = "rising", COLOR_GREEN
+            elif slope < -0.05:
+                trend_txt, trend_color = "falling", COLOR_RED
+            else:
+                trend_txt, trend_color = "flat", COLOR_YELLOW
+
+        peak = self.pipeline_reward_peak if self.pipeline_reward_peak is not None else value
+        self.pipeline_reward_trend_status.configure(
+            text=f"now {value:+.2f}  peak {peak:+.2f}  {trend_txt}",
+            text_color=trend_color,
+        )
+        self._draw_pipeline_reward_sparkline()
+
+        min_steps = max(10, int(getattr(self, "pipeline_train_steps_total", 0) * 0.3))
+        if (self.pipeline_reward_peak is not None
+                and self.pipeline_reward_peak > 0.5
+                and self.pipeline_train_step_count >= min_steps
+                and value < self.pipeline_reward_peak * 0.5
+                and not self.pipeline_reward_alert_shown):
+            self.pipeline_reward_alert_shown = True
+            msg = (
+                "Reward dropped below 50% of peak\n\n"
+                f"Peak reward : {self.pipeline_reward_peak:+.3f}\n"
+                f"Current     : {value:+.3f}\n\n"
+                "Suggested actions:\n"
+                "- Lower learning_rate, for example 3e-4 -> 1e-4\n"
+                "- Lower clip_range if KL/Clip are high\n"
+                "- Consider stopping and fine-tuning from the best checkpoint"
+            )
+            self.after(50, lambda: messagebox.showwarning("Reward Drop Detected", msg))
+
+    def _draw_pipeline_reward_sparkline(self):
+        c = getattr(self, "pipeline_reward_canvas", None)
+        if c is None:
+            return
+        c.delete("all")
+        try:
+            w = c.winfo_width()
+            h = c.winfo_height()
+        except Exception:
+            return
+        if w < 4 or h < 4:
+            return
+
+        data = getattr(self, "pipeline_reward_history", [])
+        if not data:
+            c.create_text(
+                w / 2, h / 2,
+                text="(waiting for ep_rew_mean ...)",
+                fill=COLOR_DIM,
+                font=("Consolas", 10),
+            )
+            return
+
+        c.create_line(0, h / 2, w, h / 2, fill="#30363d", dash=(2, 3))
+
+        n = len(data)
+        vmin = min(data)
+        vmax = max(data)
+        if vmax > 0 and vmin < 0:
+            span = max(abs(vmin), abs(vmax)) or 1.0
+            lo, hi = -span, span
+        elif vmax > 0:
+            lo, hi = 0, max(vmax, 0.001)
+        else:
+            lo, hi = min(vmin, -0.001), 0
+        rng = (hi - lo) or 1.0
+        lo -= rng * 0.1
+        hi += rng * 0.1
+
+        def to_xy(i, v):
+            x = (w - 4) * (i / max(n - 1, 1)) + 2
+            y = h - ((v - lo) / (hi - lo)) * (h - 4) - 2
+            return x, y
+
+        recent = data[-5:] if n >= 5 else data
+        slope = recent[-1] - recent[0] if len(recent) > 1 else 0
+        if slope > 0.05:
+            line_color = COLOR_GREEN
+        elif slope < -0.05:
+            line_color = COLOR_RED
+        else:
+            line_color = COLOR_YELLOW
+
+        flat = []
+        for x, y in [to_xy(i, v) for i, v in enumerate(data)]:
+            flat += [x, y]
+        if len(flat) >= 4:
+            c.create_line(*flat, fill=line_color, width=2, smooth=True)
+
+        if self.pipeline_reward_peak is not None and n > 0:
+            try:
+                idx = data.index(self.pipeline_reward_peak)
+                px, py = to_xy(idx, self.pipeline_reward_peak)
+                c.create_oval(px - 3, py - 3, px + 3, py + 3,
+                              fill=COLOR_ACCENT, outline="")
+            except Exception:
+                pass
+
+        if self.pipeline_reward_peak is not None and self.pipeline_reward_peak > 0:
+            thr = self.pipeline_reward_peak * 0.5
+            if lo <= thr <= hi:
+                ty = h - ((thr - lo) / (hi - lo)) * (h - 4) - 2
+                c.create_line(0, ty, w, ty, fill=COLOR_RED, dash=(3, 3), width=1)
+                c.create_text(w - 4, ty - 6, text="50% peak",
+                              fill=COLOR_RED, anchor="ne", font=("Consolas", 8))
+
+    def _refresh_pipeline_recommendations(self):
+        if not hasattr(self, "pipeline_health_recs_frame"):
+            return
+        for w in self.pipeline_health_recs_frame.winfo_children():
+            w.destroy()
+
+        recs = []
+        for name, value in getattr(self, "pipeline_current_metrics", {}).items():
+            rec = get_recommendation(name, value)
+            if rec:
+                recs.append(rec)
+
+        sev_order = {"high": 0, "med": 1, "low": 2}
+        recs.sort(key=lambda r: sev_order.get(r.get("severity", "med"), 1))
+
+        if not recs:
+            ctk.CTkLabel(
+                self.pipeline_health_recs_frame,
+                text="All tracked metrics are in healthy range.",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=COLOR_GREEN,
+                anchor="w",
+            ).grid(row=0, column=0, sticky="ew", padx=4, pady=8)
+            return
+
+        for i, rec in enumerate(recs):
+            row = i // 2
+            col = i % 2
+            self.pipeline_health_recs_frame.grid_columnconfigure(col, weight=1)
+            self._build_rec_card(self.pipeline_health_recs_frame, rec, row, col)
+
+    def _expected_relabeled_path(self, csv_name):
+        p = WORK_DIR / csv_name
+        return p.with_stem(p.stem + "_relabeled")
+
+    def _collect_model_rows(self):
+        rows = []
+        seen = set()
+        trade_files = list(WORK_DIR.glob("*_live_bt_trades.csv")) + list(WORK_DIR.glob("*_trades.csv"))
+
+        for trades_path in sorted(trade_files, key=lambda p: p.stat().st_mtime, reverse=True):
+            if trades_path in seen:
+                continue
+            seen.add(trades_path)
+            name = trades_path.name
+            if name.endswith("_live_bt_trades.csv"):
+                model = name[:-len("_live_bt_trades.csv")]
+                source = "live backtest"
+            elif name.endswith("_trades.csv"):
+                model = name[:-len("_trades.csv")]
+                source = "env backtest"
+            else:
+                continue
+
+            metrics = self._metrics_from_trades(trades_path)
+            chart_path = WORK_DIR / f"{model}_backtest_chart.html"
+            equity_path = self._equity_path_for_model(model)
+            rows.append({
+                "iid": str(trades_path),
+                "model": model,
+                "source": source,
+                "trades_path": trades_path,
+                "chart_path": chart_path if chart_path.exists() else None,
+                "equity_path": equity_path,
+                **metrics,
+            })
+
+        model_names = {r["model"] for r in rows}
+        for zip_path in sorted(WORK_DIR.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True):
+            model = zip_path.stem
+            if model in model_names:
+                continue
+            rows.append({
+                "iid": str(zip_path),
+                "model": model,
+                "source": "model only",
+                "trades_path": None,
+                "chart_path": None,
+                "equity_path": self._equity_path_for_model(model),
+                "trades": None,
+                "win_rate": None,
+                "profit_factor": None,
+                "return_pct": None,
+                "max_dd": None,
+            })
+
+        rows.sort(key=lambda r: (
+            r.get("return_pct") is not None,
+            r.get("return_pct") if r.get("return_pct") is not None else -1e9,
+        ), reverse=True)
+        return rows
+
+    def _metrics_from_trades(self, trades_path):
+        try:
+            import numpy as np
+            import pandas as pd
+            df = pd.read_csv(trades_path)
+            if df.empty:
+                return {
+                    "trades": 0, "win_rate": None, "profit_factor": None,
+                    "return_pct": None, "max_dd": None,
+                }
+
+            if "pnl_dollars" in df.columns:
+                pnl = pd.to_numeric(df["pnl_dollars"], errors="coerce").dropna()
+                equity = 10000 + pnl.cumsum()
+                return_pct = float(pnl.sum() / 10000 * 100)
+            elif "pnl_pct" in df.columns:
+                pnl = pd.to_numeric(df["pnl_pct"], errors="coerce").dropna()
+                equity = (1 + pnl).cumprod()
+                return_pct = float((equity.iloc[-1] - 1) * 100) if len(equity) else None
+            elif "pnl" in df.columns:
+                pnl = pd.to_numeric(df["pnl"], errors="coerce").dropna()
+                if len(pnl) and pnl.abs().median() < 0.2:
+                    equity = (1 + pnl).cumprod()
+                    return_pct = float((equity.iloc[-1] - 1) * 100)
+                else:
+                    equity = 10000 + pnl.cumsum()
+                    return_pct = float(pnl.sum() / 10000 * 100)
+            else:
+                pnl = pd.Series(dtype=float)
+                equity = pd.Series(dtype=float)
+                return_pct = None
+
+            if "equity" in df.columns:
+                eq = pd.to_numeric(df["equity"], errors="coerce").dropna()
+                if len(eq):
+                    equity = eq
+                    return_pct = float((eq.iloc[-1] - 10000) / 10000 * 100)
+
+            trades = int(len(pnl)) if len(pnl) else int(len(df))
+            win_rate = float((pnl > 0).mean() * 100) if len(pnl) else None
+            gross_profit = float(pnl[pnl > 0].sum()) if len(pnl) else 0.0
+            gross_loss = float(abs(pnl[pnl < 0].sum())) if len(pnl) else 0.0
+            profit_factor = float("inf") if gross_profit > 0 and gross_loss == 0 else (
+                gross_profit / gross_loss if gross_loss > 0 else None)
+
+            max_dd = None
+            if len(equity):
+                peak = equity.cummax()
+                dd = equity / peak - 1
+                max_dd = float(dd.min() * 100)
+
+            return {
+                "trades": trades,
+                "win_rate": win_rate,
+                "profit_factor": profit_factor,
+                "return_pct": return_pct,
+                "max_dd": max_dd,
+            }
+        except Exception:
+            return {
+                "trades": None, "win_rate": None, "profit_factor": None,
+                "return_pct": None, "max_dd": None,
+            }
+
+    def _fmt_pct(self, value):
+        return "-" if value is None else f"{value:+.2f}%"
+
+    def _fmt_num(self, value):
+        if value is None:
+            return "-"
+        if value == float("inf"):
+            return "inf"
+        return f"{value:.2f}"
+
+    def _refresh_model_comparison(self):
+        if not hasattr(self, "model_tree"):
+            return
+        for item in self.model_tree.get_children():
+            self.model_tree.delete(item)
+
+        rows = self._collect_model_rows()
+        self.pipeline_rows = {row["iid"]: row for row in rows}
+        for row in rows:
+            values = (
+                row["model"],
+                row["source"],
+                "-" if row.get("trades") is None else f"{row['trades']:,}",
+                "-" if row.get("win_rate") is None else f"{row['win_rate']:.1f}%",
+                self._fmt_num(row.get("profit_factor")),
+                self._fmt_pct(row.get("return_pct")),
+                self._fmt_pct(row.get("max_dd")),
+                "yes" if row.get("chart_path") else "-",
+            )
+            self.model_tree.insert("", "end", iid=row["iid"], values=values)
+
+        children = self.model_tree.get_children()
+        if children and not self.model_tree.selection():
+            self.model_tree.selection_set(children[0])
+            self.model_tree.focus(children[0])
+        self._refresh_equity_viewer()
+
+    def _selected_pipeline_row(self):
+        if not hasattr(self, "model_tree"):
+            return None
+        selection = self.model_tree.selection()
+        if not selection:
+            children = self.model_tree.get_children()
+            selection = children[:1]
+        if not selection:
+            return None
+        iid = selection[0]
+        return getattr(self, "pipeline_rows", {}).get(iid)
+
+    def _equity_path_for_model(self, model):
+        candidates = [
+            WORK_DIR / f"{model}_live_bt_equity.png",
+            WORK_DIR / f"{model}_equity.png",
+            WORK_DIR / f"{model}_filtered_equity.png",
+        ]
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
+
+    def _refresh_equity_viewer(self, event=None):
+        if not hasattr(self, "pipeline_equity_label"):
+            return
+        row = self._selected_pipeline_row()
+        if not row:
+            self.pipeline_equity_image = None
+            self.pipeline_equity_label.configure(
+                image=None, text="No model results found yet.")
+            return
+
+        equity_path = row.get("equity_path") or self._equity_path_for_model(row["model"])
+        if not equity_path:
+            self.pipeline_equity_image = None
+            self.pipeline_equity_label.configure(
+                image=None,
+                text=f"No equity image found for {row['model']}. Run backtest first.",
+                text_color=COLOR_DIM,
+            )
+            return
+
+        try:
+            from PIL import Image
+            img = Image.open(equity_path)
+            img.thumbnail((920, 360), Image.LANCZOS)
+            self.pipeline_equity_image = ctk.CTkImage(
+                light_image=img,
+                dark_image=img,
+                size=img.size,
+            )
+            self.pipeline_equity_label.configure(
+                image=self.pipeline_equity_image,
+                text="",
+            )
+        except Exception as e:
+            self.pipeline_equity_image = None
+            self.pipeline_equity_label.configure(
+                image=None,
+                text=f"Equity image: {equity_path.name}\nPreview failed: {e}",
+                text_color=COLOR_DIM,
+            )
+
+    def _open_selected_equity(self):
+        row = self._selected_pipeline_row()
+        if not row:
+            messagebox.showinfo("No selection", "Select a model result first.")
+            return
+        path = row.get("equity_path") or self._equity_path_for_model(row["model"])
+        if not path:
+            messagebox.showinfo("No equity image", f"No equity image found for {row['model']}.")
+            return
+        try:
+            os.startfile(str(path))
+        except Exception as e:
+            messagebox.showerror("Open failed", str(e))
+
+    def _open_selected_chart(self):
+        row = self._selected_pipeline_row()
+        if not row:
+            messagebox.showinfo("No selection", "Select a model result first.")
+            return
+        path = row.get("chart_path")
+        if not path:
+            messagebox.showinfo("No HTML chart", f"No HTML chart found for {row['model']}.")
+            return
+        try:
+            os.startfile(str(path))
+        except Exception as e:
+            messagebox.showerror("Open failed", str(e))
+
+    def _export_pipeline_pdf(self):
+        rows = self._collect_model_rows()
+        if not rows:
+            messagebox.showinfo("No results", "No model/backtest results found to export.")
+            return
+
+        try:
+            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_pdf import PdfPages
+            import matplotlib.image as mpimg
+
+            out = WORK_DIR / f"pipeline_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            selected = self._selected_pipeline_row() or rows[0]
+
+            with PdfPages(out) as pdf:
+                fig, ax = plt.subplots(figsize=(11.69, 8.27))
+                ax.axis("off")
+                ax.text(0.02, 0.96, "RL Trading Pipeline Report",
+                        fontsize=20, weight="bold", transform=ax.transAxes)
+                ax.text(0.02, 0.92, f"Generated: {datetime.now():%Y-%m-%d %H:%M:%S}",
+                        fontsize=10, color="#555555", transform=ax.transAxes)
+
+                table_rows = []
+                for row in rows[:18]:
+                    table_rows.append([
+                        row["model"],
+                        row["source"],
+                        "-" if row.get("trades") is None else f"{row['trades']:,}",
+                        "-" if row.get("win_rate") is None else f"{row['win_rate']:.1f}%",
+                        self._fmt_num(row.get("profit_factor")),
+                        self._fmt_pct(row.get("return_pct")),
+                        self._fmt_pct(row.get("max_dd")),
+                    ])
+                table = ax.table(
+                    cellText=table_rows,
+                    colLabels=["Model", "Source", "Trades", "WR", "PF", "Return", "Max DD"],
+                    cellLoc="center",
+                    colLoc="center",
+                    bbox=[0.02, 0.08, 0.96, 0.78],
+                )
+                table.auto_set_font_size(False)
+                table.set_fontsize(8)
+                table.scale(1, 1.2)
+                pdf.savefig(fig, bbox_inches="tight")
+                plt.close(fig)
+
+                equity_path = selected.get("equity_path") or self._equity_path_for_model(selected["model"])
+                if equity_path and Path(equity_path).exists():
+                    fig, ax = plt.subplots(figsize=(11.69, 8.27))
+                    ax.axis("off")
+                    ax.set_title(f"Equity Curve - {selected['model']}", fontsize=16, weight="bold")
+                    img = mpimg.imread(equity_path)
+                    ax.imshow(img)
+                    pdf.savefig(fig, bbox_inches="tight")
+                    plt.close(fig)
+
+            messagebox.showinfo("PDF exported", f"Saved report:\n{out}")
+            try:
+                os.startfile(str(out))
+            except Exception:
+                pass
+        except Exception as e:
+            messagebox.showerror("Export failed", str(e))
 
     # --------------------------------------------------------
     # PAGE: DATA TOOLS  (NEW!)
@@ -1259,11 +2435,31 @@ class RLTradingStudio(ctk.CTk):
 
             df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
             df = df.dropna(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
+            if df.empty:
+                self._log(self.tools_log, "No valid timestamp rows after parsing", "error")
+                return
 
             split_dt = pd.to_datetime(split_date)
 
             train_df = df[df['timestamp'] < split_dt]
             test_df = df[df['timestamp'] >= split_dt]
+
+            if train_df.empty or test_df.empty:
+                first_date = df['timestamp'].min().date()
+                last_date = df['timestamp'].max().date()
+                self._log(self.tools_log,
+                    "Split aborted: train/test would be empty.", "error")
+                self._log(self.tools_log,
+                    f"  Data range : {first_date} -> {last_date}", "metric")
+                self._log(self.tools_log,
+                    f"  Train rows : {len(train_df):,}",
+                    "error" if train_df.empty else "metric")
+                self._log(self.tools_log,
+                    f"  Test rows  : {len(test_df):,}",
+                    "error" if test_df.empty else "metric")
+                self._log(self.tools_log,
+                    "Choose a split date inside the data range.", "warn")
+                return
 
             self._log(self.tools_log,
                 f"Total: {len(df):,} rows | Split at {split_date}", "info")
@@ -3541,7 +4737,7 @@ Built with: CustomTkinter + stable-baselines3
                     menu.set(models[0])
             except: pass
 
-        for menu in [self.bt_csv, self.wf_csv, self.an_csv,
+        for menu in [self.pipe_csv, self.pipe_bt_csv, self.bt_csv, self.wf_csv, self.an_csv,
                      self.ft_old, self.ft_new]:
             try:
                 menu.configure(values=csvs)
@@ -3557,7 +4753,7 @@ Built with: CustomTkinter + stable-baselines3
         Returns the Text widget (for backwards compat — still passed to _log)
         """
         # Container frame to hold Text + scrollbar side-by-side
-        container = tk.Frame(parent, bg="#0a0e14", bd=0, highlightthickness=0)
+        container = tk.Frame(parent, bg=COLOR_BG_TERMINAL, bd=0, highlightthickness=0)
         container.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Vertical scrollbar
@@ -3566,7 +4762,7 @@ Built with: CustomTkinter + stable-baselines3
 
         # Text widget
         text = tk.Text(container,
-            bg="#0a0e14", fg=COLOR_DIM,
+            bg=COLOR_BG_TERMINAL, fg=COLOR_DIM,
             font=("Consolas", 11), bd=0, height=height,
             insertbackground="white", highlightthickness=0,
             yscrollcommand=scrollbar.set)
@@ -3651,10 +4847,12 @@ Built with: CustomTkinter + stable-baselines3
 
         # Format 2: SB3 log table "| total_timesteps |    36864 |"
         m = re.search(r'\|\s*total_timesteps\s*\|\s*(\d+)\s*\|', line)
-        if m and hasattr(self, '_train_steps_total'):
+        total = self.__dict__.get('_train_steps_total') or self.__dict__.get(
+            'pipeline_train_steps_total')
+        if m and total:
             try:
                 cur = int(m.group(1))
-                return cur, self._train_steps_total
+                return cur, int(total)
             except:
                 pass
 

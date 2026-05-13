@@ -33,6 +33,7 @@ def main():
     ap.add_argument("--name", default="rl_v1", help="model name (no .zip)")
     ap.add_argument("--window", type=int, default=10, help="state window size")
     ap.add_argument("--train_pct", type=float, default=0.8, help="train/test split")
+    ap.add_argument("--eval_csv", default="", help="optional separate CSV for eval/test")
     ap.add_argument("--ep_len", type=int, default=2000, help="bars per episode")
     ap.add_argument("--algo", default="ppo", choices=["ppo", "dqn", "a2c"])
     ap.add_argument("--reward_mode", default="realized",
@@ -118,10 +119,50 @@ def main():
     print(f"  saved norm stats -> {norm_path}")
 
     # ---------- split ----------
-    split = int(len(df) * args.train_pct)
+    train_pct = min(max(float(args.train_pct), 0.01), 1.0)
+    split = int(len(df) * train_pct)
     train_df = df.iloc[:split].reset_index(drop=True)
     test_df = df.iloc[split:].reset_index(drop=True)
-    print(f"\n[split] train: {len(train_df):,} | test: {len(test_df):,}")
+    eval_source = "internal split"
+
+    if args.eval_csv:
+        print(f"\n[load] eval: {args.eval_csv}")
+        test_df = pd.read_csv(args.eval_csv)
+        print(f"  rows: {len(test_df):,}")
+
+        leaky_eval = [c for c in test_df.columns
+                      if any(k in c.lower() for k in ("future_", "forward_", "next_", "target"))]
+        if leaky_eval:
+            print(f"  drop eval leaky/target: {leaky_eval}")
+            test_df = test_df.drop(columns=leaky_eval)
+
+        if "timestamp" in test_df.columns:
+            test_df["timestamp"] = pd.to_datetime(test_df["timestamp"], errors="coerce")
+            test_df = test_df.sort_values("timestamp").reset_index(drop=True)
+
+        for col in feature_cols:
+            if col not in test_df.columns:
+                print(f"  [warn] eval missing feature {col}; filling 0")
+                test_df[col] = 0.0
+            test_df[col] = pd.to_numeric(test_df[col], errors="coerce")
+
+        test_df[feature_cols] = (test_df[feature_cols] - feat_mean) / feat_std
+        test_df = test_df.fillna(0).reset_index(drop=True)
+        eval_source = Path(args.eval_csv).name
+    elif len(test_df) <= args.window + 2:
+        fallback_rows = min(len(train_df), max(args.window + 3, min(args.ep_len, len(train_df))))
+        test_df = train_df.tail(fallback_rows).copy().reset_index(drop=True)
+        eval_source = "train tail fallback"
+        print("  [warn] eval split is empty/small; using train tail for EvalCallback")
+
+    if len(train_df) <= args.window + 2:
+        raise SystemExit(
+            f"ERROR: train data too small ({len(train_df)} rows). Need > window+2 rows.")
+    if len(test_df) <= args.window + 2:
+        raise SystemExit(
+            f"ERROR: eval/test data too small ({len(test_df)} rows). Need > window+2 rows.")
+
+    print(f"\n[split] train: {len(train_df):,} | eval: {len(test_df):,} ({eval_source})")
 
     # ---------- create environments ----------
     from stable_baselines3 import PPO, DQN, A2C

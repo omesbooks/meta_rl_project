@@ -34,6 +34,12 @@ import pandas as pd
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+TRADE_COLUMNS = [
+    "side", "entry", "sl", "tp", "lots", "open_idx", "open_time",
+    "exit", "exit_time", "close_idx", "bars_held", "pnl_pct",
+    "pnl_dollars", "reason",
+]
+
 
 # =============================================================
 # Simulated Account (แทน MT5)
@@ -376,6 +382,10 @@ def run_backtest_live(args):
     trades = account.trade_history
     if not trades:
         print("\n⚠️  No trades executed!")
+        if args.save:
+            out_csv = f"{args.model}_live_bt_trades.csv"
+            pd.DataFrame(columns=TRADE_COLUMNS).to_csv(out_csv, index=False)
+            print(f"[save] empty trades -> {out_csv}")
         return 0
 
     print("\n" + "=" * 60)
@@ -508,7 +518,7 @@ def main():
     ap.add_argument("--balance", type=float, default=10000,
                     help="initial balance")
     ap.add_argument("--spread", type=float, default=0.0002,
-                    help="spread % (0.02% default)")
+                    help="spread %% (0.02%% default)")
     ap.add_argument("--commission", type=float, default=0.0001)
 
     # Data split

@@ -39,7 +39,7 @@ def main():
 
     if "future_return" not in df.columns:
         print("ERROR: ไฟล์ไม่มีคอลัมน์ future_return")
-        return
+        sys.exit(1)
 
     print(f"\nloaded: {src} ({len(df):,} rows)")
     print("\nClass distribution (เดิม):")
@@ -92,7 +92,7 @@ def main():
 
     else:
         print("เลือกไม่ถูกต้อง")
-        return
+        sys.exit(1)
 
     print("\nClass distribution (ใหม่):")
     vc = df["target"].value_counts()

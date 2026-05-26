@@ -455,6 +455,251 @@ class StatCard(ctk.CTkFrame):
             ctk.CTkLabel(self, text="").pack(padx=14, pady=(0, 6))
 
 
+class ScrollableOptionMenu(ctk.CTkFrame):
+    """Option menu replacement for long file/model lists with mouse-wheel scroll."""
+    _open_widget = None
+
+    def __init__(self, master, values=None, command=None, width=180, height=34,
+                 max_items=14, max_render=80, fg_color=None, button_color=None,
+                 button_hover_color=None, text_color=None, **kwargs):
+        super().__init__(master, fg_color="transparent", **kwargs)
+        self._values = list(values or [])
+        self._command = command
+        self._width = width
+        self._height = height
+        self._max_items = max_items
+        self._max_render = max_render
+        self._fg = fg_color or COLOR_BG_INPUT
+        self._button = button_color or self._fg
+        self._hover = button_hover_color or COLOR_HOVER
+        self._text_color = text_color or COLOR_TEXT
+        self._popup = None
+        self._popup_scroll = None
+        self._search_var = None
+        self._popup_value_count = 0
+        self._value = self._values[0] if self._values else ""
+
+        self.grid_columnconfigure(0, weight=1)
+        self._display = ctk.CTkButton(
+            self, text=self._value, anchor="w",
+            fg_color=self._fg, hover_color=self._hover,
+            text_color=self._text_color, corner_radius=8,
+            height=height, command=self._toggle)
+        self._display.grid(row=0, column=0, sticky="ew")
+
+        self._arrow = ctk.CTkButton(
+            self, text="⌄", width=36, height=height,
+            fg_color=self._button, hover_color=self._hover,
+            text_color=self._text_color, corner_radius=8,
+            command=self._toggle)
+        self._arrow.grid(row=0, column=1, sticky="e")
+
+        if width:
+            self.configure(width=width)
+
+    def get(self):
+        return self._value
+
+    def set(self, value):
+        self._value = str(value)
+        self._display.configure(text=self._value)
+
+    def configure(self, **kwargs):
+        if "values" in kwargs:
+            self._values = list(kwargs.pop("values") or [])
+            if self._value in ("", "(none)") and self._values:
+                self.set(self._values[0])
+        if "command" in kwargs:
+            self._command = kwargs.pop("command")
+        if "fg_color" in kwargs:
+            self._fg = kwargs.pop("fg_color")
+            self._display.configure(fg_color=self._fg)
+        if "button_color" in kwargs:
+            self._button = kwargs.pop("button_color")
+            self._arrow.configure(fg_color=self._button)
+        if "button_hover_color" in kwargs:
+            self._hover = kwargs.pop("button_hover_color")
+            self._display.configure(hover_color=self._hover)
+            self._arrow.configure(hover_color=self._hover)
+        if "text_color" in kwargs:
+            self._text_color = kwargs.pop("text_color")
+            self._display.configure(text_color=self._text_color)
+            self._arrow.configure(text_color=self._text_color)
+        if "width" in kwargs:
+            self._width = kwargs["width"]
+        if "height" in kwargs:
+            self._height = kwargs.pop("height")
+            self._display.configure(height=self._height)
+            self._arrow.configure(height=self._height)
+        if "max_render" in kwargs:
+            self._max_render = int(kwargs.pop("max_render"))
+        super().configure(**kwargs)
+
+    config = configure
+
+    def _toggle(self):
+        if self._popup is not None and self._popup.winfo_exists():
+            self._close_popup()
+        else:
+            self._open_popup()
+
+    def _scroll_units_for_count(self, count):
+        if count <= self._max_items:
+            rows_per_notch = 3
+        else:
+            rows_per_notch = max(5, min(18, round(count / 10)))
+        return rows_per_notch * 24
+
+    def _open_popup(self):
+        if ScrollableOptionMenu._open_widget and ScrollableOptionMenu._open_widget is not self:
+            ScrollableOptionMenu._open_widget._close_popup()
+        ScrollableOptionMenu._open_widget = self
+
+        values = self._values or ["(none)"]
+        row_h = 32
+        popup_w = max(self.winfo_width(), self._width or 180, 220)
+        search_h = 38 if len(values) > self._max_items else 0
+        popup_h = min(len(values), self._max_items) * row_h + search_h + 10
+
+        self._popup = ctk.CTkToplevel(self)
+        self._popup.overrideredirect(True)
+        self._popup.transient(self.winfo_toplevel())
+        self._popup.attributes("-topmost", True)
+        x = self.winfo_rootx()
+        y = self.winfo_rooty() + self.winfo_height() + 2
+        self._popup.geometry(f"{popup_w}x{popup_h}+{x}+{y}")
+
+        shell = ctk.CTkFrame(
+            self._popup, fg_color=COLOR_BG_INPUT, corner_radius=8,
+            border_width=1, border_color=COLOR_BORDER)
+        shell.pack(fill="both", expand=True)
+
+        self._search_var = tk.StringVar(value="")
+        if search_h:
+            search = ctk.CTkEntry(
+                shell, textvariable=self._search_var,
+                placeholder_text="Search...",
+                fg_color=COLOR_BG_TERMINAL,
+                border_color=COLOR_BORDER,
+                height=30)
+            search.pack(fill="x", padx=6, pady=(6, 2))
+            search.bind("<KeyRelease>", lambda _e: self._render_popup_values())
+
+        self._popup_scroll = ctk.CTkScrollableFrame(
+            shell, fg_color=COLOR_BG_INPUT, corner_radius=6,
+            scrollbar_button_color=COLOR_HOVER,
+            scrollbar_button_hover_color=COLOR_ACCENT)
+        self._popup_scroll.pack(fill="both", expand=True, padx=2, pady=2)
+        self._popup_scroll.grid_columnconfigure(0, weight=1)
+
+        def on_wheel(event):
+            canvas = getattr(self._popup_scroll, "_parent_canvas", None)
+            if canvas is not None:
+                delta = getattr(event, "delta", 0)
+                if delta:
+                    direction = -1 if delta > 0 else 1
+                    notches = max(1, int(abs(delta) / 120))
+                else:
+                    direction = -1 if getattr(event, "num", None) == 4 else 1
+                    notches = 1
+                units = self._scroll_units_for_count(self._popup_value_count) * notches
+                canvas.yview_scroll(direction * units, "units")
+            return "break"
+
+        self._popup.bind("<Escape>", lambda _e: self._close_popup())
+        self._popup.bind("<MouseWheel>", on_wheel)
+        self._popup.bind("<Button-4>", on_wheel)
+        self._popup.bind("<Button-5>", on_wheel)
+        shell.bind("<MouseWheel>", on_wheel)
+        shell.bind("<Button-4>", on_wheel)
+        shell.bind("<Button-5>", on_wheel)
+        self._popup_scroll.bind("<MouseWheel>", on_wheel)
+        self._popup_scroll.bind("<Button-4>", on_wheel)
+        self._popup_scroll.bind("<Button-5>", on_wheel)
+        self._popup_on_wheel = on_wheel
+        self._render_popup_values()
+
+        if search_h:
+            search.focus_set()
+
+    def _render_popup_values(self):
+        if self._popup_scroll is None:
+            return
+        for child in self._popup_scroll.winfo_children():
+            child.destroy()
+
+        query = ""
+        if self._search_var is not None:
+            query = self._search_var.get().strip().lower()
+
+        values = self._values or ["(none)"]
+        if query:
+            values = [v for v in values if query in str(v).lower()]
+        self._popup_value_count = len(values)
+        shown = values[:self._max_render]
+
+        if not shown:
+            empty = ctk.CTkLabel(
+                self._popup_scroll, text="No matches",
+                text_color=COLOR_DIM, height=30)
+            empty.grid(row=0, column=0, sticky="ew", padx=6, pady=6)
+            if hasattr(self, "_popup_on_wheel"):
+                empty.bind("<MouseWheel>", self._popup_on_wheel)
+                empty.bind("<Button-4>", self._popup_on_wheel)
+                empty.bind("<Button-5>", self._popup_on_wheel)
+            return
+
+        for i, value in enumerate(shown):
+            selected = str(value) == self._value
+            btn = ctk.CTkButton(
+                self._popup_scroll, text=str(value), anchor="w", height=30,
+                fg_color=COLOR_SELECTED if selected else "transparent",
+                hover_color=COLOR_HOVER,
+                text_color=COLOR_TEXT if selected else "#d6dde6",
+                corner_radius=6,
+                command=lambda v=value: self._select(v))
+            btn.grid(row=i, column=0, sticky="ew", padx=2, pady=1)
+            if hasattr(self, "_popup_on_wheel"):
+                btn.bind("<MouseWheel>", self._popup_on_wheel)
+                btn.bind("<Button-4>", self._popup_on_wheel)
+                btn.bind("<Button-5>", self._popup_on_wheel)
+
+        if len(values) > len(shown):
+            note = ctk.CTkLabel(
+                self._popup_scroll,
+                text=f"Showing {len(shown)} of {len(values)}. Type to filter.",
+                text_color=COLOR_DIM,
+                font=ctk.CTkFont(size=10),
+                height=24)
+            note.grid(row=len(shown), column=0, sticky="ew", padx=4, pady=(4, 2))
+            if hasattr(self, "_popup_on_wheel"):
+                note.bind("<MouseWheel>", self._popup_on_wheel)
+                note.bind("<Button-4>", self._popup_on_wheel)
+                note.bind("<Button-5>", self._popup_on_wheel)
+
+    def _select(self, value):
+        self.set(value)
+        self._close_popup()
+        if self._command:
+            self._command(value)
+
+    def _close_popup(self):
+        if self._popup is not None:
+            try:
+                self._popup.destroy()
+            except Exception:
+                pass
+        self._popup = None
+        self._popup_scroll = None
+        self._search_var = None
+        if ScrollableOptionMenu._open_widget is self:
+            ScrollableOptionMenu._open_widget = None
+
+    def destroy(self):
+        self._close_popup()
+        super().destroy()
+
+
 # ============================================================
 # Main Application
 # ============================================================
@@ -477,8 +722,19 @@ class RLTradingStudio(ctk.CTk):
         self.runner = ProcessRunner()
         self.nav_buttons = {}
         self.pages = {}
+        self._file_cache = {"csvs": None, "models": None, "mtimes": {}}
+        self._model_rows_cache = None
+        self._model_rows_cache_sig = None
+        self._model_tree_sig = None
+        self._pipeline_equity_image_sig = None
+        self._pipeline_dataset_token = 0
+        self._pipeline_row_count_q = queue.Queue()
+        self.pipeline_selected_rows = None
+        self.pipeline_suggested_steps = None
+        self._entry_focus_bound = set()
 
         self._build_ui()
+        self.bind("<Button-1>", self._close_popup_on_root_click, add="+")
         self.show_page("train")
         self._poll_queue()
 
@@ -530,6 +786,139 @@ class RLTradingStudio(ctk.CTk):
         except Exception as e:
             print(f"[branding] Failed to load logo image: {e}")
             return None
+
+    # ---------- Lightweight file caches ----------
+    def _path_signature(self, pattern):
+        """Small signature for files matching a pattern; avoids repeated full rescans."""
+        sig = []
+        try:
+            for path in WORK_DIR.glob(pattern):
+                try:
+                    stat = path.stat()
+                    sig.append((path.name, stat.st_mtime_ns, stat.st_size))
+                except OSError:
+                    continue
+        except Exception:
+            return ()
+        return tuple(sorted(sig))
+
+    def _best_model_signature(self):
+        sig = []
+        try:
+            for path in WORK_DIR.glob("*_best"):
+                best = path / "best_model.zip"
+                if not path.is_dir() or not best.exists():
+                    continue
+                try:
+                    stat = best.stat()
+                    sig.append((path.name, stat.st_mtime_ns, stat.st_size))
+                except OSError:
+                    continue
+        except Exception:
+            return ()
+        return tuple(sorted(sig))
+
+    def _list_csv_files(self):
+        sig = self._path_signature("*.csv")
+        if self._file_cache.get("csv_sig") != sig:
+            self._file_cache["csv_sig"] = sig
+            self._file_cache["csvs"] = [name for name, _, _ in sig] or ["(none)"]
+        return self._file_cache["csvs"]
+
+    def _list_model_names(self):
+        zip_sig = self._path_signature("*.zip")
+        best_sig = self._best_model_signature()
+        sig = (zip_sig, best_sig)
+        if self._file_cache.get("model_sig") != sig:
+            models = {name[:-4] for name, _, _ in zip_sig if name.lower().endswith(".zip")}
+            for name, _, _ in best_sig:
+                if name.endswith("_best"):
+                    models.add(name[:-5])
+            self._file_cache["model_sig"] = sig
+            self._file_cache["models"] = sorted(models) or ["(none)"]
+        return self._file_cache["models"]
+
+    def _csv_row_count(self, csv_name):
+        path = WORK_DIR / csv_name
+        if not path.exists() or not path.is_file():
+            return None
+
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+
+        sig = (stat.st_mtime_ns, stat.st_size)
+        row_counts = self._file_cache.setdefault("row_counts", {})
+        cached = row_counts.get(csv_name)
+        if cached and cached.get("sig") == sig:
+            return cached.get("rows")
+
+        lines = 0
+        last_byte = b""
+        try:
+            with path.open("rb") as f:
+                while True:
+                    chunk = f.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    lines += chunk.count(b"\n")
+                    last_byte = chunk[-1:]
+            if stat.st_size > 0 and last_byte not in (b"\n", b"\r"):
+                lines += 1
+        except OSError:
+            return None
+
+        rows = max(lines - 1, 0)
+        row_counts[csv_name] = {"sig": sig, "rows": rows}
+        return rows
+
+    def _pipeline_effective_rows(self, rows):
+        if rows is None:
+            return None
+        try:
+            train_pct = float(self.pipe_train_pct.get().strip() or "1.0")
+        except Exception:
+            train_pct = 1.0
+        try:
+            window = int(float(self.pipe_window.get().strip() or "0"))
+        except Exception:
+            window = 0
+        train_pct = min(max(train_pct, 0.01), 1.0)
+        return max(int(rows * train_pct) - max(window, 0), 1)
+
+    def _round_steps(self, value):
+        step = 50000
+        return max(step, int(round(value / step) * step))
+
+    def _suggest_train_steps(self, rows):
+        effective = self._pipeline_effective_rows(rows)
+        if not effective:
+            return None
+
+        if effective < 5000:
+            target_passes, min_steps = 30, 100000
+        elif effective < 30000:
+            target_passes, min_steps = 12, 200000
+        elif effective < 100000:
+            target_passes, min_steps = 8, 400000
+        else:
+            target_passes, min_steps = 5, 600000
+
+        suggested = self._round_steps(max(effective * target_passes, min_steps))
+        approx_passes = suggested / effective
+        return suggested, effective, approx_passes
+
+    def _model_results_signature(self):
+        return (
+            self._path_signature("*_live_bt_trades.csv"),
+            self._path_signature("*_trades.csv"),
+            self._path_signature("*.zip"),
+            self._path_signature("*_live_bt_equity.png"),
+            self._path_signature("*_equity.png"),
+            self._path_signature("*_filtered_equity.png"),
+            self._path_signature("*_backtest_chart.html"),
+        )
 
     # --------------------------------------------------------
     def _build_ui(self):
@@ -653,16 +1042,18 @@ class RLTradingStudio(ctk.CTk):
         self.content.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
         self.content.grid_columnconfigure(0, weight=1)
 
-        # Build pages
-        self._build_tools_page()
-        self._build_pipeline_page()
-        self._build_train_page()
-        self._build_backtest_page()
-        self._build_walkfwd_page()
-        self._build_finetune_page()
-        self._build_analyze_page()
-        self._build_models_page()
-        self._build_settings_page()
+        # Pages are built on first open. This keeps startup responsive.
+        self._page_builders = {
+            "tools": self._build_tools_page,
+            "pipeline": self._build_pipeline_page,
+            "train": self._build_train_page,
+            "backtest": self._build_backtest_page,
+            "walkfwd": self._build_walkfwd_page,
+            "finetune": self._build_finetune_page,
+            "analyze": self._build_analyze_page,
+            "models": self._build_models_page,
+            "settings": self._build_settings_page,
+        }
 
     def _toggle_theme(self):
         if self.theme_switch.get() == 1:
@@ -675,6 +1066,9 @@ class RLTradingStudio(ctk.CTk):
     # --------------------------------------------------------
     def show_page(self, key):
         self.current_page = key
+
+        if key not in self.pages and key in getattr(self, "_page_builders", {}):
+            self._page_builders[key]()
 
         # Update nav buttons
         for k, btn in self.nav_buttons.items():
@@ -690,6 +1084,7 @@ class RLTradingStudio(ctk.CTk):
         # Show selected
         if key in self.pages:
             self.pages[key].grid(row=0, column=0, sticky="nsew", padx=30, pady=20)
+            self._bind_entry_focus_fix(self.pages[key])
 
         # Update title
         self.page_title_label.configure(text=self.PAGE_TITLES[key])
@@ -702,9 +1097,60 @@ class RLTradingStudio(ctk.CTk):
         elif key == "pipeline":
             self._refresh_dropdowns()
             self._refresh_model_comparison()
-            self._refresh_equity_viewer()
         elif key in ("backtest", "walkfwd", "finetune", "analyze"):
             self._refresh_dropdowns()
+
+    def _bind_entry_focus_fix(self, root):
+        """Keep CTkEntry responsive inside scrollable pages and custom popups."""
+        try:
+            children = root.winfo_children()
+        except Exception:
+            return
+
+        for widget in children:
+            if isinstance(widget, ctk.CTkEntry):
+                ident = str(widget)
+                if ident not in self._entry_focus_bound:
+                    self._entry_focus_bound.add(ident)
+
+                    def focus_entry(event, entry=widget):
+                        if ScrollableOptionMenu._open_widget is not None:
+                            ScrollableOptionMenu._open_widget._close_popup()
+                        inner = getattr(entry, "_entry", entry)
+                        try:
+                            entry.after_idle(inner.focus_force)
+                        except Exception:
+                            pass
+
+                    widget.bind("<Button-1>", focus_entry, add="+")
+                    widget.bind("<ButtonRelease-1>", focus_entry, add="+")
+                    inner = getattr(widget, "_entry", None)
+                    if inner is not None:
+                        inner.bind("<Button-1>", focus_entry, add="+")
+                        inner.bind("<ButtonRelease-1>", focus_entry, add="+")
+
+            self._bind_entry_focus_fix(widget)
+
+    def _is_widget_descendant(self, widget, parent):
+        while widget is not None:
+            if widget is parent:
+                return True
+            try:
+                widget = widget.master
+            except Exception:
+                return False
+        return False
+
+    def _close_popup_on_root_click(self, event):
+        open_widget = ScrollableOptionMenu._open_widget
+        if open_widget is None:
+            return
+        if self._is_widget_descendant(event.widget, open_widget):
+            return
+        open_widget._close_popup()
+
+    def _is_process_busy(self):
+        return self.runner.is_running() or getattr(self, "pipeline_running", False)
 
     # --------------------------------------------------------
     # PAGE: FULL PIPELINE
@@ -737,11 +1183,23 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(setup, text="Train CSV", text_color=COLOR_DIM).grid(
             row=1, column=0, sticky="w", padx=18, pady=(10, 6))
-        csvs = sorted([p.name for p in WORK_DIR.glob("*.csv")]) or ["(none)"]
-        self.pipe_csv = ctk.CTkOptionMenu(
-            setup, values=csvs, width=260,
+        csvs = self._list_csv_files()
+        train_csv_box = ctk.CTkFrame(setup, fg_color="transparent")
+        train_csv_box.grid(row=1, column=1, sticky="ew", padx=(8, 18), pady=(10, 6))
+        train_csv_box.grid_columnconfigure(0, weight=1)
+        self.pipe_csv = ScrollableOptionMenu(
+            train_csv_box, values=csvs, width=260,
             command=lambda _: self._on_pipeline_train_csv_change())
-        self.pipe_csv.grid(row=1, column=1, sticky="ew", padx=(8, 18), pady=(10, 6))
+        self.pipe_csv.grid(row=0, column=0, sticky="ew")
+        self.pipe_data_hint = ctk.CTkLabel(
+            train_csv_box,
+            text="Rows: - | Suggested steps: -",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=11),
+            anchor="w",
+            justify="left",
+        )
+        self.pipe_data_hint.grid(row=1, column=0, sticky="ew", pady=(4, 0))
         if csvs[0] != "(none)":
             self.pipe_csv.set(csvs[0])
 
@@ -753,7 +1211,7 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(setup, text="Backtest CSV", text_color=COLOR_DIM).grid(
             row=2, column=0, sticky="w", padx=18, pady=6)
-        self.pipe_bt_csv = ctk.CTkOptionMenu(setup, values=csvs, width=260)
+        self.pipe_bt_csv = ScrollableOptionMenu(setup, values=csvs, width=260)
         self.pipe_bt_csv.grid(row=2, column=1, sticky="ew", padx=(8, 18), pady=6)
         if csvs[0] != "(none)":
             self.pipe_bt_csv.set(csvs[0])
@@ -763,18 +1221,33 @@ class RLTradingStudio(ctk.CTk):
         self.pipe_train_pct = ctk.CTkEntry(setup, width=120)
         self.pipe_train_pct.insert(0, "1.0")
         self.pipe_train_pct.grid(row=2, column=3, sticky="w", padx=(8, 18), pady=6)
+        self.pipe_train_pct.bind("<KeyRelease>", lambda _e: self._update_pipeline_data_hint())
 
         ctk.CTkLabel(setup, text="Train steps", text_color=COLOR_DIM).grid(
             row=3, column=0, sticky="w", padx=18, pady=6)
-        self.pipe_steps = ctk.CTkEntry(setup, width=120)
+        step_box = ctk.CTkFrame(setup, fg_color="transparent")
+        step_box.grid(row=3, column=1, sticky="w", padx=(8, 18), pady=6)
+        self.pipe_steps = ctk.CTkEntry(step_box, width=120)
         self.pipe_steps.insert(0, "200000")
-        self.pipe_steps.grid(row=3, column=1, sticky="w", padx=(8, 18), pady=6)
+        self.pipe_steps.grid(row=0, column=0, sticky="w")
+        self.pipe_use_steps_btn = ctk.CTkButton(
+            step_box,
+            text="Use suggested",
+            command=self._use_pipeline_suggested_steps,
+            fg_color=COLOR_BG_INPUT,
+            hover_color=COLOR_HOVER,
+            width=110,
+            height=30,
+            state="disabled",
+        )
+        self.pipe_use_steps_btn.grid(row=0, column=1, sticky="w", padx=(8, 0))
 
         ctk.CTkLabel(setup, text="Window size", text_color=COLOR_DIM).grid(
             row=3, column=2, sticky="w", padx=18, pady=6)
         self.pipe_window = ctk.CTkEntry(setup, width=120)
         self.pipe_window.insert(0, "10")
         self.pipe_window.grid(row=3, column=3, sticky="w", padx=(8, 18), pady=6)
+        self.pipe_window.bind("<KeyRelease>", lambda _e: self._update_pipeline_data_hint())
 
         ctk.CTkLabel(setup, text="Backtest confidence", text_color=COLOR_DIM).grid(
             row=4, column=0, sticky="w", padx=18, pady=6)
@@ -807,6 +1280,101 @@ class RLTradingStudio(ctk.CTk):
             btns, text="Stop", command=self._stop_pipeline,
             fg_color=COLOR_RED, hover_color="#da3633", width=90, state="disabled")
         self.pipe_stop_btn.pack(side="left")
+
+        self.pipe_hparam_frame = ctk.CTkFrame(
+            setup, fg_color=COLOR_BG_INPUT, corner_radius=8,
+            border_width=1, border_color=COLOR_BORDER)
+        self.pipe_hparam_frame.grid(row=6, column=0, columnspan=4, sticky="ew",
+                                    padx=18, pady=(0, 16))
+        for col in range(4):
+            self.pipe_hparam_frame.grid_columnconfigure(col, weight=1)
+
+        h_head = ctk.CTkFrame(self.pipe_hparam_frame, fg_color="transparent")
+        h_head.grid(row=0, column=0, columnspan=4, sticky="ew", padx=12, pady=(10, 6))
+        h_head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            h_head, text="PPO Hyperparameters",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=COLOR_TEXT,
+        ).grid(row=0, column=0, sticky="w")
+
+        preset_row = ctk.CTkFrame(h_head, fg_color="transparent")
+        preset_row.grid(row=0, column=1, sticky="e")
+        for label, preset in [
+            ("Default", "default"),
+            ("Stable", "stable"),
+            ("Fast", "fast"),
+            ("Explore", "explore"),
+        ]:
+            ctk.CTkButton(
+                preset_row, text=label,
+                command=lambda p=preset: self._apply_pipeline_preset(p),
+                fg_color=COLOR_BG_CARD,
+                hover_color=COLOR_HOVER,
+                width=72,
+                height=26,
+                font=ctk.CTkFont(size=11),
+            ).pack(side="left", padx=(0, 6))
+
+        self.pipe_hparams = {}
+        h_fields = [
+            ("learning_rate", "3e-4", "lr", "ความแรงในการเรียนรู้"),
+            ("clip_range", "0.2", "clip", "กัน policy เปลี่ยนแรงเกิน"),
+            ("ent_coef", "0.01", "ent", "เพิ่ม/ลดการลองทางใหม่"),
+            ("n_steps", "2048", "nsteps", "จำนวน step ก่อน update"),
+            ("n_epochs", "10", "nepochs", "รอบเรียนซ้ำต่อ rollout"),
+            ("batch_size", "64", "batch", "ขนาด minibatch"),
+            ("gamma", "0.99", "gamma", "น้ำหนักผลลัพธ์อนาคต"),
+            ("gae_lambda", "0.95", "gae", "ทำให้ advantage นิ่งขึ้น"),
+            ("vf_coef", "0.5", "vf", "น้ำหนัก critic/value loss"),
+            ("max_hold", "30", "max_hold", "ถือ position ได้กี่แท่ง"),
+            ("ep_len", "2000", "ep_len", "ความยาว episode ตอน train"),
+            ("net_arch", "auto", "net_arch", "ขนาด neural network"),
+        ]
+        for i, (label, default, key, desc) in enumerate(h_fields):
+            row = 1 + (i // 4) * 3
+            col = i % 4
+            ctk.CTkLabel(
+                self.pipe_hparam_frame,
+                text=label,
+                text_color=COLOR_DIM,
+                font=ctk.CTkFont(size=11),
+            ).grid(row=row, column=col, sticky="w", padx=12, pady=(6, 2))
+            entry = ctk.CTkEntry(self.pipe_hparam_frame, width=120)
+            entry.insert(0, default)
+            entry.grid(row=row + 1, column=col, sticky="ew", padx=12, pady=(0, 2))
+            self.pipe_hparams[key] = entry
+            ctk.CTkLabel(
+                self.pipe_hparam_frame,
+                text=desc,
+                text_color=COLOR_DIM,
+                font=ctk.CTkFont(size=10),
+                anchor="w",
+                justify="left",
+            ).grid(row=row + 2, column=col, sticky="ew", padx=12, pady=(0, 8))
+
+        reward_box = ctk.CTkFrame(self.pipe_hparam_frame, fg_color="transparent")
+        reward_box.grid(row=10, column=0, columnspan=4, sticky="ew", padx=12, pady=(0, 10))
+        ctk.CTkLabel(
+            reward_box, text="Reward mode", text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=11),
+        ).pack(side="left", padx=(0, 8))
+        self.pipe_reward_mode = ctk.CTkOptionMenu(
+            reward_box,
+            values=["realized (recommended)", "mtm"],
+            width=180,
+            fg_color=COLOR_BG_CARD,
+            button_color=COLOR_BG_CARD,
+            button_hover_color=COLOR_HOVER,
+        )
+        self.pipe_reward_mode.set("realized (recommended)")
+        self.pipe_reward_mode.pack(side="left")
+        ctk.CTkLabel(
+            reward_box,
+            text="realized = ให้ reward ตอนปิดไม้ | mtm = ให้ทุกแท่งตาม unrealized P/L",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=10),
+        ).pack(side="left", padx=(10, 0))
 
         progress = Card(page, title="2. Progress")
         progress.grid(row=2, column=0, sticky="ew", pady=(0, 12))
@@ -981,7 +1549,15 @@ class RLTradingStudio(ctk.CTk):
             return
         train_csv = self.pipe_csv.get().strip()
         if not train_csv or train_csv == "(none)":
+            self.pipeline_selected_rows = None
+            self.pipeline_suggested_steps = None
+            if hasattr(self, "pipe_data_hint"):
+                self.pipe_data_hint.configure(text="Rows: - | Suggested steps: -", text_color=COLOR_DIM)
+            if hasattr(self, "pipe_use_steps_btn"):
+                self.pipe_use_steps_btn.configure(state="disabled")
             return
+
+        self._start_pipeline_row_count(train_csv)
 
         train_path = Path(train_csv)
         candidates = []
@@ -994,6 +1570,228 @@ class RLTradingStudio(ctk.CTk):
             if (WORK_DIR / name).exists():
                 self.pipe_bt_csv.set(name)
                 return
+
+    def _start_pipeline_row_count(self, csv_name):
+        if not hasattr(self, "pipe_data_hint"):
+            return
+        self._pipeline_dataset_token += 1
+        token = self._pipeline_dataset_token
+        self.pipeline_selected_rows = None
+        self.pipeline_suggested_steps = None
+        if hasattr(self, "pipe_use_steps_btn"):
+            self.pipe_use_steps_btn.configure(state="disabled")
+        self.pipe_data_hint.configure(
+            text=f"Rows: counting {csv_name}...",
+            text_color=COLOR_DIM,
+        )
+
+        def worker():
+            rows = self._csv_row_count(csv_name)
+            self._pipeline_row_count_q.put((token, csv_name, rows))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _drain_pipeline_row_counts(self):
+        if not hasattr(self, "_pipeline_row_count_q"):
+            return
+        try:
+            while True:
+                token, csv_name, rows = self._pipeline_row_count_q.get_nowait()
+                self._finish_pipeline_row_count(token, csv_name, rows)
+        except queue.Empty:
+            pass
+
+    def _finish_pipeline_row_count(self, token, csv_name, rows):
+        if token != getattr(self, "_pipeline_dataset_token", None):
+            return
+        if not hasattr(self, "pipe_data_hint"):
+            return
+        if rows is None:
+            self.pipeline_selected_rows = None
+            self.pipeline_suggested_steps = None
+            self.pipe_data_hint.configure(
+                text=f"Rows: unable to read {csv_name} | Suggested steps: -",
+                text_color=COLOR_RED,
+            )
+            if hasattr(self, "pipe_use_steps_btn"):
+                self.pipe_use_steps_btn.configure(state="disabled")
+            return
+
+        self.pipeline_selected_rows = rows
+        self._update_pipeline_data_hint()
+
+    def _update_pipeline_data_hint(self):
+        if not hasattr(self, "pipe_data_hint"):
+            return
+        rows = getattr(self, "pipeline_selected_rows", None)
+        if rows is None:
+            return
+
+        rec = self._suggest_train_steps(rows)
+        if not rec:
+            self.pipeline_suggested_steps = None
+            self.pipe_data_hint.configure(
+                text=f"Rows: {rows:,} | Suggested steps: -",
+                text_color=COLOR_DIM,
+            )
+            if hasattr(self, "pipe_use_steps_btn"):
+                self.pipe_use_steps_btn.configure(state="disabled")
+            return
+
+        suggested, effective, approx_passes = rec
+        self.pipeline_suggested_steps = suggested
+        self.pipe_data_hint.configure(
+            text=(
+                f"Rows: {rows:,} | Train bars: {effective:,} | "
+                f"Suggested steps: {suggested:,} (~{approx_passes:.1f} passes)"
+            ),
+            text_color=COLOR_GREEN,
+        )
+        if hasattr(self, "pipe_use_steps_btn"):
+            self.pipe_use_steps_btn.configure(state="normal")
+
+    def _use_pipeline_suggested_steps(self):
+        steps = getattr(self, "pipeline_suggested_steps", None)
+        if not steps or not hasattr(self, "pipe_steps"):
+            return
+        self.pipe_steps.delete(0, "end")
+        self.pipe_steps.insert(0, str(int(steps)))
+
+    def _ppo_presets(self):
+        return {
+            "default": {
+                "lr": "3e-4", "clip": "0.2", "ent": "0.01",
+                "nsteps": "2048", "nepochs": "10", "batch": "64",
+                "gamma": "0.99", "gae": "0.95", "vf": "0.5",
+            },
+            "stable": {
+                "lr": "1e-4", "clip": "0.1", "ent": "0.01",
+                "nsteps": "4096", "nepochs": "10", "batch": "128",
+                "gamma": "0.99", "gae": "0.95", "vf": "0.5",
+            },
+            "fast": {
+                "lr": "5e-4", "clip": "0.3", "ent": "0.01",
+                "nsteps": "1024", "nepochs": "5", "batch": "64",
+                "gamma": "0.99", "gae": "0.95", "vf": "0.5",
+            },
+            "explore": {
+                "lr": "3e-4", "clip": "0.2", "ent": "0.05",
+                "nsteps": "2048", "nepochs": "10", "batch": "64",
+                "gamma": "0.99", "gae": "0.95", "vf": "0.5",
+            },
+        }
+
+    def _apply_pipeline_preset(self, name):
+        presets = self._ppo_presets()
+        p = presets.get(name)
+        if not p or not hasattr(self, "pipe_hparams"):
+            return
+        mapping = {
+            "lr": p["lr"],
+            "clip": p["clip"],
+            "ent": p["ent"],
+            "nsteps": p["nsteps"],
+            "nepochs": p["nepochs"],
+            "batch": p["batch"],
+            "gamma": p["gamma"],
+            "gae": p["gae"],
+            "vf": p["vf"],
+        }
+        for key, val in mapping.items():
+            entry = self.pipe_hparams.get(key)
+            if entry is None:
+                continue
+            entry.delete(0, "end")
+            entry.insert(0, val)
+
+    def _get_pipeline_hparams(self):
+        if not hasattr(self, "pipe_hparams"):
+            return {}
+
+        raw = {
+            key: entry.get().strip()
+            for key, entry in self.pipe_hparams.items()
+        }
+        defaults = {
+            "lr": "3e-4", "clip": "0.2", "ent": "0.01",
+            "nsteps": "2048", "nepochs": "10", "batch": "64",
+            "gamma": "0.99", "gae": "0.95", "vf": "0.5",
+            "max_hold": "30", "ep_len": "2000", "net_arch": "auto",
+        }
+        values = {k: (raw.get(k) or defaults[k]) for k in defaults}
+
+        try:
+            floats = {
+                "learning_rate": float(values["lr"]),
+                "clip_range": float(values["clip"]),
+                "ent_coef": float(values["ent"]),
+                "gamma": float(values["gamma"]),
+                "gae_lambda": float(values["gae"]),
+                "vf_coef": float(values["vf"]),
+            }
+            ints = {
+                "n_steps": int(float(values["nsteps"])),
+                "n_epochs": int(float(values["nepochs"])),
+                "batch_size": int(float(values["batch"])),
+                "max_hold": int(float(values["max_hold"])),
+                "ep_len": int(float(values["ep_len"])),
+            }
+        except ValueError:
+            messagebox.showerror("Invalid hyperparameters", "Hyperparameters must be numeric, except net_arch.")
+            return None
+
+        if floats["learning_rate"] <= 0:
+            messagebox.showerror("Invalid hyperparameters", "learning_rate must be greater than 0.")
+            return None
+        if floats["clip_range"] <= 0:
+            messagebox.showerror("Invalid hyperparameters", "clip_range must be greater than 0.")
+            return None
+        if floats["ent_coef"] < 0 or floats["vf_coef"] < 0:
+            messagebox.showerror("Invalid hyperparameters", "ent_coef and vf_coef must be 0 or greater.")
+            return None
+        if not (0 < floats["gamma"] <= 1):
+            messagebox.showerror("Invalid hyperparameters", "gamma must be > 0 and <= 1.")
+            return None
+        if not (0 < floats["gae_lambda"] <= 1):
+            messagebox.showerror("Invalid hyperparameters", "gae_lambda must be > 0 and <= 1.")
+            return None
+        if any(v <= 0 for v in ints.values()):
+            messagebox.showerror("Invalid hyperparameters", "n_steps, n_epochs, batch_size, max_hold, and ep_len must be greater than 0.")
+            return None
+        if ints["batch_size"] > ints["n_steps"]:
+            messagebox.showerror("Invalid hyperparameters", "batch_size must be <= n_steps.")
+            return None
+
+        net_arch = values["net_arch"].strip() or "auto"
+        if net_arch != "auto":
+            try:
+                layers = [int(x.strip()) for x in net_arch.split(",") if x.strip()]
+            except ValueError:
+                messagebox.showerror("Invalid hyperparameters", "net_arch must be 'auto' or comma-separated integers, e.g. 256,128,64.")
+                return None
+            if not layers or any(x <= 0 for x in layers):
+                messagebox.showerror("Invalid hyperparameters", "net_arch layers must be positive integers.")
+                return None
+
+        reward_mode = "realized"
+        if hasattr(self, "pipe_reward_mode"):
+            reward_mode = self.pipe_reward_mode.get().split()[0]
+
+        return {
+            "learning_rate": str(floats["learning_rate"]),
+            "clip_range": str(floats["clip_range"]),
+            "ent_coef": str(floats["ent_coef"]),
+            "n_steps": str(ints["n_steps"]),
+            "n_epochs": str(ints["n_epochs"]),
+            "batch_size": str(ints["batch_size"]),
+            "gamma": str(floats["gamma"]),
+            "gae_lambda": str(floats["gae_lambda"]),
+            "vf_coef": str(floats["vf_coef"]),
+            "max_hold": str(ints["max_hold"]),
+            "ep_len": str(ints["ep_len"]),
+            "net_arch": net_arch,
+            "reward_mode": reward_mode,
+        }
 
     def _run_full_pipeline(self):
         if self.runner.is_running() or getattr(self, "pipeline_running", False):
@@ -1041,6 +1839,10 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showerror("Invalid settings", "Train pct must be > 0 and <= 1.0.")
             return
 
+        hparams = self._get_pipeline_hparams()
+        if hparams is None:
+            return
+
         if (WORK_DIR / f"{model_name}.zip").exists():
             ok = messagebox.askyesno(
                 "Overwrite model?",
@@ -1065,7 +1867,7 @@ class RLTradingStudio(ctk.CTk):
 
         t = threading.Thread(
             target=self._pipeline_worker,
-            args=(csv_name, bt_csv, use_relabel, model_name, steps, window, conf, mode, train_pct),
+            args=(csv_name, bt_csv, use_relabel, model_name, steps, window, conf, mode, train_pct, hparams),
             daemon=True,
         )
         t.start()
@@ -1080,7 +1882,7 @@ class RLTradingStudio(ctk.CTk):
                 pass
 
     def _pipeline_worker(self, csv_name, bt_csv, use_relabel, model_name,
-                         steps, window, conf, mode, train_pct):
+                         steps, window, conf, mode, train_pct, hparams):
         train_csv = csv_name
         stages_total = 3
         if use_relabel and not Path(csv_name).stem.endswith("_relabeled"):
@@ -1104,6 +1906,20 @@ class RLTradingStudio(ctk.CTk):
                 "--name", model_name,
                 "--train_pct", str(train_pct),
                 "--eval_csv", bt_csv,
+                "--algo", "ppo",
+                "--reward_mode", hparams["reward_mode"],
+                "--max_hold", hparams["max_hold"],
+                "--ep_len", hparams["ep_len"],
+                "--net_arch", hparams["net_arch"],
+                "--learning_rate", hparams["learning_rate"],
+                "--clip_range", hparams["clip_range"],
+                "--ent_coef", hparams["ent_coef"],
+                "--n_steps", hparams["n_steps"],
+                "--n_epochs", hparams["n_epochs"],
+                "--batch_size", hparams["batch_size"],
+                "--gamma", hparams["gamma"],
+                "--gae_lambda", hparams["gae_lambda"],
+                "--vf_coef", hparams["vf_coef"],
             ]
             self._pipeline_run_cmd(train_cmd, stage, "Train PPO", stages_total)
             stage += 1
@@ -1205,7 +2021,6 @@ class RLTradingStudio(ctk.CTk):
             self._pipeline_log(message, "success")
             self._refresh_dropdowns()
             self._refresh_model_comparison()
-            self._refresh_equity_viewer()
         else:
             self._set_pipeline_progress(self.pipe_progress.get(), "Pipeline stopped/failed")
             self._pipeline_log(message, "error")
@@ -1548,6 +2363,10 @@ class RLTradingStudio(ctk.CTk):
         return p.with_stem(p.stem + "_relabeled")
 
     def _collect_model_rows(self):
+        sig = self._model_results_signature()
+        if self._model_rows_cache_sig == sig and self._model_rows_cache is not None:
+            return list(self._model_rows_cache)
+
         rows = []
         seen = set()
         trade_files = list(WORK_DIR.glob("*_live_bt_trades.csv")) + list(WORK_DIR.glob("*_trades.csv"))
@@ -1602,6 +2421,8 @@ class RLTradingStudio(ctk.CTk):
             r.get("return_pct") is not None,
             r.get("return_pct") if r.get("return_pct") is not None else -1e9,
         ), reverse=True)
+        self._model_rows_cache_sig = sig
+        self._model_rows_cache = list(rows)
         return rows
 
     def _metrics_from_trades(self, trades_path):
@@ -1681,11 +2502,18 @@ class RLTradingStudio(ctk.CTk):
     def _refresh_model_comparison(self):
         if not hasattr(self, "model_tree"):
             return
+
+        sig = self._model_results_signature()
+        if self._model_tree_sig == sig and getattr(self, "pipeline_rows", None) and self.model_tree.get_children():
+            self._refresh_equity_viewer()
+            return
+
         for item in self.model_tree.get_children():
             self.model_tree.delete(item)
 
         rows = self._collect_model_rows()
         self.pipeline_rows = {row["iid"]: row for row in rows}
+        self._model_tree_sig = sig
         for row in rows:
             values = (
                 row["model"],
@@ -1734,6 +2562,7 @@ class RLTradingStudio(ctk.CTk):
         row = self._selected_pipeline_row()
         if not row:
             self.pipeline_equity_image = None
+            self._pipeline_equity_image_sig = None
             self.pipeline_equity_label.configure(
                 image=None, text="No model results found yet.")
             return
@@ -1741,6 +2570,7 @@ class RLTradingStudio(ctk.CTk):
         equity_path = row.get("equity_path") or self._equity_path_for_model(row["model"])
         if not equity_path:
             self.pipeline_equity_image = None
+            self._pipeline_equity_image_sig = None
             self.pipeline_equity_label.configure(
                 image=None,
                 text=f"No equity image found for {row['model']}. Run backtest first.",
@@ -1749,6 +2579,15 @@ class RLTradingStudio(ctk.CTk):
             return
 
         try:
+            stat = equity_path.stat()
+            image_sig = (str(equity_path), stat.st_mtime_ns, stat.st_size)
+            if self._pipeline_equity_image_sig == image_sig and self.pipeline_equity_image is not None:
+                self.pipeline_equity_label.configure(
+                    image=self.pipeline_equity_image,
+                    text="",
+                )
+                return
+
             from PIL import Image
             img = Image.open(equity_path)
             img.thumbnail((920, 360), Image.LANCZOS)
@@ -1757,12 +2596,14 @@ class RLTradingStudio(ctk.CTk):
                 dark_image=img,
                 size=img.size,
             )
+            self._pipeline_equity_image_sig = image_sig
             self.pipeline_equity_label.configure(
                 image=self.pipeline_equity_image,
                 text="",
             )
         except Exception as e:
             self.pipeline_equity_image = None
+            self._pipeline_equity_image_sig = None
             self.pipeline_equity_label.configure(
                 image=None,
                 text=f"Equity image: {equity_path.name}\nPreview failed: {e}",
@@ -1965,7 +2806,7 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(c2, text="Source CSV", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
                       ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 4))
-        self.tool_split_csv = ctk.CTkOptionMenu(c2, values=["(none)"],
+        self.tool_split_csv = ScrollableOptionMenu(c2, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.tool_split_csv.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
 
@@ -2067,7 +2908,7 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(relabel_grid, text="Method", text_color=COLOR_DIM,
             font=ctk.CTkFont(size=12)).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
 
-        self.tool_relabel_csv = ctk.CTkOptionMenu(relabel_grid, values=["(none)"],
+        self.tool_relabel_csv = ScrollableOptionMenu(relabel_grid, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.tool_relabel_csv.grid(row=1, column=0, sticky="ew")
 
@@ -2108,7 +2949,7 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(feat_grid, text="Correlation threshold", text_color=COLOR_DIM,
             font=ctk.CTkFont(size=12)).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
 
-        self.tool_feat_csv = ctk.CTkOptionMenu(feat_grid, values=["(none)"],
+        self.tool_feat_csv = ScrollableOptionMenu(feat_grid, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.tool_feat_csv.grid(row=1, column=0, sticky="ew")
 
@@ -2161,7 +3002,7 @@ class RLTradingStudio(ctk.CTk):
             text_color=COLOR_DIM,
             font=ctk.CTkFont(size=12)).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
 
-        self.tool_export_model = ctk.CTkOptionMenu(ex_grid, values=["(none)"],
+        self.tool_export_model = ScrollableOptionMenu(ex_grid, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
             command=self._on_export_model_change)
         self.tool_export_model.grid(row=1, column=0, sticky="ew")
@@ -2613,7 +3454,7 @@ class RLTradingStudio(ctk.CTk):
             self._log(self.tools_log, traceback.format_exc(), "error")
 
     def _refresh_tools_dropdowns(self):
-        csvs = sorted([p.name for p in WORK_DIR.glob("*.csv")]) or ["(none)"]
+        csvs = self._list_csv_files()
         menus = [self.tool_split_csv, self.tool_relabel_csv]
         if hasattr(self, 'tool_feat_csv'):
             menus.append(self.tool_feat_csv)
@@ -2626,13 +3467,7 @@ class RLTradingStudio(ctk.CTk):
 
         # Refresh model dropdown for export (find .zip + _best/)
         if hasattr(self, 'tool_export_model'):
-            models = set()
-            for p in WORK_DIR.glob("*.zip"):
-                models.add(p.stem)
-            for p in WORK_DIR.glob("*_best"):
-                if p.is_dir() and (p / "best_model.zip").exists():
-                    models.add(p.name.replace("_best", ""))
-            model_list = sorted(models) or ["(none)"]
+            model_list = self._list_model_names()
             try:
                 self.tool_export_model.configure(values=model_list)
                 if self.tool_export_model.get() in ("(none)", "") and model_list[0] != "(none)":
@@ -3402,20 +4237,7 @@ class RLTradingStudio(ctk.CTk):
 
     def _apply_preset(self, name: str):
         """Apply hyperparameter preset"""
-        presets = {
-            "default": {"lr": "3e-4", "clip": "0.2", "ent": "0.01",
-                         "nsteps": "2048", "nepochs": "10", "batch": "64",
-                         "gamma": "0.99", "gae": "0.95", "vf": "0.5"},
-            "stable":  {"lr": "1e-4", "clip": "0.1", "ent": "0.01",
-                         "nsteps": "4096", "nepochs": "10", "batch": "128",
-                         "gamma": "0.99", "gae": "0.95", "vf": "0.5"},
-            "fast":    {"lr": "5e-4", "clip": "0.3", "ent": "0.01",
-                         "nsteps": "1024", "nepochs": "5",  "batch": "64",
-                         "gamma": "0.99", "gae": "0.95", "vf": "0.5"},
-            "explore": {"lr": "3e-4", "clip": "0.2", "ent": "0.05",
-                         "nsteps": "2048", "nepochs": "10", "batch": "64",
-                         "gamma": "0.99", "gae": "0.95", "vf": "0.5"},
-        }
+        presets = self._ppo_presets()
         p = presets.get(name)
         if not p:
             return
@@ -3784,7 +4606,7 @@ class RLTradingStudio(ctk.CTk):
         self.train_csv_meta.configure(text=meta)
 
     def _start_training(self):
-        if self.runner.is_running():
+        if self._is_process_busy():
             messagebox.showwarning("Busy", "Already training")
             return
         if not hasattr(self, 'train_csv_path'):
@@ -3848,7 +4670,7 @@ class RLTradingStudio(ctk.CTk):
         self.runner.start(cmd)
 
     def _stop_training(self):
-        if self.runner.is_running():
+        if self._is_process_busy():
             self._log(self.train_log, "Stopping...", "warn")
             self.runner.stop()
 
@@ -3881,13 +4703,13 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(setup, text="Model", text_color=COLOR_DIM
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
-        self.bt_model = ctk.CTkOptionMenu(setup, values=["(none)"],
+        self.bt_model = ScrollableOptionMenu(setup, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.bt_model.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
 
         ctk.CTkLabel(setup, text="Test Dataset", text_color=COLOR_DIM
                       ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
-        self.bt_csv = ctk.CTkOptionMenu(setup, values=["(none)"],
+        self.bt_csv = ScrollableOptionMenu(setup, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.bt_csv.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
 
@@ -4000,7 +4822,7 @@ class RLTradingStudio(ctk.CTk):
 
     def _generate_chart(self):
         """Generate backtest chart"""
-        if self.runner.is_running():
+        if self._is_process_busy():
             messagebox.showwarning("Busy", "Another task running")
             return
 
@@ -4049,7 +4871,7 @@ class RLTradingStudio(ctk.CTk):
         self._log(self.bt_log, f"Opened {chart_path.name} in browser", "success")
 
     def _run_backtest(self):
-        if self.runner.is_running():
+        if self._is_process_busy():
             messagebox.showwarning("Busy", "Another task running")
             return
 
@@ -4102,7 +4924,7 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(c1, text="Test Dataset", text_color=COLOR_DIM
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
-        self.wf_csv = ctk.CTkOptionMenu(c1, values=["(none)"],
+        self.wf_csv = ScrollableOptionMenu(c1, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.wf_csv.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
 
@@ -4162,7 +4984,7 @@ class RLTradingStudio(ctk.CTk):
         self.wf_log = self._make_log_widget(log_frame, height=10)
 
     def _run_walkforward(self):
-        if self.runner.is_running():
+        if self._is_process_busy():
             messagebox.showwarning("Busy", "Another task running")
             return
         csv = self.wf_csv.get()
@@ -4203,7 +5025,7 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(c1, text="Existing Model", text_color=COLOR_DIM
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
-        self.ft_base = ctk.CTkOptionMenu(c1, values=["(none)"],
+        self.ft_base = ScrollableOptionMenu(c1, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.ft_base.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
 
@@ -4217,10 +5039,10 @@ class RLTradingStudio(ctk.CTk):
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
         ctk.CTkLabel(c2, text="New Data CSV", text_color=COLOR_DIM
                       ).grid(row=1, column=1, sticky="w", padx=18, pady=(8, 4))
-        self.ft_old = ctk.CTkOptionMenu(c2, values=["(none)"],
+        self.ft_old = ScrollableOptionMenu(c2, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.ft_old.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
-        self.ft_new = ctk.CTkOptionMenu(c2, values=["(none)"],
+        self.ft_new = ScrollableOptionMenu(c2, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.ft_new.grid(row=2, column=1, sticky="ew", padx=18, pady=(0, 12))
 
@@ -4261,7 +5083,7 @@ class RLTradingStudio(ctk.CTk):
         self.ft_log = self._make_log_widget(log_frame, height=10)
 
     def _run_finetune(self):
-        if self.runner.is_running():
+        if self._is_process_busy():
             messagebox.showwarning("Busy", "Another task running")
             return
 
@@ -4313,10 +5135,10 @@ class RLTradingStudio(ctk.CTk):
                       ).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(s, text="CSV", text_color=COLOR_DIM
                       ).grid(row=0, column=1, sticky="w", padx=8)
-        self.an_model = ctk.CTkOptionMenu(s, values=["(none)"],
+        self.an_model = ScrollableOptionMenu(s, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.an_model.grid(row=1, column=0, sticky="ew", pady=(2, 0))
-        self.an_csv = ctk.CTkOptionMenu(s, values=["(none)"],
+        self.an_csv = ScrollableOptionMenu(s, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.an_csv.grid(row=1, column=1, sticky="ew", padx=8, pady=(2, 0))
 
@@ -4335,7 +5157,7 @@ class RLTradingStudio(ctk.CTk):
         self.an_log = self._make_log_widget(log_frame, height=20)
 
     def _run_analyze(self):
-        if self.runner.is_running():
+        if self._is_process_busy():
             messagebox.showwarning("Busy", "Another task running")
             return
         model = self.an_model.get()
@@ -4727,18 +5549,28 @@ Built with: CustomTkinter + stable-baselines3
     # --------------------------------------------------------
     def _refresh_dropdowns(self):
         """Refresh model + csv dropdowns from current dir"""
-        models = sorted([p.stem for p in WORK_DIR.glob("*.zip")]) or ["(none)"]
-        csvs = sorted([p.name for p in WORK_DIR.glob("*.csv")]) or ["(none)"]
+        models = self._list_model_names()
+        csvs = self._list_csv_files()
 
-        for menu in [self.bt_model, self.an_model, self.ft_base]:
+        model_menu_names = ("bt_model", "an_model", "ft_base")
+        for menu_name in model_menu_names:
+            menu = getattr(self, menu_name, None)
+            if menu is None:
+                continue
             try:
                 menu.configure(values=models)
                 if menu.get() in ("(none)", "") and models[0] != "(none)":
                     menu.set(models[0])
             except: pass
 
-        for menu in [self.pipe_csv, self.pipe_bt_csv, self.bt_csv, self.wf_csv, self.an_csv,
-                     self.ft_old, self.ft_new]:
+        csv_menu_names = (
+            "pipe_csv", "pipe_bt_csv", "bt_csv", "wf_csv", "an_csv",
+            "ft_old", "ft_new",
+        )
+        for menu_name in csv_menu_names:
+            menu = getattr(self, menu_name, None)
+            if menu is None:
+                continue
             try:
                 menu.configure(values=csvs)
                 if menu.get() in ("(none)", "") and csvs[0] != "(none)":
@@ -4873,6 +5705,7 @@ Built with: CustomTkinter + stable-baselines3
 
     def _poll_queue(self):
         """Read subprocess output queue + dispatch to UI"""
+        self._drain_pipeline_row_counts()
         try:
             while True:
                 kind, data = self.runner.q.get_nowait()
@@ -4887,11 +5720,11 @@ Built with: CustomTkinter + stable-baselines3
     def _handle_log_line(self, line):
         page = self.current_page
         log_widget = {
-            'train': self.train_log,
-            'backtest': self.bt_log,
-            'walkfwd': self.wf_log,
-            'finetune': self.ft_log,
-            'analyze': self.an_log,
+            'train': getattr(self, 'train_log', None),
+            'backtest': getattr(self, 'bt_log', None),
+            'walkfwd': getattr(self, 'wf_log', None),
+            'finetune': getattr(self, 'ft_log', None),
+            'analyze': getattr(self, 'an_log', None),
         }.get(page)
         if log_widget:
             tag = self._classify_log(line)
@@ -5000,11 +5833,11 @@ Built with: CustomTkinter + stable-baselines3
         # Log
         page = self.current_page
         log_widget = {
-            'train': self.train_log,
-            'backtest': self.bt_log,
-            'walkfwd': self.wf_log,
-            'finetune': self.ft_log,
-            'analyze': self.an_log,
+            'train': getattr(self, 'train_log', None),
+            'backtest': getattr(self, 'bt_log', None),
+            'walkfwd': getattr(self, 'wf_log', None),
+            'finetune': getattr(self, 'ft_log', None),
+            'analyze': getattr(self, 'an_log', None),
         }.get(page)
         if log_widget:
             self._log(log_widget, msg,

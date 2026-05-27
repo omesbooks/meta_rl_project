@@ -105,22 +105,28 @@ def main():
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
         df = df.sort_values("timestamp").reset_index(drop=True)
 
-    # normalize features (RL ชอบ scaled input)
-    print("[normalize] z-score features ...")
-    feat_mean = df[feature_cols].mean()
-    feat_std = df[feature_cols].std() + 1e-8
+    # ---------- split index (computed BEFORE normalize to avoid test leakage) ----------
+    train_pct = min(max(float(args.train_pct), 0.01), 1.0)
+    split = int(len(df) * train_pct)
+
+    # normalize features using TRAIN-ONLY stats (RL ชอบ scaled input)
+    # mean/std from the train slice only -> no look-ahead leakage from test.
+    # With --eval_csv, train_pct is typically 1.0 so stats cover the full train
+    # file, and the separate eval set is normalized with these same stats below.
+    print("[normalize] z-score features (train-only stats) ...")
+    train_slice = df[feature_cols].iloc[:split]
+    feat_mean = train_slice.mean()
+    feat_std = train_slice.std() + 1e-8
     df[feature_cols] = (df[feature_cols] - feat_mean) / feat_std
     # fill NaN
     df = df.fillna(0).reset_index(drop=True)
 
-    # save normalization stats so we can use same in inference
+    # save normalization stats so inference (EA) uses identical scaling
     norm_path = Path(f"{args.name}_norm.csv")
     pd.DataFrame({"mean": feat_mean, "std": feat_std}).to_csv(norm_path)
     print(f"  saved norm stats -> {norm_path}")
 
     # ---------- split ----------
-    train_pct = min(max(float(args.train_pct), 0.01), 1.0)
-    split = int(len(df) * train_pct)
     train_df = df.iloc[:split].reset_index(drop=True)
     test_df = df.iloc[split:].reset_index(drop=True)
     eval_source = "internal split"

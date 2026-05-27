@@ -244,8 +244,28 @@ def run_backtest_live(args):
     n_force_close = 0
     n_hard_stop = 0
 
+    # Auto-detect window from the model's observation space:
+    #   obs_dim = window * n_features + 3  ->  window = (obs_dim - 3) / n_features
+    # No need to pass --window; the model knows it. --window only overrides.
+    obs_dim = int(model.observation_space.shape[0])
+    n_feat = len(feature_cols)
+    detected_window = (obs_dim - 3) // n_feat if n_feat > 0 else 0
+
+    if detected_window > 0 and (obs_dim - 3) % n_feat == 0:
+        if args.window > 0 and args.window != detected_window:
+            print(f"[window] --window {args.window} != model's {detected_window}; "
+                  f"using model's {detected_window}")
+        else:
+            print(f"[window] auto-detected {detected_window} "
+                  f"(obs_dim={obs_dim}, features={n_feat})")
+        warmup = detected_window
+    else:
+        warmup = args.window if args.window > 0 else 10
+        print(f"[window] could not auto-detect (obs_dim={obs_dim}, "
+              f"features={n_feat}); using {warmup}. "
+              f"Check that backtest features match training.")
+
     # Ensure we have enough warmup
-    warmup = args.window
     if len(df) <= warmup + 1:
         print("ERROR: not enough data after warmup")
         return 1
@@ -524,8 +544,8 @@ def main():
     # Data split
     ap.add_argument("--start", type=float, default=0.0,
                     help="start fraction (0.8 = use last 20%%)")
-    ap.add_argument("--window", type=int, default=10,
-                    help="state window size (must match training)")
+    ap.add_argument("--window", type=int, default=0,
+                    help="state window size (0 = auto-detect from model; optional override)")
 
     # Output
     ap.add_argument("--verbose", action="store_true",

@@ -4759,12 +4759,11 @@ class RLTradingStudio(ctk.CTk):
         self.bt_tp = ctk.CTkEntry(risk); self.bt_tp.insert(0, "4.0")
         self.bt_tp.grid(row=4, column=1, sticky="ew", padx=18, pady=(0, 16))
 
-        # Window size — ⚠️ ต้องตรงกับตอน train!
-        ctk.CTkLabel(risk, text="Window Size (must match training)",
+        # Window size — auto-detected from the model; leave blank
+        ctk.CTkLabel(risk, text="Window Size (auto-detected — leave blank)",
                       text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
                       ).grid(row=5, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 4))
-        self.bt_window = ctk.CTkEntry(risk, placeholder_text="10 (default)")
-        self.bt_window.insert(0, "10")
+        self.bt_window = ctk.CTkEntry(risk, placeholder_text="auto (from model)")
         self.bt_window.grid(row=6, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 16))
 
         # Run button + stats
@@ -4893,7 +4892,7 @@ class RLTradingStudio(ctk.CTk):
             "--max_positions", self.bt_max_pos.get() or "3",
             "--atr_sl", self.bt_sl.get() or "2.0",
             "--atr_tp", self.bt_tp.get() or "4.0",
-            "--window", self.bt_window.get() or "10",
+            "--window", self.bt_window.get().strip() or "0",  # 0 = auto-detect from model
             "--mode", mode,
         ]
 

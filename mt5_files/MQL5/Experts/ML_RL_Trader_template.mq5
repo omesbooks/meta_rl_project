@@ -47,7 +47,8 @@ input double   InpHardDD_Pct        = 0.15;       // Hard stop drawdown 15%
 input group "=== Trading ==="
 input int      InpMagicNumber       = 20251108;
 input string   InpComment           = "RL_V10";
-input double   InpFixedLot          = 0.01;       // Used if no SL specified
+input double   InpFixedLot          = 0.01;       // Fallback lot (risk calc unavailable)
+input double   InpLotPercent        = 1.0;        // No-SL lot %: Lot=(LotPct/100/100000)*Balance
 input bool     InpUseSLTP           = true;       // Set SL/TP on entry
 
 input group "=== Session Filter (avoid Market closed errors) ==="
@@ -58,6 +59,7 @@ input bool     InpSkipFridayLate    = true;       // Skip Friday after cutoff (a
 input int      InpFridayCutoffHour  = 21;         // Friday cutoff hour (server time)
 input int      InpManualEarliestHour = 0;         // Manual fallback: earliest hour (used if InpUseSymbolSession=false)
 input int      InpManualLatestHour   = 24;        // Manual fallback: latest hour
+input ENUM_TIMEFRAMES InpSessionCheckTF = PERIOD_CURRENT;  // TF for session-time check (set M1 = per-minute boundary)
 
 //=== Globals ===
 long           g_onnx_handle = INVALID_HANDLE;
@@ -283,11 +285,30 @@ void CalcSLTP(int direction, double price, double &out_sl, double &out_tp)
 }
 
 //+------------------------------------------------------------------+
+//| Balance-based lot — used when opening WITHOUT SL                 |
+//| Lot = (InpLotPercent / 100 / 100000) * AccountBalance            |
+//+------------------------------------------------------------------+
+double CalcLotByBalance()
+{
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double lot = (InpLotPercent / 100.0 / 100000.0) * balance;
+
+   double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   double step    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   if(step <= 0) step = 0.01;
+
+   lot = MathFloor(lot / step) * step;
+   lot = MathMax(min_lot, MathMin(max_lot, lot));
+   return lot;
+}
+
+//+------------------------------------------------------------------+
 //| Calculate position size from risk %                              |
 //+------------------------------------------------------------------+
 double CalcLot(double sl_distance)
 {
-   if(!InpUseSLTP || sl_distance <= 0) return InpFixedLot;
+   if(!InpUseSLTP || sl_distance <= 0) return CalcLotByBalance();
 
    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
    double risk_amount = balance * InpRiskPct;
@@ -361,7 +382,7 @@ void CloseAllPositions(string reason = "signal")
 //+------------------------------------------------------------------+
 void ManageMaxHold()
 {
-   datetime now = iTime(_Symbol, _Period, 0);
+   datetime now = SessionCheckTime();
    if(!IsAllowedSession(now)) return;  // can't close if market closed
 
    for(int i = PositionsTotal() - 1; i >= 0; i--) {
@@ -391,7 +412,7 @@ void CheckHardStop()
    double dd = (g_account_peak > 0) ? (equity - g_account_peak) / g_account_peak : 0;
    if(dd <= -InpHardDD_Pct && !g_paused) {
       // Try to close — but only if session allows
-      datetime now = iTime(_Symbol, _Period, 0);
+      datetime now = SessionCheckTime();
       if(IsAllowedSession(now)) {
          Print("🚨 HARD STOP triggered. DD=", dd*100, "%");
          CloseAllPositions("hard_stop");
@@ -403,6 +424,17 @@ void CheckHardStop()
    } else if(dd > -InpHardDD_Pct * 0.5) {
       g_paused = false;  // resume when DD recovers
    }
+}
+
+//+------------------------------------------------------------------+
+//| Time used for session checks                                      |
+//| Default = current chart TF bar-0. Set InpSessionCheckTF = M1 for  |
+//| finer per-minute session-boundary resolution.                     |
+//+------------------------------------------------------------------+
+datetime SessionCheckTime()
+{
+   ENUM_TIMEFRAMES tf = (InpSessionCheckTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)_Period : InpSessionCheckTF;
+   return iTime(_Symbol, tf, 0);
 }
 
 //+------------------------------------------------------------------+
@@ -428,8 +460,18 @@ bool IsSymbolSessionOpen(datetime bar_time)
       long from_tod = (long)from % 86400;
       long to_tod   = (long)to   % 86400;
 
-      if(current_tod >= from_tod && current_tod < to_tod) {
-         return true;  // inside an active session
+      // Full-day session (00:00 → 24:00; "to" wraps to 0): always open
+      if(from_tod == 0 && to_tod == 0) return true;
+      // Session ending exactly at midnight (24:00 → 0): treat as end-of-day
+      if(to_tod == 0) to_tod = 86400;
+
+      if(to_tod <= from_tod) {
+         // Session crosses midnight (e.g. 22:00 → 06:00)
+         if(current_tod >= from_tod || current_tod < to_tod)
+            return true;  // inside an active session
+      } else {
+         if(current_tod >= from_tod && current_tod < to_tod)
+            return true;  // inside an active session
       }
    }
    return false;  // no active session at this time
@@ -535,7 +577,7 @@ void OnTick()
    //   1 = Buy
    //   2 = Sell
    //   3 = Close
-   datetime current_bar_time = iTime(_Symbol, _Period, 0);
+   datetime current_bar_time = SessionCheckTime();
    bool session_ok = IsAllowedSession(current_bar_time);
 
    if(!session_ok && action != 0) {

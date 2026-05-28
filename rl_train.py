@@ -126,6 +126,16 @@ def main():
     pd.DataFrame({"mean": feat_mean, "std": feat_std}).to_csv(norm_path)
     print(f"  saved norm stats -> {norm_path}")
 
+    # Forward params.json sidecar from input CSV → model artifacts (for export)
+    import shutil as _shutil
+    src_params = Path(args.csv).with_suffix("").with_suffix(".params.json")
+    if not src_params.exists():
+        src_params = Path(args.csv).parent / (Path(args.csv).stem + ".params.json")
+    if src_params.exists():
+        dst_params = Path(f"{args.name}.params.json")
+        _shutil.copy(src_params, dst_params)
+        print(f"  forwarded params -> {dst_params}")
+
     # ---------- split ----------
     train_df = df.iloc[:split].reset_index(drop=True)
     test_df = df.iloc[split:].reset_index(drop=True)

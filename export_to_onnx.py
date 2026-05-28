@@ -231,10 +231,52 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
         mqh.append(f"   {s:+.10f}{comma}  // {feat_names[i]}")
     mqh.append("};")
     mqh.append("")
+
+    # === Embed DataCollector params (if sidecar exists) ===
+    import json as _json
+    params_file = SCRIPT_DIR / f"{model_name}.params.json"
+    mqh.append("//=== DataCollector feature-computation params (for parity) ===")
+    if params_file.exists():
+        try:
+            params = _json.loads(params_file.read_text(encoding="utf-8"))
+            mqh.append(f"// Embedded from {params_file.name} — applied via")
+            mqh.append("// RL_ApplyDataCollectorConfig() (call in OnInit before RL_InitIndicators).")
+            mqh.append("")
+            INT_KEYS = ("PMIN", "PMAX", "PERIOD", "WINDOW", "FAST", "SLOW", "SIGNAL", "_P")
+            BOOL_KEYS = ("CP_Hammer", "CP_Engulfing", "CP_Inside", "CP_Outside",
+                         "CP_Star", "CP_Soldiers", "CP_Marubozu", "CP_Harami",
+                         "CP_Piercing", "CP_MatHold",
+                         "CP_MatholdReqBreak", "CP_InsideStrict")
+            def _kind(k, v):
+                if isinstance(v, bool): return "bool"
+                if isinstance(v, int) or (isinstance(v, float) and v.is_integer()
+                                          and any(x in k for x in INT_KEYS)): return "int"
+                return "double"
+            def _fmt(v, kind):
+                if kind == "bool": return "true" if v else "false"
+                if kind == "int":  return str(int(v))
+                return f"{float(v):.6f}"
+
+            mqh.append("void RL_ApplyDataCollectorConfig()")
+            mqh.append("{")
+            for k, v in params.items():
+                kind = "bool" if k in BOOL_KEYS else _kind(k, v)
+                mqh.append(f"   {k} = {_fmt(v, kind)};")
+            mqh.append("}")
+        except Exception as e:
+            mqh.append(f"// WARN: could not parse params.json ({e})")
+            mqh.append("void RL_ApplyDataCollectorConfig() { /* no params */ }")
+    else:
+        mqh.append("// No params.json sidecar — EA will use RL_Indicators defaults.")
+        mqh.append("void RL_ApplyDataCollectorConfig() { /* no-op */ }")
+
+    mqh.append("")
     mqh.append(f"#endif // {deploy_name.upper()}_CONFIG_MQH")
 
     config_path.write_text('\n'.join(mqh), encoding='utf-8')
     print(f"\n[config] -> {config_path}")
+    if params_file.exists():
+        print(f"[config] embedded params from {params_file.name}")
 
     # === Generate EA from template ===
     ea_filename = f"{deploy_name}_EA.mq5"

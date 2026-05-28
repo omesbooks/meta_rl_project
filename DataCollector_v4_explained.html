@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>DataCollector_v4 — ทำงานยังไง + ทำไม Parity ถึงแตก</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1f2630;
+    --border: #30363d;
+    --text: #e6edf3;
+    --dim: #8b949e;
+    --accent: #58a6ff;
+    --good: #3fb950;
+    --warn: #d29922;
+    --bad: #f85149;
+    --code-bg: #0d1117;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Sukhumvit Set", "Noto Sans Thai", sans-serif;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 36px 28px 80px; }
+  h1 {
+    font-size: 2.2rem; margin: 0 0 8px;
+    background: linear-gradient(90deg, #58a6ff, #79c0ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { color: var(--dim); margin-bottom: 36px; font-size: 1.05rem; }
+  h2 {
+    font-size: 1.45rem; margin: 40px 0 16px;
+    border-left: 4px solid var(--accent);
+    padding-left: 14px;
+  }
+  h3 { font-size: 1.15rem; margin: 24px 0 10px; color: var(--accent); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .card.good   { border-left: 4px solid var(--good); }
+  .card.warn   { border-left: 4px solid var(--warn); }
+  .card.bad    { border-left: 4px solid var(--bad); }
+  .card.accent { border-left: 4px solid var(--accent); }
+  code {
+    background: var(--panel2);
+    padding: 2px 6px; border-radius: 4px;
+    font-family: "JetBrains Mono", Consolas, Monaco, monospace;
+    font-size: 0.92em;
+    color: #ffa657;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    color: #c9d1d9;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    color: inherit;
+  }
+  .kw   { color: #ff7b72; }   /* keyword */
+  .fn   { color: #d2a8ff; }   /* function */
+  .str  { color: #a5d6ff; }   /* string */
+  .num  { color: #79c0ff; }   /* number */
+  .cm   { color: #6e7681; font-style: italic; }   /* comment */
+  .var  { color: #ffa657; }
+  table {
+    width: 100%; border-collapse: collapse;
+    margin: 14px 0; font-size: 0.95rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left; vertical-align: top;
+  }
+  th { background: var(--panel2); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--panel); }
+  .pill {
+    display: inline-block;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 0.82rem; font-weight: 600;
+    margin-right: 6px;
+  }
+  .pill.good { background: rgba(63,185,80,0.15); color: var(--good); }
+  .pill.bad  { background: rgba(248,81,73,0.15); color: var(--bad);  }
+  .pill.warn { background: rgba(210,153,34,0.15); color: var(--warn); }
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 18px; margin: 18px 0;
+  }
+  .grid > div { padding: 18px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); }
+  .grid .old { border-top: 3px solid var(--bad); }
+  .grid .new { border-top: 3px solid var(--good); }
+  .diagram {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.85rem;
+    color: #c9d1d9;
+    white-space: pre;
+    overflow-x: auto;
+    line-height: 1.4;
+  }
+  .phase {
+    display: flex; gap: 16px; align-items: center;
+    margin: 14px 0;
+  }
+  .phase-num {
+    flex: 0 0 50px; height: 50px;
+    background: var(--accent); color: #0d1117;
+    border-radius: 50%; font-weight: 700; font-size: 1.4rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .phase-body { flex: 1; }
+  .phase-title { font-size: 1.05rem; color: var(--accent); font-weight: 600; }
+  .toc {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 22px;
+    margin: 24px 0;
+  }
+  .toc ol { margin: 6px 0 0 18px; padding: 0; }
+  .toc li { padding: 3px 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .callout {
+    background: rgba(88,166,255,0.08);
+    border-left: 4px solid var(--accent);
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 14px 0;
+  }
+  .callout.warn { background: rgba(210,153,34,0.08); border-color: var(--warn); }
+  .callout.bad  { background: rgba(248,81,73,0.08);  border-color: var(--bad); }
+  .callout.good { background: rgba(63,185,80,0.08); border-color: var(--good); }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 36px 0; }
+  .footer {
+    text-align: center; color: var(--dim);
+    font-size: 0.85rem; margin-top: 60px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>DataCollector_v4.mq5</h1>
+  <p class="subtitle">เจาะลึกการทำงาน + ทำไม design นี้ทำให้ <b>Parity</b> กับ EA แตกจน rl_gbpusd ไม่เทรด</p>
+
+  <div class="toc">
+    <b>สารบัญ</b>
+    <ol>
+      <li><a href="#overview">ภาพรวม</a> — มันคืออะไร, ทำหน้าที่อะไร</li>
+      <li><a href="#phases">4 Phases การทำงาน</a> — OnInit, OnTick, CalcAggregate, OnDeinit</li>
+      <li><a href="#inputs">Configurable Inputs</a> — FeatureMode + ranges</li>
+      <li><a href="#parity">ทำไม Parity แตก</a> — ต้นตอของ bug rl_gbpusd</li>
+      <li><a href="#compare">เทียบกับ DataCollector_RL ใหม่</a></li>
+      <li><a href="#lesson">บทเรียนสถาปัตยกรรม</a></li>
+    </ol>
+  </div>
+
+  <!-- ============ OVERVIEW ============ -->
+  <h2 id="overview">1. ภาพรวม</h2>
+
+  <p>DataCollector_v4.mq5 คือ <b>Expert Advisor (EA)</b> ใน MetaTrader 5
+    ที่ทำหน้าที่ <span style="color:var(--accent)">"เก็บข้อมูลกราฟ"</span> ออกมาเป็น CSV
+    เพื่อเอาไป train RL — <u>ไม่ใช่ EA เทรด</u></p>
+
+  <div class="diagram">MT5 (live / Strategy Tester)
+      ↓ OnTick (ทุกแท่งใหม่)
+  DataCollector_v4 (compute features + label per bar)
+      ↓ FileWrite
+  MQL5/Files/training_data_*.csv  ← 67 columns (OHLCV + indicators + candles + target)
+      ↓ Python rl_train.py
+  PPO model (rl_gbpusd.zip)</div>
+
+  <div class="callout">
+    <b>หัวใจ:</b> EA เปิดบน chart → ทุกแท่งใหม่ คำนวณ indicators &amp; pattern → เขียน 1 row ใน CSV
+    → จบ tester ได้ไฟล์ training พร้อม
+  </div>
+
+  <!-- ============ PHASES ============ -->
+  <h2 id="phases">2. 4 Phases การทำงาน</h2>
+
+  <div class="phase">
+    <div class="phase-num">1</div>
+    <div class="phase-body">
+      <div class="phase-title">OnInit — Setup ครั้งเดียวตอน attach</div>
+      สร้าง indicator handles ทั้งหมด, build header, เปิดไฟล์ CSV
+    </div>
+  </div>
+
+  <pre><span class="kw">int</span> <span class="fn">OnInit</span>() {
+  <span class="cm">// 1) แปลง inputs (RSI_Min=5, RSI_Max=30, ...) → array ของ periods</span>
+  <span class="fn">BuildPeriods</span>(RSI_Mode, RSI_Min, RSI_Max, RSI_Step, RSI_Multi, g_rsi_periods);
+
+  <span class="cm">// 2) สร้าง indicator handle ทีละ period</span>
+  <span class="kw">for</span>(<span class="kw">int</span> i = <span class="num">0</span>; i &lt; <span class="fn">ArraySize</span>(g_rsi_periods); i++)
+      g_h_rsi[i] = <span class="fn">iRSI</span>(_Symbol, _Period, g_rsi_periods[i], PRICE_CLOSE);
+
+  <span class="cm">// ทำซ้ำกับ ATR, EMA, Stoch, CCI, WPR, ADX</span>
+  ...
+
+  <span class="cm">// 3) Single-period indicators</span>
+  h_macd    = <span class="fn">iMACD</span>(...);
+  h_bb      = <span class="fn">iBands</span>(_Symbol, _Period, <span class="num">20</span>, ...);
+  h_ema_long = <span class="fn">iMA</span>(_Symbol, _Period, <span class="num">200</span>, <span class="num">0</span>, MODE_EMA, PRICE_CLOSE);
+
+  <span class="cm">// 4) Candle Patterns (custom indicator)</span>
+  <span class="kw">if</span>(any CP_Enable*)
+      g_h_candles = <span class="fn">iCustom</span>(_Symbol, _Period, <span class="str">"CandlePatterns"</span>, ...);
+
+  <span class="cm">// 5) สร้าง header dynamically ตามที่ตั้ง</span>
+  <span class="fn">BuildHeader</span>();
+  <span class="cm">// → ["timestamp","open","high","low","close","volume",</span>
+  <span class="cm">//    "rsi_min","rsi_max","rsi_mean","rsi_std", ... (ถ้า AGGREGATE)</span>
+  <span class="cm">//    OR "rsi_5","rsi_6",...,"rsi_30",            ... (ถ้า MULTI)</span>
+  <span class="cm">//    ..."candle_hammer",...,"future_return","target"]</span>
+
+  g_handle = <span class="fn">FileOpen</span>(InpOutFile, FILE_WRITE|FILE_CSV);
+  <span class="fn">FileWrite</span>(g_handle, g_header_cols);  <span class="cm">// บรรทัดแรก = header</span>
+}</pre>
+
+  <div class="phase">
+    <div class="phase-num">2</div>
+    <div class="phase-body">
+      <div class="phase-title">OnTick — เขียน 1 row ต่อแท่งใหม่ (หัวใจ)</div>
+      ทุกแท่งใหม่: เช็คเงื่อนไข → ดึง OHLCV → คำนวณ features → เขียน CSV row
+    </div>
+  </div>
+
+  <pre><span class="kw">void</span> <span class="fn">OnTick</span>() {
+  <span class="cm">// ⚡ เช็ค new bar (ป้องกัน trigger ทุก tick)</span>
+  <span class="kw">if</span>(t0[<span class="num">0</span>] == g_lastBarTime) <span class="kw">return</span>;
+  g_lastBarTime = t0[<span class="num">0</span>];
+
+  <span class="cm">// ⚡ ต้องมี history พอ — รวม indicator warmup + window + ForwardBars</span>
+  needed = max_period + max_window + ForwardBars + <span class="num">5</span>;
+  <span class="kw">if</span>(<span class="fn">Bars</span>(_Symbol, _Period) &lt; needed) <span class="kw">return</span>;
+
+  <span class="cm">// ⭐ จุดสำคัญ: เขียนข้อมูลของบาร์ที่ shift = ForwardBars+1 (อดีต)</span>
+  <span class="cm">//    เพราะต้องการ future_return = ต้องรู้อนาคต ForwardBars แท่ง</span>
+  <span class="kw">int</span> i = ForwardBars + <span class="num">1</span>;
+
+  <span class="cm">// ดึง OHLCV ของบาร์นั้น</span>
+  o = rates[i].open;  h = rates[i].high;  l = rates[i].low;  c = rates[i].close;
+
+  <span class="cm">// สร้าง row</span>
+  row = <span class="fn">TimeToString</span>(rates[i].time) + <span class="str">","</span> + _Symbol + ...
+
+  <span class="cm">// เพิ่ม features per indicator</span>
+  <span class="fn">WriteIndicatorValues</span>(RSI_Mode, g_h_rsi, ...)
+      <span class="cm">// ถ้า AGGREGATE → CalcAggregate(values[]) → 4 columns: min, max, mean, std</span>
+      <span class="cm">// ถ้า MULTI     → values[0], values[1], ... → N columns</span>
+
+  ทำซ้ำกับ ATR, EMA, Stoch, CCI, WPR, ADX
+
+  <span class="cm">// Single-period</span>
+  row += macd + <span class="str">","</span> + macd_signal + <span class="str">","</span> + macd_hist;
+  row += bb_position;
+
+  <span class="cm">// Candle patterns 10 ตัว (ถ้าเปิด)</span>
+  <span class="kw">for</span>(p = <span class="num">0</span>; p &lt; <span class="num">10</span>; p++)
+      row += <span class="fn">CopyBuffer</span>(g_h_candles, p, i, <span class="num">1</span>);
+
+  <span class="cm">// ⭐ Label: future_return = (close[i-ForwardBars] - close[i]) / close[i]</span>
+  fr = (closes[i - ForwardBars] - closes[i]) / closes[i];
+  row += fr + <span class="str">","</span> + (fr > +<span class="num">0.001</span> ? <span class="str">"UP"</span> :
+                  fr &lt; -<span class="num">0.001</span> ? <span class="str">"DOWN"</span> : <span class="str">"FLAT"</span>);
+
+  <span class="fn">FileWrite</span>(g_handle, row);
+}</pre>
+
+  <div class="phase">
+    <div class="phase-num">3</div>
+    <div class="phase-body">
+      <div class="phase-title">CalcAggregate — สร้าง min/max/mean/std จาก array ของ periods</div>
+      หัวใจของ <code>FEAT_AGGREGATE</code> mode
+    </div>
+  </div>
+
+  <pre><span class="kw">void</span> <span class="fn">CalcAggregate</span>(<span class="kw">double</span> &amp;values[], <span class="kw">double</span> &amp;out_min, &amp;out_max,
+                              &amp;out_mean, &amp;out_std) {
+  <span class="kw">int</span> n = <span class="fn">ArraySize</span>(values);
+  <span class="kw">double</span> sum = <span class="num">0</span>, sum_sq = <span class="num">0</span>;
+  out_min = values[<span class="num">0</span>]; out_max = values[<span class="num">0</span>];
+
+  <span class="kw">for</span>(<span class="kw">int</span> i = <span class="num">0</span>; i &lt; n; i++) {
+      <span class="kw">if</span>(values[i] &lt; out_min) out_min = values[i];
+      <span class="kw">if</span>(values[i] > out_max) out_max = values[i];
+      sum    += values[i];
+      sum_sq += values[i] * values[i];
+  }
+  out_mean = sum / n;
+  out_std  = <span class="fn">MathSqrt</span>(sum_sq / n - out_mean * out_mean);
+}</pre>
+
+  <div class="callout warn">
+    <b>จุดต้องสังเกต:</b> <code>n</code> = จำนวน periods ที่ user ตั้ง<br>
+    ถ้า user ตั้ง RSI_Min=5, RSI_Max=30 → n=26 → mean ของ 26 ค่า<br>
+    แต่ <code>RL_Indicators.mqh</code> ตั้ง RSI_PMIN=4, RSI_PMAX=30 → n=27 → mean ของ 27 ค่า<br>
+    → <b style="color:var(--bad)">ค่า rsi_mean ต่างกัน!</b>
+  </div>
+
+  <div class="phase">
+    <div class="phase-num">4</div>
+    <div class="phase-body">
+      <div class="phase-title">OnDeinit — Cleanup ตอนปิด tester</div>
+      ปิดไฟล์ + ปล่อย indicator handles
+    </div>
+  </div>
+
+  <pre><span class="kw">void</span> <span class="fn">OnDeinit</span>(<span class="kw">const int</span> reason) {
+  <span class="fn">FileClose</span>(g_handle);
+  <span class="kw">for</span> each h in g_h_rsi, g_h_atr, ...:
+      <span class="fn">IndicatorRelease</span>(h);
+  <span class="fn">Print</span>(<span class="str">"Total rows written: "</span>, g_rows);
+}</pre>
+
+  <!-- ============ INPUTS ============ -->
+  <h2 id="inputs">3. Configurable Inputs — ทำไม v4 ถึง flexible (และอันตราย)</h2>
+
+  <p>v4 เปิดให้ user ปรับ <b>ทุก indicator</b> ได้ผ่าน enum + min/max/step:</p>
+
+  <pre><span class="kw">enum</span> FeatureMode {
+   FEAT_OFF,        <span class="cm">// ไม่เก็บ indicator นี้</span>
+   FEAT_AGGREGATE,  <span class="cm">// ⭐ default — รวม min/max/mean/std (4 columns)</span>
+   FEAT_MULTI,      <span class="cm">// เก็บแต่ละ period แยกคอลัมน์ (N columns)</span>
+};
+
+<span class="kw">input</span> FeatureMode RSI_Mode  = FEAT_AGGREGATE;
+<span class="kw">input</span> <span class="kw">int</span>         RSI_Min   = <span class="num">5</span>;        <span class="cm">// เริ่ม period</span>
+<span class="kw">input</span> <span class="kw">int</span>         RSI_Max   = <span class="num">30</span>;       <span class="cm">// จบ period</span>
+<span class="kw">input</span> <span class="kw">int</span>         RSI_Step  = <span class="num">1</span>;        <span class="cm">// step</span>
+<span class="kw">input</span> <span class="kw">string</span>      RSI_Multi = <span class="str">"7,14,20,30"</span>;  <span class="cm">// list ถ้า MULTI mode</span>
+
+<span class="cm">// ทำซ้ำกับ ATR, EMA, Stoch, CCI, WPR, ADX → รวม ~30 inputs</span></pre>
+
+  <p>+ Candle patterns toggles (10 ตัว) + thresholds (~12 ตัว) → รวมแล้ว <b>50+ inputs</b></p>
+
+  <div class="callout good">
+    ข้อดี: ทดลองง่าย — เปลี่ยน periods แล้วรัน Tester ใหม่ ได้ feature set ใหม่ทันที
+  </div>
+
+  <!-- ============ PARITY BROKEN ============ -->
+  <h2 id="parity">4. ทำไม Parity แตก — ต้นตอของ bug rl_gbpusd</h2>
+
+  <p>ปัญหาคือ design นี้คือ <b>"2 implementations ที่ทำงานคล้ายกัน แต่ไม่ใช่ตัวเดียวกัน":</b></p>
+
+  <div class="diagram">┌────────────────────────────┐      ┌────────────────────────────┐
+│ DataCollector_v4.mq5       │      │ rl_gbpusd_EA.mq5           │
+│ (gen training data)        │      │ (live inference)           │
+│                            │      │                            │
+│ • own iRSI/iATR/.. handles │      │ • own iRSI/iATR/.. handles │
+│ • own CalcAggregate()      │      │ • own CalcAggregate()      │
+│ • own BuildHeader()        │      │ • via RL_Indicators.mqh    │
+│ • periods = INPUTS (runtime)│      │ • periods = #define (compile)│
+└────────────────────────────┘      └────────────────────────────┘
+              │                                    │
+              ▼                                    ▼
+       feature values                        feature values
+              └───────────── ต่างกัน! ─────────────┘
+                          mismatch → bug</div>
+
+  <h3>กรณีจริงที่พังบน rl_gbpusd:</h3>
+
+  <table>
+    <tr><th>Feature</th><th>CSV (จาก generator เก่า)</th><th>EA (RL_Indicators)</th><th>ผล</th></tr>
+    <tr>
+      <td><code>ema_200</code></td>
+      <td><b style="color:var(--bad)">0.017</b> (distance)</td>
+      <td><b>1.756</b> (raw price)</td>
+      <td>+344σ outlier 💥</td>
+    </tr>
+    <tr>
+      <td><code>cci_min</code></td>
+      <td>3.31</td>
+      <td>-44.0</td>
+      <td>58% mismatch</td>
+    </tr>
+    <tr>
+      <td><code>adx_std</code></td>
+      <td>5.20</td>
+      <td>4.24</td>
+      <td>34% mismatch</td>
+    </tr>
+    <tr>
+      <td><code>stoch_std</code></td>
+      <td>15.44</td>
+      <td>14.47</td>
+      <td>25% mismatch</td>
+    </tr>
+    <tr>
+      <td colspan="4" style="text-align:center; color:var(--dim);">
+        ... รวม 13/58 features เพี้ยน
+      </td>
+    </tr>
+  </table>
+
+  <div class="callout bad">
+    <b>ผล:</b> feature ที่ส่งเข้า model ตอนรันใน MT5 = out-of-distribution
+    → model output <code>Hold</code> ด้วย confidence 0.97 ตลอด → <b>ไม่เทรด</b> 2003-2007
+    (เทรดแค่ช่วง warmup ก่อน CSV เริ่ม)
+  </div>
+
+  <h3>ทำไมถึงเป็นแบบนี้?</h3>
+  <ul>
+    <li>training_data_v4_GBPUSD.csv อาจถูก gen ด้วย <b>DataCollector รุ่นเก่ากว่า v4</b> ที่หายไปแล้ว</li>
+    <li>v4 ที่ใช้ตอนนี้เขียน <code>ema_200</code> เป็น raw price (เหมือน EA) — แต่ CSV เก่ามี distance</li>
+    <li>RL_Indicators.mqh comment บอกชัด: <i>"MUST match DataCollector_v3.mq5"</i> — แต่ v3 ก็เปลี่ยน config ได้</li>
+    <li>ไม่มีการ sync ระหว่าง 2 codebases → drift ไปคนละทาง</li>
+  </ul>
+
+  <!-- ============ COMPARISON ============ -->
+  <h2 id="compare">5. เทียบกับ DataCollector_RL ใหม่</h2>
+
+  <div class="grid">
+    <div class="old">
+      <h3 style="color:var(--bad); margin-top:0">DataCollector_v4 (เก่า)</h3>
+      <ul>
+        <li><span class="pill bad">เสี่ยง</span> own feature code</li>
+        <li>own iRSI/iATR handles</li>
+        <li>own CalcAggregate</li>
+        <li>periods configurable via inputs</li>
+        <li>Header สร้าง dynamic ตาม inputs</li>
+        <li>Future return คำนวณ inline</li>
+        <li><b>Parity กับ EA:</b> manual sync</li>
+      </ul>
+    </div>
+    <div class="new">
+      <h3 style="color:var(--good); margin-top:0">DataCollector_RL (ใหม่)</h3>
+      <ul>
+        <li><span class="pill good">ปลอดภัย</span> ใช้ <code>RL_Indicators.mqh</code></li>
+        <li>handles via <code>RL_InitIndicators()</code></li>
+        <li><code>CalcAggregate</code> จาก RL_Indicators</li>
+        <li>periods override ได้ผ่าน inputs</li>
+        <li>Header = <code>RL_ALL_FEATURES[75]</code> คงที่</li>
+        <li>Future return คำนวณใน Python</li>
+        <li><b>Parity กับ EA:</b> ✅ <b>รับประกัน</b> (shared code)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="diagram">┌──────────────────────────┐
+│  DataCollector_RL.mq5    │  ← input InpRSI_Pmax=30 (default = parity)
+│  OnInit: RSI_PMAX = 30   │  ← write global ใน .mqh
+└─────────────┬────────────┘
+              │  #include
+              ▼
+┌──────────────────────────┐
+│   RL_Indicators.mqh      │
+│   int RSI_PMAX = 30;     │  ← global (เคยเป็น #define)
+│                          │
+│   RL_BuildAllFeatures()  │  ← ใช้ RSI_PMAX
+└──────────────────────────┘
+              ▲
+              │  #include
+┌─────────────┴────────────┐
+│      rl_gbpusd_EA.mq5    │  ← ไม่ override → ใช้ default = 30
+└──────────────────────────┘
+
+       ↑ ทั้ง 2 ใช้ .mqh เดียวกัน → feature values ตรงกัน 100%</div>
+
+  <!-- ============ LESSON ============ -->
+  <h2 id="lesson">6. บทเรียนสถาปัตยกรรม</h2>
+
+  <div class="card accent">
+    <h3 style="margin-top:0">หลักการที่ต้องจำ</h3>
+    <p style="font-size:1.1rem;">
+      <b>Training data + Inference code = ต้องใช้ feature implementation เดียวกัน</b>
+    </p>
+    <ul>
+      <li>ถ้าแยก 2 codebase → ไม่ช้าก็เร็วจะ <span style="color:var(--bad)">drift</span> → mismatch</li>
+      <li>วิธีปลอดภัยที่สุด = <b>shared code library</b> (.mqh ตัวเดียว) ที่ทั้ง collector + EA include</li>
+      <li>ถ้าต้องการ flexibility → expose เป็น runtime variable (global) ไม่ใช่ <code>#define</code></li>
+      <li>Default ของ shared code = behavior ของ EA — collector ที่ใช้ default จะให้ data ตรง EA เสมอ</li>
+    </ul>
+  </div>
+
+  <h3>ก่อนแก้: 2 codebase</h3>
+  <div class="diagram">DataCollector_v4    ─→  CSV (features set A)  ─→  Model trained on A
+                                                          ↓
+                                                  deploy in MT5
+                                                          ↓
+rl_gbpusd_EA        ←─  features set B  ←─  RL_Indicators.mqh
+
+A ≠ B  →  model เจอ input นอก distribution  →  output Hold conf 0.97  →  ❌ ไม่เทรด</div>
+
+  <h3>หลังแก้: shared code</h3>
+  <div class="diagram">                    ┌─ RL_Indicators.mqh ─┐
+                    │ (feature code A)    │
+                    └────┬────────┬───────┘
+                         │        │
+         #include        │        │        #include
+                         ▼        ▼
+        DataCollector_RL.mq5    rl_gbpusd_EA.mq5
+                │                       │
+                ▼                       ▼
+            CSV (A)               inference (A)
+                ↓                       ↑
+        Model trained on A   ──→  deploy → A == A → ✅ เทรดตามที่เทรนมา</div>
+
+  <hr>
+
+  <div class="footer">
+    บทสรุป: <b>DataCollector_v4</b> = stand-alone tool ที่ flexible แต่ต้อง sync manual กับ EA<br>
+    → <b>DataCollector_RL</b> = deployment-aligned ที่ใช้ shared code → ผิดไม่ได้<br><br>
+    <i>Reference: rl_gbpusd parity-fix session — Meta RL Trading Project</i>
+  </div>
+
+</div>
+</body>
+</html>

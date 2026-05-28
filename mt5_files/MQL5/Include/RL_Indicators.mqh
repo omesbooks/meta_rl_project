@@ -74,34 +74,63 @@ const string RL_ALL_FEATURES[RL_ALL_FEATURES_COUNT] = {
    "candle_mathold"
 };
 
-//=== Indicator periods (MUST match DataCollector_v3.mq5) ===
-#define RSI_PMIN    4
-#define RSI_PMAX    30   // 27 periods
-#define ATR_PMIN    5
-#define ATR_PMAX    50   // 46 periods
-#define STOCH_PMIN  5
-#define STOCH_PMAX  21   // 17 periods
-#define CCI_PMIN    5
-#define CCI_PMAX    30   // 26 periods
-#define WPR_PMIN    5
-#define WPR_PMAX    30   // 26 periods
-#define ADX_PMIN    7
-#define ADX_PMAX    30   // 24 periods
+//=== Indicator periods — runtime variables (defaults must match the training
+//=== generator). Collector/EA can OVERRIDE these before calling
+//=== RL_InitIndicators() to experiment with different periods. WARNING: any
+//=== override here MUST be matched on the inference side or features mismatch.
+int RSI_PMIN    = 4;
+int RSI_PMAX    = 30;   // 27 periods
+int ATR_PMIN    = 5;
+int ATR_PMAX    = 50;   // 46 periods
+int STOCH_PMIN  = 5;
+int STOCH_PMAX  = 21;   // 17 periods
+int CCI_PMIN    = 5;
+int CCI_PMAX    = 30;   // 26 periods
+int WPR_PMIN    = 5;
+int WPR_PMAX    = 30;   // 26 periods
+int ADX_PMIN    = 7;
+int ADX_PMAX    = 30;   // 24 periods
 
-#define BB_PERIOD       20
-#define MACD_FAST       12
-#define MACD_SLOW       26
-#define MACD_SIGNAL     9
-#define EMA_LONG_PERIOD 200
+int BB_PERIOD       = 20;
+int MACD_FAST       = 12;
+int MACD_SLOW       = 26;
+int MACD_SIGNAL     = 9;
+int EMA_LONG_PERIOD = 200;
 
-#define STAT_WINDOW     50    // for close_zscore, sharpe_20
-#define RANK_WINDOW     100   // for pct_rank, atr_percentile
+int STAT_WINDOW     = 50;    // for close_zscore, sharpe_20
+int RANK_WINDOW     = 100;   // for pct_rank, atr_percentile
 
-#define D1_RSI_PERIOD   14
-#define D1_EMA_FAST_P   10
-#define D1_EMA_SLOW_P   30
-#define D1_ATR_PERIOD   14
-#define D1_ADX_PERIOD   14
+int D1_RSI_PERIOD   = 14;
+int D1_EMA_FAST_P   = 10;
+int D1_EMA_SLOW_P   = 30;
+int D1_ATR_PERIOD   = 14;
+int D1_ADX_PERIOD   = 14;
+
+//=== Candle Patterns params — runtime overridable (defaults match
+//=== RL_BuildFeatureMap()'s original iCustom values). Collector/EA can
+//=== override before calling RL_BuildFeatureMap() to keep parity.
+bool   CP_Hammer            = true;
+bool   CP_Engulfing         = true;
+bool   CP_Inside            = true;
+bool   CP_Outside           = true;
+bool   CP_Star              = true;
+bool   CP_Soldiers          = true;
+bool   CP_Marubozu          = true;
+bool   CP_Harami            = true;
+bool   CP_Piercing          = true;
+bool   CP_MatHold           = true;
+double CP_MarubozuThresh    = 0.95;
+double CP_HammerWickRatio   = 2.0;
+double CP_HammerBodyMaxPct  = 0.30;
+double CP_HammerOppWickMax  = 0.10;
+double CP_EngulfMinRatio    = 2.0;
+double CP_StarMidBodyMax    = 0.40;
+double CP_StarOuterBodyMin  = 0.70;
+double CP_MatholdOuterMin   = 0.60;
+double CP_MatholdMidMax     = 0.40;
+bool   CP_MatholdReqBreak   = true;
+bool   CP_InsideStrict      = true;
+double CP_PiercingMinBody   = 0.5;
 
 //=== Indicator handle storage ===
 int g_h_rsi[];     // RSI handles for periods 4..30
@@ -252,24 +281,19 @@ bool RL_BuildFeatureMap(string symbol, ENUM_TIMEFRAMES tf)
    // Load CandlePatterns indicator only if needed
    if(g_uses_candles) {
       // Use indicator's default settings — must match what was used at training time!
+      // ⭐ Uses CP_* globals — runtime overridable via RL_ApplyDataCollectorConfig()
+      //   so collector and EA stay in sync (parity).
       g_h_candles = iCustom(symbol, tf, "CandlePatterns",
-         // Pattern toggles (10) — all true (let model decide)
-         true, true, true, true, true, true, true, true, true, true,
-         // Detection thresholds (8)
-         0.95,    // marubozu_threshold
-         2.0,     // hammer_wick_ratio
-         0.30,    // hammer_body_max_pct
-         0.10,    // hammer_opp_wick_max_pct
-         2.0,     // engulfing_min_ratio
-         0.40,    // star_mid_body_max_pct
-         0.70,    // star_outer_body_min_pct
-         0.60,    // mathold_outer_body_min
-         0.40,    // mathold_mid_body_max
-         true,    // mathold_require_break
-         true,    // inside_outside_strict
-         0.5,     // piercing_min_body_ratio
-         // Visual markers (always off in EA)
-         false
+         CP_Hammer, CP_Engulfing, CP_Inside, CP_Outside,
+         CP_Star, CP_Soldiers, CP_Marubozu, CP_Harami,
+         CP_Piercing, CP_MatHold,
+         CP_MarubozuThresh, CP_HammerWickRatio,
+         CP_HammerBodyMaxPct, CP_HammerOppWickMax,
+         CP_EngulfMinRatio, CP_StarMidBodyMax,
+         CP_StarOuterBodyMin, CP_MatholdOuterMin,
+         CP_MatholdMidMax, CP_MatholdReqBreak,
+         CP_InsideStrict, CP_PiercingMinBody,
+         false   // Visual markers — always off in EA
       );
       if(g_h_candles == INVALID_HANDLE) {
          Print("[RL] ❌ Failed to load CandlePatterns indicator (err=",

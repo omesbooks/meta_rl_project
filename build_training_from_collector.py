@@ -12,7 +12,7 @@ Usage:
     python build_training_from_collector.py --future 5 --mode quantile
     python build_training_from_collector.py --in <path> --out training_data_gbpusd_rl.csv
 """
-import sys, io, argparse, os
+import sys, io, argparse, os, shutil
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -92,6 +92,18 @@ def main():
 
     out.to_csv(args.out, index=False)
     print(f"\n[out]  {args.out}  ({len(out):,} rows, {len(keep_feats)} features)")
+
+    # Forward params.json sidecar (so train -> export can embed periods in config.mqh)
+    src_params = Path(args.inp).with_suffix("").with_suffix(".params.json")
+    if not src_params.exists():
+        # try sibling: <collector_csv_stem>.params.json
+        src_params = Path(args.inp).parent / (Path(args.inp).stem + ".params.json")
+    if src_params.exists():
+        dst_params = Path(args.out).with_suffix("").with_suffix(".params.json")
+        shutil.copy(src_params, dst_params)
+        print(f"[params] forwarded -> {dst_params}")
+    else:
+        print(f"[params] WARN: no sidecar found at {src_params} — EA will use defaults")
     print(f"  date range: {out['timestamp'].min()} -> {out['timestamp'].max()}")
     print(f"  target dist: {dict(out['target'].value_counts())}")
     print(f"\nNext:")

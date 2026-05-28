@@ -106,6 +106,11 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   // ⭐ Apply DataCollector params (periods + candle thresholds embedded in
+   //    config.mqh) so EA features match training-time computation exactly.
+   //    No-op if no params sidecar existed at export time (uses defaults).
+   RL_ApplyDataCollectorConfig();
+
    // Init indicator handles
    if(!RL_InitIndicators(_Symbol, _Period)) {
       Print("Failed to init indicators");

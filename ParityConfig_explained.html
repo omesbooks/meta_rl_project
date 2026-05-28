@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Config-Embedded Pipeline — v4 Flexibility + Guaranteed Parity</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1f2630;
+    --border: #30363d; --text: #e6edf3; --dim: #8b949e;
+    --accent: #58a6ff; --good: #3fb950; --warn: #d29922; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Sukhumvit Set", "Noto Sans Thai", sans-serif;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 36px 28px 80px; }
+  h1 {
+    font-size: 2.2rem; margin: 0 0 8px;
+    background: linear-gradient(90deg, #3fb950, #58a6ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { color: var(--dim); margin-bottom: 36px; font-size: 1.05rem; }
+  h2 {
+    font-size: 1.45rem; margin: 40px 0 16px;
+    border-left: 4px solid var(--accent); padding-left: 14px;
+  }
+  h3 { font-size: 1.1rem; margin: 22px 0 10px; color: var(--accent); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 22px; margin: 14px 0;
+  }
+  .card.good { border-left: 4px solid var(--good); }
+  .card.warn { border-left: 4px solid var(--warn); }
+  .card.bad  { border-left: 4px solid var(--bad);  }
+  .card.accent { border-left: 4px solid var(--accent); }
+  code {
+    background: var(--panel2); padding: 2px 6px; border-radius: 4px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.92em; color: #ffa657;
+  }
+  pre {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px 18px; overflow-x: auto;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.84rem; line-height: 1.5; color: #c9d1d9;
+  }
+  pre code { background: transparent; padding: 0; color: inherit; }
+  .kw { color: #ff7b72; } .fn { color: #d2a8ff; }
+  .str { color: #a5d6ff; } .num { color: #79c0ff; }
+  .cm { color: #6e7681; font-style: italic; } .var { color: #ffa657; }
+  table {
+    width: 100%; border-collapse: collapse;
+    margin: 14px 0; font-size: 0.95rem;
+  }
+  th, td {
+    border: 1px solid var(--border); padding: 10px 14px;
+    text-align: left; vertical-align: top;
+  }
+  th { background: var(--panel2); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--panel); }
+  .pill {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-size: 0.82rem; font-weight: 600; margin-right: 6px;
+  }
+  .pill.good { background: rgba(63,185,80,0.15); color: var(--good); }
+  .pill.bad  { background: rgba(248,81,73,0.15); color: var(--bad); }
+  .pill.warn { background: rgba(210,153,34,0.15); color: var(--warn); }
+  .diagram {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    padding: 18px; font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.85rem; color: #c9d1d9;
+    white-space: pre; overflow-x: auto; line-height: 1.45;
+  }
+  .step {
+    display: flex; gap: 16px; align-items: flex-start; margin: 16px 0;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 20px;
+  }
+  .step-num {
+    flex: 0 0 44px; height: 44px;
+    background: linear-gradient(135deg, var(--accent), #3fb950);
+    color: #0d1117; border-radius: 50%;
+    font-weight: 700; font-size: 1.2rem;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-body { flex: 1; }
+  .step-title {
+    font-weight: 600; color: var(--accent); font-size: 1.05rem;
+    margin-bottom: 8px;
+  }
+  .step-file {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    background: #1f2630; font-family: monospace; font-size: 0.85rem;
+    color: #ffa657; margin-left: 6px;
+  }
+  .callout {
+    background: rgba(88,166,255,0.08);
+    border-left: 4px solid var(--accent);
+    padding: 14px 18px; border-radius: 6px; margin: 14px 0;
+  }
+  .callout.good { background: rgba(63,185,80,0.08); border-color: var(--good); }
+  .callout.warn { background: rgba(210,153,34,0.08); border-color: var(--warn); }
+  .callout.bad  { background: rgba(248,81,73,0.08); border-color: var(--bad); }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 36px 0; }
+  .toc {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 22px; margin: 24px 0;
+  }
+  .toc ol { margin: 6px 0 0 18px; padding: 0; }
+  .toc li { padding: 3px 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .footer {
+    text-align: center; color: var(--dim);
+    font-size: 0.85rem; margin-top: 60px;
+  }
+  .badge-row { margin: 14px 0; }
+  .check {
+    display: inline-block; background: rgba(63,185,80,0.12);
+    color: var(--good); padding: 4px 12px; border-radius: 6px;
+    font-size: 0.88rem; margin-right: 8px; margin-bottom: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🔒 Config-Embedded Pipeline</h1>
+  <p class="subtitle">
+    v4 Flexibility (ปรับ periods + candle thresholds ได้) <b>+</b>
+    Parity 100% (collector ↔ EA ตรงกันอัตโนมัติ)
+  </p>
+
+  <div class="callout good">
+    <b>ปัญหาที่แก้:</b> ก่อนหน้านี้ ถ้าผู้ใช้เปลี่ยน period inputs ใน collector
+    EA จะใช้ defaults เดิม → mismatch → model ไม่เทรด<br>
+    <b>วิธีแก้:</b> ฝัง params ที่ใช้ตอน gen data ลงใน <code>config.mqh</code>
+    → EA อ่าน + apply อัตโนมัติก่อน init → ค่าตรงกันเสมอ
+  </div>
+
+  <div class="toc">
+    <b>สารบัญ</b>
+    <ol>
+      <li><a href="#concept">หลักการ</a> — ทำไม embed config ใน model</li>
+      <li><a href="#flow">Flow ใหม่</a> — 5 phases</li>
+      <li><a href="#changes">การเปลี่ยนแปลง 6 ไฟล์</a></li>
+      <li><a href="#test">ผลทดสอบ</a></li>
+      <li><a href="#usage">วิธีใช้งาน</a></li>
+      <li><a href="#compare">เทียบก่อน/หลัง</a></li>
+    </ol>
+  </div>
+
+  <!-- ============ CONCEPT ============ -->
+  <h2 id="concept">1. หลักการ — "Model Artifact = Self-Contained Config"</h2>
+
+  <p>เดิม model carry เฉพาะ <b>weights</b> + <b>norm stats</b> แต่ <i>ไม่ได้บอก</i>
+    ว่า features ถูกคำนวณด้วย periods/thresholds อะไร → EA ต้อง "เดา" (= ใช้ defaults)</p>
+
+  <p>ตอนนี้: <code>config.mqh</code> = <b>self-describing artifact</b></p>
+
+  <div class="diagram">┌──────────────────────────────────────────────────────────────────┐
+│  &lt;model&gt;_config.mqh  (auto-generated by export_to_onnx.py)       │
+├──────────────────────────────────────────────────────────────────┤
+│  RL_INPUT_DIM, OUTPUT_DIM, WINDOW_SIZE, FEATURE_COUNT             │
+│  RL_FEATURE_NAMES[] — รายชื่อ feature ตามลำดับ                    │
+│  RL_FEAT_MEAN[], RL_FEAT_STD[] — norm stats                       │
+│  ⭐ RL_ApplyDataCollectorConfig() — periods + candle params       │   ← NEW!
+│      RSI_PMIN = 4;  RSI_PMAX = 30;                                │
+│      ATR_PMIN = 5;  ATR_PMAX = 50;                                │
+│      CP_MarubozuThresh = 0.95; ...                                │
+│      (ค่าเดียวกับที่ collector ใช้ตอน gen data — embed อัตโนมัติ) │
+└──────────────────────────────────────────────────────────────────┘</div>
+
+  <div class="callout">
+    <b>ผลลัพธ์:</b> ใครจะ deploy โมเดลนี้ — แค่ #include config.mqh แล้วเรียก
+    <code>RL_ApplyDataCollectorConfig()</code> ก่อน init → features ที่คำนวณตอนรัน
+    จะตรงกับตอน train เสมอ ไม่ว่าผู้ใช้จะปรับ periods แค่ไหนใน collector
+  </div>
+
+  <!-- ============ FLOW ============ -->
+  <h2 id="flow">2. Flow ใหม่ — 5 Phases (params ไหลตลอดเส้นทาง)</h2>
+
+  <div class="diagram">User: "อยากใช้ RSI 10-40, ATR 7-50"
+                  │
+                  ▼
+  ┌──────────────────────────────────────────────────┐
+  │ [1] DataCollector_RL  (input: InpRSI_Pmin=10, ...)│
+  │     ├─ Apply inputs → RL_Indicators globals      │
+  │     ├─ Compute features ใส่ CSV                  │
+  │     └─ OnDeinit: เขียน params.json sidecar       │
+  │        → rl_gbpusd_dataset.csv                   │
+  │        → rl_gbpusd_dataset.params.json {RSI:10..40}│
+  └────────────────────┬─────────────────────────────┘
+                       │
+                       ▼
+  ┌──────────────────────────────────────────────────┐
+  │ [2] build_training_from_collector.py             │
+  │     ├─ อ่าน CSV → คำนวณ future_return + target   │
+  │     └─ Copy params.json ไปข้างๆ output           │
+  │        → training_data_gbpusd_rl.csv             │
+  │        → training_data_gbpusd_rl.params.json     │
+  └────────────────────┬─────────────────────────────┘
+                       │
+                       ▼
+  ┌──────────────────────────────────────────────────┐
+  │ [3] rl_train.py                                  │
+  │     ├─ Train PPO → .zip                          │
+  │     ├─ Save norm.csv (train-only stats)          │
+  │     └─ Copy params.json → next to model          │
+  │        → rl_gbpusd_v2.zip                        │
+  │        → rl_gbpusd_v2_norm.csv                   │
+  │        → rl_gbpusd_v2.params.json   ⭐           │
+  └────────────────────┬─────────────────────────────┘
+                       │
+                       ▼
+  ┌──────────────────────────────────────────────────┐
+  │ [4] export_to_onnx.py                            │
+  │     ├─ Convert .zip → .onnx                      │
+  │     ├─ Generate config.mqh (feature names + norm)│
+  │     ├─ ⭐ อ่าน params.json → embed CFG_* +       │
+  │     │    function RL_ApplyDataCollectorConfig()  │
+  │     └─ Generate EA จาก template                  │
+  │        → mt5_files/MQL5/Files/rl_gbpusd.onnx     │
+  │        → mt5_files/MQL5/Include/rl_gbpusd_config.mqh │
+  │        → mt5_files/MQL5/Experts/rl_gbpusd_EA.mq5 │
+  └────────────────────┬─────────────────────────────┘
+                       │
+                       ▼
+  ┌──────────────────────────────────────────────────┐
+  │ [5] EA OnInit (auto-sync)                        │
+  │     ├─ RL_ApplyDataCollectorConfig()             │
+  │     │    → RSI_PMIN = 10; RSI_PMAX = 40; ...     │
+  │     │    (ค่าเดียวกับที่ collector ใช้ตอนเก็บข้อมูล)│
+  │     ├─ RL_InitIndicators(..)  ← ใช้ periods ใหม่ │
+  │     └─ RL_BuildFeatureMap(..) ← candle params ใหม่│
+  └──────────────────────────────────────────────────┘
+                       │
+                       ▼
+            ✅ Parity 100% — User ไม่ต้องแตะ EA inputs เลย</div>
+
+  <!-- ============ CHANGES ============ -->
+  <h2 id="changes">3. การเปลี่ยนแปลง 6 ไฟล์</h2>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <div class="step-title">RL_Indicators.mqh <span class="step-file">+22 globals</span></div>
+      เพิ่ม CP_* globals (10 toggles + 12 thresholds) — มี default ตรงกับ <code>RL_BuildFeatureMap</code> เดิม
+      <pre><span class="kw">bool</span>   <span class="var">CP_Hammer</span>           = <span class="kw">true</span>;
+<span class="kw">bool</span>   <span class="var">CP_Engulfing</span>        = <span class="kw">true</span>;
+<span class="cm">// ... อีก 8 toggles</span>
+<span class="kw">double</span> <span class="var">CP_MarubozuThresh</span>   = <span class="num">0.95</span>;
+<span class="kw">double</span> <span class="var">CP_HammerWickRatio</span>  = <span class="num">2.0</span>;
+<span class="cm">// ... อีก 10 thresholds</span></pre>
+      เปลี่ยน <code>RL_BuildFeatureMap()</code> ให้ใช้ globals (แทน hardcoded values):
+      <pre>g_h_candles = <span class="fn">iCustom</span>(symbol, tf, <span class="str">"CandlePatterns"</span>,
+   <span class="var">CP_Hammer</span>, <span class="var">CP_Engulfing</span>, <span class="var">CP_Inside</span>, <span class="var">CP_Outside</span>,    <span class="cm">// ⭐ globals!</span>
+   ...);</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <div class="step-title">DataCollector_RL.mq5 <span class="step-file">+sidecar writer</span></div>
+      <ul>
+        <li><b>OnInit</b>: Apply <code>InpCP_*</code> inputs → CP_* globals (เหมือนที่ทำกับ periods)</li>
+        <li><b>iCustom call</b>: ใช้ CP_* globals (ไม่ใช่ Inp* inputs) → ตรงกับ EA's RL_BuildFeatureMap</li>
+        <li><b>OnDeinit</b>: เขียน <code>.params.json</code> sidecar ลง Common\Files</li>
+      </ul>
+      <pre><span class="cm">// OnDeinit: write sidecar</span>
+<span class="kw">int</span> pf = <span class="fn">FileOpen</span>(params_file, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
+<span class="fn">FileWriteString</span>(pf, <span class="str">"{\r\n"</span>);
+<span class="fn">FileWriteString</span>(pf, <span class="str">"  \"RSI_PMIN\": "</span> + <span class="fn">IntegerToString</span>(RSI_PMIN) + <span class="str">",\r\n"</span>);
+<span class="cm">// ... ทั้ง 47 values (periods + candle params)</span>
+<span class="fn">FileWriteString</span>(pf, <span class="str">"}\r\n"</span>);</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <div class="step-title">build_training_from_collector.py <span class="step-file">+forward</span></div>
+      Copy <code>.params.json</code> ข้างๆ output training CSV
+      <pre><span class="kw">src_params</span> = <span class="fn">Path</span>(args.inp).with_suffix(<span class="str">".params.json"</span>)
+<span class="kw">if</span> src_params.exists():
+    dst_params = <span class="fn">Path</span>(args.out).with_suffix(<span class="str">".params.json"</span>)
+    shutil.copy(src_params, dst_params)
+    <span class="fn">print</span>(<span class="str">f"[params] forwarded -> {dst_params}"</span>)</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <div class="step-title">rl_train.py <span class="step-file">+forward</span></div>
+      หลัง save norm.csv → copy <code>.params.json</code> ไปไว้ข้าง <code>&lt;name&gt;.zip</code>
+      <pre>src_params = <span class="fn">Path</span>(args.csv).with_suffix(<span class="str">".params.json"</span>)
+<span class="kw">if</span> src_params.exists():
+    _shutil.copy(src_params, <span class="fn">Path</span>(<span class="str">f"{args.name}.params.json"</span>))</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">5</div>
+    <div class="step-body">
+      <div class="step-title">export_to_onnx.py <span class="step-file">+ embed helper</span></div>
+      อ่าน <code>&lt;model&gt;.params.json</code> → เขียน <code>RL_ApplyDataCollectorConfig()</code> ลง config.mqh
+      <pre>params_file = SCRIPT_DIR / <span class="str">f"{model_name}.params.json"</span>
+<span class="kw">if</span> params_file.exists():
+    params = _json.loads(params_file.read_text())
+    mqh.append(<span class="str">"void RL_ApplyDataCollectorConfig()"</span>)
+    mqh.append(<span class="str">"{"</span>)
+    <span class="kw">for</span> k, v <span class="kw">in</span> params.items():
+        mqh.append(<span class="str">f"   {k} = {fmt(v)};"</span>)
+    mqh.append(<span class="str">"}"</span>)
+<span class="kw">else</span>:
+    mqh.append(<span class="str">"void RL_ApplyDataCollectorConfig() { /* no-op */ }"</span>)</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">6</div>
+    <div class="step-body">
+      <div class="step-title">ML_RL_Trader_template.mq5 <span class="step-file">+call helper</span></div>
+      เพิ่มการเรียก <code>RL_ApplyDataCollectorConfig()</code> ใน OnInit ก่อน <code>RL_InitIndicators</code>
+      <pre><span class="kw">int</span> <span class="fn">OnInit</span>() {
+   ...
+   <span class="cm">// ⭐ Apply DataCollector params (embedded in config.mqh)</span>
+   <span class="fn">RL_ApplyDataCollectorConfig</span>();
+
+   <span class="kw">if</span>(!<span class="fn">RL_InitIndicators</span>(_Symbol, _Period)) <span class="kw">return</span> INIT_FAILED;
+   <span class="kw">if</span>(!<span class="fn">RL_BuildFeatureMap</span>(_Symbol, _Period)) <span class="kw">return</span> INIT_FAILED;
+   ...
+}</pre>
+    </div>
+  </div>
+
+  <!-- ============ TEST ============ -->
+  <h2 id="test">4. ผลทดสอบ</h2>
+
+  <div class="badge-row">
+    <span class="check">✓ Syntax check (3 Python files)</span>
+    <span class="check">✓ MetaEditor compile pass (0 errors)</span>
+    <span class="check">✓ Export with params.json → CFG_* + helper generated</span>
+    <span class="check">✓ Export without params.json → no-op helper</span>
+    <span class="check">✓ EA template calls helper before init</span>
+  </div>
+
+  <h3>ตัวอย่าง config.mqh ที่ generate ออกมา</h3>
+  <pre><span class="cm">// === DataCollector feature-computation params (for parity) ===</span>
+<span class="cm">// Embedded from rl_gbpusd_v2.params.json — applied via</span>
+<span class="cm">// RL_ApplyDataCollectorConfig() (call in OnInit before RL_InitIndicators).</span>
+
+<span class="kw">void</span> <span class="fn">RL_ApplyDataCollectorConfig</span>()
+{
+   <span class="var">RSI_PMIN</span> = <span class="num">4</span>;
+   <span class="var">RSI_PMAX</span> = <span class="num">30</span>;
+   <span class="var">ATR_PMIN</span> = <span class="num">5</span>;
+   <span class="var">ATR_PMAX</span> = <span class="num">50</span>;
+   <span class="cm">// ... ทั้ง 25 periods</span>
+   <span class="var">CP_Hammer</span> = <span class="kw">true</span>;
+   <span class="var">CP_Engulfing</span> = <span class="kw">true</span>;
+   <span class="cm">// ... ทั้ง 22 candle params</span>
+   <span class="var">CP_MarubozuThresh</span> = <span class="num">0.950000</span>;
+   <span class="var">CP_HammerWickRatio</span> = <span class="num">2.000000</span>;
+}</pre>
+
+  <!-- ============ USAGE ============ -->
+  <h2 id="usage">5. วิธีใช้งาน (workflow ที่เปลี่ยน)</h2>
+
+  <table>
+    <tr><th>Step</th><th>คำสั่ง</th><th>Output</th></tr>
+    <tr>
+      <td>1. Run collector ใน MT5</td>
+      <td>Strategy Tester → DataCollector_RL → ตั้ง inputs → Start</td>
+      <td>Common\Files\<br>&nbsp;&nbsp;<code>rl_gbpusd_dataset.csv</code><br>&nbsp;&nbsp;<code>rl_gbpusd_dataset.params.json</code> ⭐</td>
+    </tr>
+    <tr>
+      <td>2. Build training CSV</td>
+      <td><code>python build_training_from_collector.py</code></td>
+      <td><code>training_data_gbpusd_rl.csv</code><br><code>training_data_gbpusd_rl.params.json</code> ⭐</td>
+    </tr>
+    <tr>
+      <td>3. Train</td>
+      <td><code>python rl_train.py training_data_gbpusd_rl.csv --name rl_gbpusd_v2 ...</code></td>
+      <td><code>rl_gbpusd_v2.zip</code><br><code>rl_gbpusd_v2_norm.csv</code><br><code>rl_gbpusd_v2.params.json</code> ⭐</td>
+    </tr>
+    <tr>
+      <td>4. Export</td>
+      <td><code>python export_to_onnx.py rl_gbpusd_v2 --name rl_gbpusd</code></td>
+      <td>mt5_files/MQL5/...<br>&nbsp;&nbsp;Files/rl_gbpusd.onnx<br>&nbsp;&nbsp;Include/rl_gbpusd_config.mqh ⭐ <i>(มี helper)</i><br>&nbsp;&nbsp;Experts/rl_gbpusd_EA.mq5</td>
+    </tr>
+    <tr>
+      <td>5. Deploy</td>
+      <td>MetaEditor → Compile EA → Strategy Tester</td>
+      <td>EA OnInit เรียก <code>RL_ApplyDataCollectorConfig()</code> อัตโนมัติ → parity ✓</td>
+    </tr>
+  </table>
+
+  <div class="callout good">
+    <b>User ทำเหมือนเดิมทุก step</b> — แค่ตอนนี้แม้จะเปลี่ยน collector inputs (เช่น
+    <code>InpRSI_Pmin=10, InpRSI_Pmax=40</code>) ก็จะ flow ผ่านไปจน EA ใช้ค่าเดียวกัน
+    <b>โดยไม่ต้องไปแตะ EA inputs เลย</b>
+  </div>
+
+  <!-- ============ COMPARE ============ -->
+  <h2 id="compare">6. เทียบก่อน/หลัง</h2>
+
+  <table>
+    <tr><th>Scenario</th><th>ก่อน (v2 inputs)</th><th>หลัง (embed config)</th></tr>
+    <tr>
+      <td>Collector ใช้ default ทุก input</td>
+      <td><span class="pill good">✓</span> Parity (defaults ตรง)</td>
+      <td><span class="pill good">✓</span> Parity</td>
+    </tr>
+    <tr>
+      <td>User เปลี่ยน <code>InpRSI_Pmax</code> ใน collector</td>
+      <td><span class="pill bad">✗</span> EA ใช้ default = mismatch!</td>
+      <td><span class="pill good">✓</span> EA อ่านจาก config.mqh อัตโนมัติ</td>
+    </tr>
+    <tr>
+      <td>User เปลี่ยน candle thresholds</td>
+      <td><span class="pill bad">✗</span> mismatch</td>
+      <td><span class="pill good">✓</span> embedded ใน helper</td>
+    </tr>
+    <tr>
+      <td>Deploy โมเดลจากเพื่อน (ที่ไม่รู้ params)</td>
+      <td><span class="pill warn">⚠</span> ต้องถามว่าใช้ periods อะไร</td>
+      <td><span class="pill good">✓</span> config.mqh บอกครบ self-contained</td>
+    </tr>
+    <tr>
+      <td>โมเดลเก่า (ไม่มี .params.json)</td>
+      <td>—</td>
+      <td><span class="pill good">✓</span> helper = no-op → ใช้ defaults (backward compat)</td>
+    </tr>
+  </table>
+
+  <h3>Architecture เทียบ</h3>
+  <div class="diagram">เดิม:
+   User inputs → DataCollector → CSV → train → model
+                                                ↓
+   ┌─────────────────────────────┐
+   │  EA (ใช้ #define defaults)  │  ← ❌ ไม่รู้ว่า collector ใช้ค่าอะไร
+   └─────────────────────────────┘     ต้อง sync manual
+
+ใหม่:
+   User inputs → DataCollector → CSV + params.json ─┐
+                                                    │ flow ผ่าน build/train
+                                                    ▼
+                                              export ─→ config.mqh
+                                                          (มี helper)
+                                                            │
+                                                            ▼
+   ┌────────────────────────────────────────────────────┐
+   │  EA OnInit: RL_ApplyDataCollectorConfig()          │  ← ✅ apply ค่าเดียวกัน
+   │  → RL_InitIndicators ใช้ค่าใหม่                    │     โดยอัตโนมัติ
+   └────────────────────────────────────────────────────┘</div>
+
+  <hr>
+
+  <h2>🎯 บทสรุป</h2>
+
+  <div class="card good">
+    <h3 style="margin-top:0">ได้ของฟรี 3 อย่าง</h3>
+    <ol>
+      <li><b>v4-like flexibility</b> — collector มี 52 inputs ปรับได้</li>
+      <li><b>Parity guarantee</b> — config ไหลตลอดเส้นทาง user ไม่ต้องสน</li>
+      <li><b>Self-contained model</b> — config.mqh บอกครบใน 1 ที่ ส่งต่อให้ทีมได้</li>
+    </ol>
+  </div>
+
+  <div class="callout">
+    <b>หลักการที่ใช้:</b> "Training metadata travels with the model"<br>
+    เป็นวิธีเดียวกับที่ frameworks ใหญ่ๆ ใช้ (sklearn pipelines, torch state_dict,
+    ONNX metadata_props) — ที่ใช้ MQL5 ทำเองเพราะ MT5 ไม่มี standard
+  </div>
+
+  <div class="footer">
+    การแก้ทั้งหมด: <b>6 ไฟล์ · ~120 บรรทัดเพิ่ม</b><br>
+    Effort: ~30 นาที · Payoff: forever-parity<br>
+    <i>Generated for Meta RL Trading Project — Parity Config Pipeline</i>
+  </div>
+
+</div>
+</body>
+</html>

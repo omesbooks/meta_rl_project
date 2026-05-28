@@ -3035,21 +3035,200 @@ class RLTradingStudio(ctk.CTk):
             ).grid(row=6, column=0, sticky="ew", padx=18, pady=(4, 16))
 
         # =====================================================
-        # CARD 6: Log
+        # CARD 6: Import from DataCollector_RL (Common\Files)
         # =====================================================
-        c6 = Card(page, title="📝 Tools Log")
-        c6.grid(row=6, column=0, sticky="ew")
-        c6.grid_columnconfigure(0, weight=1)
+        c6_imp = Card(page, title="⑥ 🤖 Import from DataCollector_RL")
+        c6_imp.grid(row=6, column=0, sticky="ew", pady=(0, 12))
+        c6_imp.grid_columnconfigure(0, weight=1)
 
-        log_frame = ctk.CTkFrame(c6, fg_color="#0a0e14", corner_radius=8,
+        ctk.CTkLabel(c6_imp,
+            text="คัดลอก CSV + params.json จาก MT5 Common\\Files → project folder. "
+                 "params.json รับประกัน parity ระหว่าง training และ live EA.",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
+            wraplength=900, justify="left"
+            ).grid(row=1, column=0, sticky="w", padx=18, pady=(2, 12))
+
+        ctk.CTkLabel(c6_imp, text="Source CSV (Common\\Files)", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 4))
+
+        src_row = ctk.CTkFrame(c6_imp, fg_color="transparent")
+        src_row.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 8))
+        src_row.grid_columnconfigure(0, weight=1)
+
+        self.tool_collector_src = ScrollableOptionMenu(src_row, values=["(none)"], width=480)
+        self.tool_collector_src.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        ctk.CTkButton(src_row, text="🔄 Refresh",
+            command=self._refresh_collector_sources,
+            fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
+            width=110
+        ).grid(row=0, column=1)
+
+        # Output name + build option
+        opts2 = ctk.CTkFrame(c6_imp, fg_color="transparent")
+        opts2.grid(row=4, column=0, sticky="ew", padx=18, pady=(4, 12))
+        opts2.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(opts2, text="Output basename", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.tool_collector_out = ctk.CTkEntry(opts2,
+            placeholder_text="training_data_<symbol>_rl.csv")
+        self.tool_collector_out.grid(row=1, column=0, sticky="ew")
+
+        self.tool_collector_build = ctk.CTkCheckBox(opts2,
+            text="Run build_training_from_collector.py "
+                 "(adds future_return + target, selects features)",
+            text_color=COLOR_TEXT)
+        self.tool_collector_build.select()
+        self.tool_collector_build.grid(row=2, column=0, sticky="w", pady=(12, 0))
+
+        ctk.CTkButton(c6_imp, text="📥 Import + Build training CSV",
+            command=self._import_from_collector,
+            fg_color=COLOR_ACCENT, hover_color="#4493f8",
+            height=40, font=ctk.CTkFont(size=14, weight="bold")
+            ).grid(row=5, column=0, sticky="ew", padx=18, pady=(4, 16))
+
+        # =====================================================
+        # CARD 7: Log
+        # =====================================================
+        c7 = Card(page, title="📝 Tools Log")
+        c7.grid(row=7, column=0, sticky="ew")
+        c7.grid_columnconfigure(0, weight=1)
+
+        log_frame = ctk.CTkFrame(c7, fg_color="#0a0e14", corner_radius=8,
                                    border_width=1, border_color="#30363d")
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
 
         self.tools_log = self._make_log_widget(log_frame, height=10)
 
+        # populate collector sources after log widget is ready
+        self._refresh_collector_sources()
+
     # --------------------------------------------------------
     # Tools functions
     # --------------------------------------------------------
+    def _common_files_dir(self):
+        """MT5 Common\\Files folder (where DataCollector_RL writes)."""
+        return Path.home() / "AppData" / "Roaming" / "MetaQuotes" / "Terminal" \
+               / "Common" / "Files"
+
+    def _refresh_collector_sources(self):
+        """List CSV files in Common\\Files for the import dropdown."""
+        d = self._common_files_dir()
+        files = []
+        try:
+            if d.exists():
+                files = sorted([p.name for p in d.glob("*.csv")])
+        except Exception:
+            pass
+        values = files or ["(none)"]
+        try:
+            self.tool_collector_src.configure(values=values)
+            if self.tool_collector_src.get() in ("", "(none)"):
+                self.tool_collector_src.set(values[0])
+            # default output name from selected
+            sel = self.tool_collector_src.get()
+            if sel and sel != "(none)" and not self.tool_collector_out.get().strip():
+                stem = Path(sel).stem
+                self.tool_collector_out.delete(0, "end")
+                self.tool_collector_out.insert(0, f"training_data_{stem}.csv")
+        except Exception:
+            pass
+        self._log(self.tools_log,
+                  f"[collector] {len(files)} CSV(s) in Common\\Files", "info")
+
+    def _import_from_collector(self):
+        """Copy CSV + params.json from Common\\Files → project, then
+           optionally run build_training_from_collector.py."""
+        if self._is_process_busy():
+            messagebox.showwarning("Busy", "Another task is running")
+            return
+
+        src_name = self.tool_collector_src.get().strip()
+        if not src_name or src_name == "(none)":
+            messagebox.showwarning("No source",
+                "Pick a CSV from Common\\Files (or check that DataCollector_RL has run)")
+            return
+
+        src_csv = self._common_files_dir() / src_name
+        if not src_csv.exists():
+            messagebox.showerror("Not found", f"File missing: {src_csv}")
+            return
+
+        src_params = src_csv.with_suffix(".params.json")
+        out_name = (self.tool_collector_out.get().strip() or
+                    f"training_data_{Path(src_name).stem}.csv")
+        run_build = bool(self.tool_collector_build.get())
+
+        import threading
+        threading.Thread(
+            target=self._import_from_collector_worker,
+            args=(src_csv, src_params, out_name, run_build),
+            daemon=True,
+        ).start()
+
+    def _import_from_collector_worker(self, src_csv, src_params, out_name, run_build):
+        import shutil
+        try:
+            self.after(0, lambda: self.status_label.configure(
+                text="Importing", text_color=COLOR_YELLOW))
+
+            # 1) Copy raw CSV
+            dst_csv = WORK_DIR / Path(out_name).with_suffix(".csv").name
+            # If user said "training_data_xxx.csv" and we will run build,
+            # the raw copy should land under a different name to keep both.
+            if run_build:
+                raw_copy = WORK_DIR / src_csv.name   # keep original filename
+            else:
+                raw_copy = dst_csv
+            shutil.copy(src_csv, raw_copy)
+            self.after(0, lambda p=raw_copy: self._log(
+                self.tools_log, f"[copy] CSV  -> {p.name}", "success"))
+
+            # 2) Copy params.json (if exists)
+            if src_params.exists():
+                dst_params = raw_copy.with_suffix(".params.json")
+                shutil.copy(src_params, dst_params)
+                self.after(0, lambda p=dst_params: self._log(
+                    self.tools_log, f"[copy] params -> {p.name}", "success"))
+            else:
+                self.after(0, lambda: self._log(self.tools_log,
+                    "[warn] no params.json sidecar — EA will use RL_Indicators defaults",
+                    "warn"))
+
+            # 3) Optionally run build_training_from_collector
+            if run_build:
+                cmd = [sys.executable, "build_training_from_collector.py",
+                       "--in", str(raw_copy), "--out", out_name]
+                self.after(0, lambda c=cmd: self._log(
+                    self.tools_log, "$ " + " ".join(c), "info"))
+                env = os.environ.copy()
+                env["PYTHONIOENCODING"] = "utf-8"
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    cwd=str(WORK_DIR), text=True, encoding="utf-8",
+                    errors="replace", bufsize=1, env=env)
+                for line in iter(proc.stdout.readline, ""):
+                    line = line.rstrip()
+                    if not line: continue
+                    tag = self._classify_log(line)
+                    self.after(0, lambda l=line, t=tag: self._log(self.tools_log, l, t))
+                proc.wait()
+                if proc.returncode != 0:
+                    raise RuntimeError(f"build script exit {proc.returncode}")
+
+            self.after(0, lambda: self._refresh_dropdowns())
+            self.after(0, lambda: self._log(self.tools_log,
+                "[done] dataset ready for training", "success"))
+        except Exception as e:
+            self.after(0, lambda err=e: self._log(
+                self.tools_log, f"[error] {err}", "error"))
+        finally:
+            self.after(0, lambda: self.status_label.configure(
+                text="Idle", text_color=COLOR_DIM))
+
     def _browse_mt5_csv(self):
         path = filedialog.askopenfilename(
             title="Select MT5 CSV (UTF-16)",

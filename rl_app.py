@@ -1148,14 +1148,14 @@ class RLTradingStudio(ctk.CTk):
     def _parse_train_pct(self, raw, default=0.85):
         """Accept either percentage (e.g. 85, "85") or decimal (e.g. 0.85, "0.85").
         Heuristic: value > 1 -> percentage, value <= 1 -> already-decimal.
-        Returns float clamped to (0, 1]."""
+        Returns float clamped to [0, 1]. 0 is allowed (e.g. backtest --start 0)."""
         try:
             v = float(str(raw).strip())
         except (ValueError, TypeError):
             v = default
         if v > 1.0:
             v = v / 100.0
-        return min(max(v, 0.01), 1.0)
+        return min(max(v, 0.0), 1.0)
 
     def _is_process_busy(self):
         return self.runner.is_running() or getattr(self, "pipeline_running", False)
@@ -4861,21 +4861,30 @@ class RLTradingStudio(ctk.CTk):
         self.bt_conf.insert(0, "0.85")
         self.bt_conf.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 12))
 
+        # Skip % — backtest only the tail (e.g., 85 = skip first 85%, test on last 15%)
+        ctk.CTkLabel(setup,
+            text="Skip % (start fraction — e.g. 85 = test on last 15%)",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
+            ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 4))
+        self.bt_start = ctk.CTkEntry(setup, placeholder_text="0 (= test on all data)")
+        self.bt_start.insert(0, "0")
+        self.bt_start.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 12))
+
         # Backtest mode toggle
         ctk.CTkLabel(setup, text="Backtest Mode", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
-                      ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=9, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_mode = ctk.CTkOptionMenu(setup,
             values=[
                 "Pure Agent (matches training) ⭐",
                 "Agent + SL/TP (live-realistic)",
             ],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.bt_mode.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 4))
+        self.bt_mode.grid(row=10, column=0, sticky="ew", padx=18, pady=(0, 4))
         ctk.CTkLabel(setup,
             text="Pure = ตรงกับ env ตอน train · SL/TP = สำหรับ live broker",
             font=ctk.CTkFont(size=10), text_color=COLOR_DIM
-            ).grid(row=9, column=0, sticky="w", padx=18, pady=(0, 16))
+            ).grid(row=11, column=0, sticky="w", padx=18, pady=(0, 16))
 
         # Risk card
         risk = Card(live_tab, title="🛡️ Risk Management")
@@ -5035,6 +5044,7 @@ class RLTradingStudio(ctk.CTk):
             "--atr_sl", self.bt_sl.get() or "2.0",
             "--atr_tp", self.bt_tp.get() or "4.0",
             "--window", self.bt_window.get().strip() or "0",  # 0 = auto-detect from model
+            "--start", str(self._parse_train_pct(self.bt_start.get(), 0.0)),  # skip frac
             "--mode", mode,
         ]
 

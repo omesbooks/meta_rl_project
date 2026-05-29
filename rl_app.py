@@ -3939,7 +3939,14 @@ class RLTradingStudio(ctk.CTk):
             command=self._browse_train_csv,
             fg_color=COLOR_ACCENT, hover_color="#4493f8",
             width=110
-        ).grid(row=0, column=2, padx=14, pady=12)
+        ).grid(row=0, column=2, padx=(14, 4), pady=12)
+
+        ctk.CTkButton(file_frame, text="🔗 Attach .params",
+            command=self._attach_train_params,
+            fg_color="#30363d", hover_color="#3d4450",
+            border_width=1, border_color="#484f58",
+            width=140
+        ).grid(row=0, column=3, padx=(0, 14), pady=12)
 
         # === Settings: 2-column ===
         settings = ctk.CTkFrame(page, fg_color="transparent")
@@ -4694,6 +4701,55 @@ class RLTradingStudio(ctk.CTk):
         self.train_csv_label.configure(text=name)
         self.train_csv_meta.configure(text=meta + params_status,
                                        text_color=params_color)
+
+    def _attach_train_params(self):
+        """Let user attach a .params.json from anywhere; copy it next to the CSV
+        so the rest of the pipeline (build/train/export) picks it up
+        automatically via the basename-sidecar convention."""
+        if not getattr(self, 'train_csv_path', None):
+            messagebox.showwarning("No CSV", "Please pick a training CSV first.")
+            return
+
+        src = filedialog.askopenfilename(
+            title="Select .params.json to attach",
+            filetypes=[("params sidecar", "*.params.json"),
+                       ("JSON files", "*.json"),
+                       ("All files", "*.*")],
+            initialdir=str(Path(self.train_csv_path).parent))
+        if not src:
+            return
+
+        # Validate it's valid JSON before copying — protects against
+        # accidentally attaching the wrong file.
+        try:
+            with open(src, 'r', encoding='utf-8') as f:
+                json.load(f)
+        except Exception as e:
+            messagebox.showerror("Invalid params file",
+                f"Selected file is not valid JSON:\n{e}")
+            return
+
+        # Destination: <csv_basename>.params.json in CSV's folder
+        csv_p = Path(self.train_csv_path)
+        dst = csv_p.parent / (csv_p.stem + ".params.json")
+
+        # If a sidecar already exists, ask before overwriting
+        if dst.exists() and Path(src).resolve() != dst.resolve():
+            if not messagebox.askyesno("Replace existing?",
+                f"A sidecar already exists:\n{dst.name}\n\nOverwrite with the selected file?"):
+                return
+
+        try:
+            import shutil
+            shutil.copy(src, dst)
+        except Exception as e:
+            messagebox.showerror("Copy failed", str(e))
+            return
+
+        # Refresh status so the meta line flips green
+        self._set_train_csv(self.train_csv_path)
+        messagebox.showinfo("Attached",
+            f"Attached params sidecar:\n{dst.name}\n\nParity guaranteed for this training run.")
 
     def _start_training(self):
         if self._is_process_busy():

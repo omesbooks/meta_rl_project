@@ -4679,8 +4679,21 @@ class RLTradingStudio(ctk.CTk):
         except Exception as e:
             meta = f"(error reading: {e})"
 
+        # Detect .params.json sidecar → indicates DataCollector_RL provenance
+        # → ensures EA uses the SAME periods/thresholds the data was generated with
+        params_path = Path(path).with_suffix("").with_suffix(".params.json")
+        if not params_path.exists():
+            params_path = Path(path).parent / (Path(path).stem + ".params.json")
+        if params_path.exists():
+            params_status = "  ·  ✓ .params.json (parity guaranteed)"
+            params_color = COLOR_GREEN
+        else:
+            params_status = "  ·  ⚠ no .params.json (EA will use defaults)"
+            params_color = COLOR_YELLOW
+
         self.train_csv_label.configure(text=name)
-        self.train_csv_meta.configure(text=meta)
+        self.train_csv_meta.configure(text=meta + params_status,
+                                       text_color=params_color)
 
     def _start_training(self):
         if self._is_process_busy():

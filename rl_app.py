@@ -1087,7 +1087,7 @@ class RLTradingStudio(ctk.CTk):
 
         # Refresh dynamic content
         if key == "models":
-            self._refresh_models_list()
+            self._refresh_model_comparison()
         elif key == "tools":
             self._refresh_tools_dropdowns()
         elif key == "pipeline":
@@ -1467,94 +1467,11 @@ class RLTradingStudio(ctk.CTk):
             anchor="w").grid(row=0, column=0, sticky="ew", padx=4, pady=4)
         self._reset_pipeline_metrics()
 
-        compare = Card(page, title="4. Model Comparison")
-        compare.grid(row=4, column=0, sticky="ew", pady=(0, 12))
-        compare.grid_columnconfigure(0, weight=1)
+        # NOTE: Model Comparison + Equity Curve Viewer moved to the Models page.
+        #       After a pipeline run completes, navigate to Models to see results.
 
-        compare_btns = ctk.CTkFrame(compare, fg_color="transparent")
-        compare_btns.grid(row=1, column=0, sticky="ew", padx=18, pady=(10, 8))
-        ctk.CTkButton(compare_btns, text="Refresh table", command=self._refresh_model_comparison,
-                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
-                      corner_radius=8, height=34, width=130).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(compare_btns, text="Open equity image", command=self._open_selected_equity,
-                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
-                      corner_radius=8, height=34, width=150).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(compare_btns, text="Open HTML chart", command=self._open_selected_chart,
-                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
-                      corner_radius=8, height=34, width=140).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(compare_btns, text="Export report PDF", command=self._export_pipeline_pdf,
-                      fg_color=COLOR_PURPLE, hover_color="#8957e5",
-                      corner_radius=8, height=34, width=150).pack(side="right")
-
-        tree_frame = tk.Frame(compare, bg=COLOR_BG_CARD)
-        tree_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 14))
-        tree_frame.grid_columnconfigure(0, weight=1)
-
-        style = ttk.Style()
-        try:
-            style.theme_use("default")
-        except Exception:
-            pass
-        style.configure(
-            "Pipeline.Treeview",
-            background=COLOR_BG_TERMINAL,
-            foreground="#c9d1d9",
-            fieldbackground=COLOR_BG_TERMINAL,
-            borderwidth=0,
-            rowheight=30,
-            font=("Segoe UI", 9),
-        )
-        style.configure(
-            "Pipeline.Treeview.Heading",
-            background=COLOR_BG_INPUT,
-            foreground=COLOR_TEXT,
-            font=("Segoe UI", 9, "bold"),
-            relief="flat",
-        )
-        style.map("Pipeline.Treeview", background=[("selected", COLOR_SELECTED)])
-
-        columns = ("model", "source", "trades", "win_rate", "profit_factor",
-                   "return", "max_dd", "chart")
-        self.model_tree = ttk.Treeview(
-            tree_frame, columns=columns, show="headings", height=9,
-            style="Pipeline.Treeview")
-        headings = {
-            "model": "Model",
-            "source": "Result source",
-            "trades": "Trades",
-            "win_rate": "Win rate",
-            "profit_factor": "PF",
-            "return": "Return",
-            "max_dd": "Max DD",
-            "chart": "Chart",
-        }
-        widths = {
-            "model": 190, "source": 170, "trades": 70, "win_rate": 80,
-            "profit_factor": 70, "return": 80, "max_dd": 80, "chart": 70,
-        }
-        for col in columns:
-            self.model_tree.heading(col, text=headings[col])
-            self.model_tree.column(col, width=widths[col], anchor="center")
-        self.model_tree.column("model", anchor="w")
-        self.model_tree.column("source", anchor="w")
-
-        yscroll = ttk.Scrollbar(tree_frame, orient="vertical",
-                                command=self.model_tree.yview)
-        self.model_tree.configure(yscrollcommand=yscroll.set)
-        self.model_tree.grid(row=0, column=0, sticky="ew")
-        yscroll.grid(row=0, column=1, sticky="ns")
-        self.model_tree.bind("<<TreeviewSelect>>", self._refresh_equity_viewer)
-
-        equity = Card(page, title="5. Equity Curve Viewer")
-        equity.grid(row=5, column=0, sticky="ew", pady=(0, 12))
-        equity.grid_columnconfigure(0, weight=1)
-        self.pipeline_equity_label = ctk.CTkLabel(
-            equity, text="Select a model result to preview equity curve.",
-            text_color=COLOR_DIM, height=360)
-        self.pipeline_equity_label.grid(row=1, column=0, sticky="ew", padx=18, pady=12)
-
-        log_card = Card(page, title="6. Pipeline Log")
-        log_card.grid(row=6, column=0, sticky="ew", pady=(0, 12))
+        log_card = Card(page, title="4. Pipeline Log")
+        log_card.grid(row=4, column=0, sticky="ew", pady=(0, 12))
         log_frame = ctk.CTkFrame(log_card, fg_color="transparent")
         log_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(4, 12))
         self.pipeline_log = self._make_log_widget(log_frame, height=12)
@@ -2543,6 +2460,24 @@ class RLTradingStudio(ctk.CTk):
         self.pipeline_rows = {row["iid"]: row for row in rows}
         self._model_tree_sig = sig
         for row in rows:
+            # Determine params status: sidecar JSON OR embedded helper in config.mqh
+            params_sidecar = WORK_DIR / f"{row['model']}.params.json"
+            config_mqh = (WORK_DIR / "mt5_files" / "MQL5" / "Include"
+                          / f"{row['model']}_config.mqh")
+            if params_sidecar.exists():
+                params_label = "✓ sidecar"
+            elif config_mqh.exists():
+                try:
+                    if "RL_ApplyDataCollectorConfig" in config_mqh.read_text(
+                            encoding="utf-8", errors="ignore"):
+                        params_label = "✓ embedded"
+                    else:
+                        params_label = "— defaults"
+                except Exception:
+                    params_label = "— defaults"
+            else:
+                params_label = "— defaults"
+
             values = (
                 row["model"],
                 row["source"],
@@ -2552,6 +2487,7 @@ class RLTradingStudio(ctk.CTk):
                 self._fmt_pct(row.get("return_pct")),
                 self._fmt_pct(row.get("max_dd")),
                 "yes" if row.get("chart_path") else "-",
+                params_label,
             )
             self.model_tree.insert("", "end", iid=row["iid"], values=values)
 
@@ -5330,19 +5266,110 @@ class RLTradingStudio(ctk.CTk):
         page.grid_columnconfigure(0, weight=1)
         self.pages["models"] = page
 
-        c1 = Card(page, title="🗂️ Saved Models")
-        c1.grid(row=0, column=0, sticky="ew")
-        c1.grid_columnconfigure(0, weight=1)
+        # =====================================================
+        # CARD 1: Model Comparison (moved from Pipeline page)
+        # =====================================================
+        compare = Card(page, title="🗂️ Model Comparison")
+        compare.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        compare.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkButton(c1, text="🔄 Refresh",
-            command=self._refresh_models_list,
-            fg_color=COLOR_BG_INPUT, hover_color="#2d333b", width=110
-            ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 8))
+        compare_btns = ctk.CTkFrame(compare, fg_color="transparent")
+        compare_btns.grid(row=1, column=0, sticky="ew", padx=18, pady=(10, 8))
+        ctk.CTkButton(compare_btns, text="Refresh table",
+                      command=self._refresh_model_comparison,
+                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
+                      corner_radius=8, height=34, width=130
+                      ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(compare_btns, text="Open equity image",
+                      command=self._open_selected_equity,
+                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
+                      corner_radius=8, height=34, width=150
+                      ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(compare_btns, text="Open HTML chart",
+                      command=self._open_selected_chart,
+                      fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
+                      corner_radius=8, height=34, width=140
+                      ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(compare_btns, text="Export report PDF",
+                      command=self._export_pipeline_pdf,
+                      fg_color=COLOR_PURPLE, hover_color="#8957e5",
+                      corner_radius=8, height=34, width=150
+                      ).pack(side="right")
 
-        # Container for model list
-        self.models_container = ctk.CTkFrame(c1, fg_color="transparent")
-        self.models_container.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
-        self.models_container.grid_columnconfigure(0, weight=1)
+        tree_frame = tk.Frame(compare, bg=COLOR_BG_CARD)
+        tree_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 14))
+        tree_frame.grid_columnconfigure(0, weight=1)
+
+        style = ttk.Style()
+        try:
+            style.theme_use("default")
+        except Exception:
+            pass
+        style.configure(
+            "Pipeline.Treeview",
+            background=COLOR_BG_TERMINAL,
+            foreground="#c9d1d9",
+            fieldbackground=COLOR_BG_TERMINAL,
+            borderwidth=0,
+            rowheight=30,
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Pipeline.Treeview.Heading",
+            background=COLOR_BG_INPUT,
+            foreground=COLOR_TEXT,
+            font=("Segoe UI", 9, "bold"),
+            relief="flat",
+        )
+        style.map("Pipeline.Treeview", background=[("selected", COLOR_SELECTED)])
+
+        columns = ("model", "source", "trades", "win_rate", "profit_factor",
+                   "return", "max_dd", "chart", "params")
+        self.model_tree = ttk.Treeview(
+            tree_frame, columns=columns, show="headings", height=12,
+            style="Pipeline.Treeview")
+        headings = {
+            "model": "Model",
+            "source": "Result source",
+            "trades": "Trades",
+            "win_rate": "Win rate",
+            "profit_factor": "PF",
+            "return": "Return",
+            "max_dd": "Max DD",
+            "chart": "Chart",
+            "params": "Params",
+        }
+        widths = {
+            "model": 180, "source": 140, "trades": 70, "win_rate": 75,
+            "profit_factor": 60, "return": 80, "max_dd": 80, "chart": 60,
+            "params": 95,
+        }
+        for col in columns:
+            self.model_tree.heading(col, text=headings[col])
+            self.model_tree.column(col, width=widths[col], anchor="center")
+        self.model_tree.column("model", anchor="w")
+        self.model_tree.column("source", anchor="w")
+
+        yscroll = ttk.Scrollbar(tree_frame, orient="vertical",
+                                command=self.model_tree.yview)
+        self.model_tree.configure(yscrollcommand=yscroll.set)
+        self.model_tree.grid(row=0, column=0, sticky="ew")
+        yscroll.grid(row=0, column=1, sticky="ns")
+        self.model_tree.bind("<<TreeviewSelect>>", self._refresh_equity_viewer)
+
+        # =====================================================
+        # CARD 2: Equity Curve Viewer
+        # =====================================================
+        equity = Card(page, title="📈 Equity Curve Viewer")
+        equity.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        equity.grid_columnconfigure(0, weight=1)
+        self.pipeline_equity_label = ctk.CTkLabel(
+            equity, text="Select a model result to preview equity curve.",
+            text_color=COLOR_DIM, height=360)
+        self.pipeline_equity_label.grid(row=1, column=0, sticky="ew", padx=18, pady=12)
+
+        # Initial populate
+        self._refresh_model_comparison()
 
     def _refresh_models_list(self):
         # Clear

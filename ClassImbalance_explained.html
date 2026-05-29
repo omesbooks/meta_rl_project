@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Fix Class Imbalance — UP/DOWN/FLAT (Relabel)</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1f2630;
+    --border: #30363d;
+    --text: #e6edf3;
+    --dim: #8b949e;
+    --accent: #58a6ff;
+    --good: #3fb950;
+    --warn: #d29922;
+    --bad: #f85149;
+    --up: #3fb950;
+    --down: #f85149;
+    --flat: #8b949e;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Sukhumvit Set", "Noto Sans Thai", sans-serif;
+    line-height: 1.65;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 36px 28px 80px; }
+  h1 {
+    font-size: 2.2rem; margin: 0 0 8px;
+    background: linear-gradient(90deg, #58a6ff, #79c0ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle { color: var(--dim); margin-bottom: 36px; font-size: 1.05rem; }
+  h2 {
+    font-size: 1.45rem; margin: 40px 0 16px;
+    border-left: 4px solid var(--accent);
+    padding-left: 14px;
+  }
+  h3 { font-size: 1.15rem; margin: 24px 0 10px; color: var(--accent); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  code {
+    background: var(--panel2);
+    padding: 2px 6px; border-radius: 4px;
+    font-family: "JetBrains Mono", Consolas, Monaco, monospace;
+    font-size: 0.92em;
+    color: #ffa657;
+  }
+  pre {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    color: #c9d1d9;
+  }
+  .kw   { color: #ff7b72; }
+  .fn   { color: #d2a8ff; }
+  .str  { color: #a5d6ff; }
+  .num  { color: #79c0ff; }
+  .cm   { color: #6e7681; font-style: italic; }
+  table {
+    width: 100%; border-collapse: collapse;
+    margin: 14px 0; font-size: 0.95rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left; vertical-align: top;
+  }
+  th { background: var(--panel2); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) td { background: var(--panel); }
+  .pill {
+    display: inline-block;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 0.82rem; font-weight: 600;
+    margin-right: 6px;
+  }
+  .pill.up   { background: rgba(63,185,80,0.15);  color: var(--up);   }
+  .pill.down { background: rgba(248,81,73,0.15);  color: var(--down); }
+  .pill.flat { background: rgba(139,148,158,0.15); color: var(--flat); }
+  .callout {
+    background: rgba(88,166,255,0.08);
+    border-left: 4px solid var(--accent);
+    padding: 14px 18px;
+    border-radius: 6px;
+    margin: 14px 0;
+  }
+  .callout.warn { background: rgba(210,153,34,0.08); border-color: var(--warn); }
+  .callout.bad  { background: rgba(248,81,73,0.08);  border-color: var(--bad);  }
+  .callout.good { background: rgba(63,185,80,0.08);  border-color: var(--good); }
+  .toc {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 22px;
+    margin: 24px 0;
+  }
+  .toc ol { margin: 6px 0 0 18px; padding: 0; }
+  .toc li { padding: 3px 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px; margin: 18px 0;
+  }
+  .grid > div {
+    padding: 18px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    text-align: center;
+  }
+  .grid .up   { border-top: 3px solid var(--up);   }
+  .grid .down { border-top: 3px solid var(--down); }
+  .grid .flat { border-top: 3px solid var(--flat); }
+  .grid h4 {
+    font-size: 1.4rem; margin: 0 0 6px;
+  }
+  .grid p { margin: 4px 0; color: var(--dim); font-size: 0.9rem; }
+  .bar-row { display: flex; align-items: center; gap: 12px; margin: 8px 0; font-family: monospace; }
+  .bar-row .lbl { width: 60px; flex: 0 0 60px; }
+  .bar-row .pct { width: 70px; flex: 0 0 70px; text-align: right; color: var(--dim); }
+  .bar-row .bar { flex: 1; height: 26px; border-radius: 4px; display:flex; align-items:center; padding: 0 10px; color: white; font-weight: 600; }
+  .bar.up   { background: var(--up);   }
+  .bar.down { background: var(--down); }
+  .bar.flat { background: var(--flat); }
+  .diagram {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 0.85rem;
+    color: #c9d1d9;
+    white-space: pre;
+    overflow-x: auto;
+    line-height: 1.4;
+  }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 36px 0; }
+  .footer {
+    text-align: center; color: var(--dim);
+    font-size: 0.85rem; margin-top: 60px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Fix Class Imbalance — UP/DOWN/FLAT</h1>
+  <p class="subtitle">เข้าใจ class imbalance + วิธี relabel + ทำไมไม่จำเป็นเท่าไหร่ใน RL workflow</p>
+
+  <div class="toc">
+    <b>สารบัญ</b>
+    <ol>
+      <li><a href="#what">UP/DOWN/FLAT คืออะไร?</a></li>
+      <li><a href="#problem">Class Imbalance คือปัญหาแบบไหน?</a></li>
+      <li><a href="#methods">3 วิธี Relabel</a></li>
+      <li><a href="#rl">ทำไมไม่จำเป็นเท่าไหร่ใน RL</a></li>
+      <li><a href="#decide">ใช้/ไม่ใช้ — Decision Tree</a></li>
+    </ol>
+  </div>
+
+  <!-- =================== 1. WHAT =================== -->
+  <h2 id="what">1. UP/DOWN/FLAT คืออะไร?</h2>
+
+  <p>ทุกแท่งกราฟใน CSV จะถูก <b>label</b> ว่าเป็นหนึ่งใน 3 class ตาม
+    <code>future_return</code> = ผลตอบแทนใน N แท่งข้างหน้า:</p>
+
+  <div class="grid">
+    <div class="up">
+      <h4><span class="pill up">UP</span></h4>
+      <p>future_return ≥ +threshold</p>
+      <p>เช่น <b>+0.5% ขึ้นไป</b></p>
+      <p>"ราคาจะขึ้นแรง"</p>
+    </div>
+    <div class="flat">
+      <h4><span class="pill flat">FLAT</span></h4>
+      <p>−threshold &lt; future_return &lt; +threshold</p>
+      <p>เช่น <b>±0.5%</b></p>
+      <p>"ราคาเฉยๆ"</p>
+    </div>
+    <div class="down">
+      <h4><span class="pill down">DOWN</span></h4>
+      <p>future_return ≤ −threshold</p>
+      <p>เช่น <b>−0.5% หรือลง</b></p>
+      <p>"ราคาจะลงแรง"</p>
+    </div>
+  </div>
+
+  <p>กฎ <code>threshold = 0.001</code> (0.1%) คือ default ของ
+    <code>build_training_from_collector.py</code> mode <code>fixed</code>.</p>
+
+  <h3>ตัวอย่างใน CSV</h3>
+<pre>timestamp           close    future_return  target
+2004-01-15 12:00    1.8175   +0.0035        <span class="str">UP</span>      <span class="cm">// +0.35% > +0.1%</span>
+2004-01-15 16:00    1.8205   -0.0002        <span class="str">FLAT</span>    <span class="cm">// |-0.02%| < 0.1%</span>
+2004-01-15 20:00    1.8198   -0.0042        <span class="str">DOWN</span>    <span class="cm">// -0.42% < -0.1%</span></pre>
+
+  <!-- =================== 2. PROBLEM =================== -->
+  <h2 id="problem">2. Class Imbalance — ปัญหาแบบไหน?</h2>
+
+  <p>เกิดเมื่อ class หนึ่งมีจำนวน <b>เยอะกว่าตัวอื่นมาก</b>
+    → model "ขี้เกียจ" จะ predict class ใหญ่อย่างเดียวก็ได้คะแนนสูง</p>
+
+  <h3>ตัวอย่าง CSV ที่ imbalanced (ตลาด sideways)</h3>
+  <div class="card">
+    <div class="bar-row">
+      <span class="lbl">FLAT</span>
+      <div class="bar flat" style="width: 70%;">14,000 rows</div>
+      <span class="pct">70%</span>
+    </div>
+    <div class="bar-row">
+      <span class="lbl">UP</span>
+      <div class="bar up" style="width: 18%;">3,600</div>
+      <span class="pct">18%</span>
+    </div>
+    <div class="bar-row">
+      <span class="lbl">DOWN</span>
+      <div class="bar down" style="width: 12%;">2,400</div>
+      <span class="pct">12%</span>
+    </div>
+  </div>
+
+  <div class="callout bad">
+    <b>Lazy classifier trap:</b> ถ้าให้ model classify FLAT ทั้งหมด<br>
+    → accuracy = 70% ทันที (เพราะ FLAT มี 70%)<br>
+    → ดูเหมือนเก่ง แต่ <b>โง่</b> (ทายไม่เคยถูกแม้แต่ UP/DOWN ครั้งเดียว)
+  </div>
+
+  <h3>หลัง relabel (Quantile 33/33/33)</h3>
+  <div class="card">
+    <div class="bar-row">
+      <span class="lbl">FLAT</span>
+      <div class="bar flat" style="width: 33%;">6,666</div>
+      <span class="pct">33%</span>
+    </div>
+    <div class="bar-row">
+      <span class="lbl">UP</span>
+      <div class="bar up" style="width: 33%;">6,667</div>
+      <span class="pct">33%</span>
+    </div>
+    <div class="bar-row">
+      <span class="lbl">DOWN</span>
+      <div class="bar down" style="width: 33%;">6,667</div>
+      <span class="pct">33%</span>
+    </div>
+  </div>
+
+  <p>→ model ต้อง <b>เรียนรู้จริงๆ</b> ทำนายให้ถูกใน 3 class ที่เท่ากัน</p>
+
+  <!-- =================== 3. METHODS =================== -->
+  <h2 id="methods">3. วิธี Relabel — 3 ตัวเลือก</h2>
+
+  <h3>① Quantile 33/33/33 ⭐ (recommended)</h3>
+  <p>เรียง <code>future_return</code> ทั้งหมด → แบ่งเป็น 3 ส่วนเท่าๆ กัน</p>
+<pre><span class="cm"># สมมติเรียงค่า future_return ทั้ง 20,000 rows</span>
+q1 = quantile(future_return, <span class="num">1/3</span>)   <span class="cm"># เช่น = -0.0008</span>
+q2 = quantile(future_return, <span class="num">2/3</span>)   <span class="cm"># เช่น = +0.0009</span>
+
+target = <span class="str">"DOWN"</span>  <span class="kw">if</span>  future_return ≤ q1
+target = <span class="str">"UP"</span>    <span class="kw">if</span>  future_return ≥ q2
+target = <span class="str">"FLAT"</span>  <span class="kw">otherwise</span></pre>
+  <p>✅ <b>Balanced เสมอ</b> โดย adaptive threshold ตามการกระจายจริงของ data</p>
+
+  <h3>② Fixed Threshold</h3>
+  <p>กำหนด threshold ตรงๆ (เช่น ±0.1%)</p>
+<pre>target = <span class="str">"UP"</span>    <span class="kw">if</span>  future_return ≥  <span class="num">+0.001</span>
+target = <span class="str">"DOWN"</span>  <span class="kw">if</span>  future_return ≤  <span class="num">-0.001</span>
+target = <span class="str">"FLAT"</span>  <span class="kw">otherwise</span></pre>
+  <p>⚠️ จำนวน class <b>ขึ้นกับลักษณะตลาด</b><br>
+  &nbsp;&nbsp;&nbsp;ตลาดคึกคัก → UP/DOWN เยอะ, FLAT น้อย<br>
+  &nbsp;&nbsp;&nbsp;ตลาด sideways → FLAT เยอะ (imbalance!)</p>
+
+  <h3>③ Binary UP/DOWN (ไม่มี FLAT)</h3>
+<pre>target = <span class="str">"UP"</span>    <span class="kw">if</span>  future_return > <span class="num">0</span>
+target = <span class="str">"DOWN"</span>  <span class="kw">if</span>  future_return ≤ <span class="num">0</span>
+<span class="cm"># ไม่มี FLAT</span></pre>
+  <p>ใช้กับ supervised แบบ <b>binary classification</b> เท่านั้น<br>
+  &nbsp;&nbsp;&nbsp;ไม่เหมาะกับ workflow ที่มี 3 actions (Buy/Sell/Hold)</p>
+
+  <!-- =================== 4. RL =================== -->
+  <h2 id="rl">4. ทำไมไม่จำเป็นเท่าไหร่ใน RL workflow</h2>
+
+  <div class="callout good">
+    <b>กุญแจ:</b> RL <b>ไม่ใช้ target column</b> ในการ train เลย!
+    <br>มันใช้ <b>reward function</b> ที่คำนวณจาก PnL จริง
+  </div>
+
+  <h3>หลักฐานใน rl_train.py</h3>
+<pre><span class="cm"># rl_train.py drop target ทิ้งทันทีตอน load:</span>
+leaky = [c <span class="kw">for</span> c <span class="kw">in</span> df.columns
+         <span class="kw">if</span> any(k <span class="kw">in</span> c.lower() <span class="kw">for</span> k <span class="kw">in</span> (
+            <span class="str">"future_"</span>, <span class="str">"forward_"</span>, <span class="str">"next_"</span>, <span class="str">"target"</span>))]
+df = df.drop(columns=leaky)
+<span class="cm"># → "target" หายไปก่อนเข้า PPO</span></pre>
+
+  <h3>RL เรียนจาก Reward (ใน trading_env.py)</h3>
+<pre>reward = Net-PnL × <span class="num">50</span>             <span class="cm"># ค่าหลัก: คำนวณจาก close prices</span>
+       + bonus <span class="kw">if</span> pnl > <span class="num">0.5</span>%   <span class="cm"># reward shaping</span>
+       - <span class="num">0.005</span>                  <span class="cm"># penalty ตอนเปิด trade</span>
+       - <span class="num">0.0001</span>                 <span class="cm"># idle penalty</span>
+       ...
+
+<span class="cm"># ไม่มี "target" อยู่ในสมการนี้เลย!</span></pre>
+
+  <h3>เทียบ Supervised vs RL</h3>
+  <table>
+    <tr>
+      <th></th>
+      <th>Supervised (เก่า — PyCaret)</th>
+      <th>RL (workflow ตอนนี้)</th>
+    </tr>
+    <tr>
+      <td>Learning signal</td>
+      <td><b>target column</b> (UP/DOWN/FLAT)</td>
+      <td><b>reward function</b> (PnL-based)</td>
+    </tr>
+    <tr>
+      <td>Class imbalance affects?</td>
+      <td>✅ <b>มาก</b> — model ขี้เกียจ predict class ใหญ่</td>
+      <td>❌ <b>ไม่มี</b> — model ไม่เห็น target เลย</td>
+    </tr>
+    <tr>
+      <td>Relabel จำเป็น?</td>
+      <td>✅ จำเป็น</td>
+      <td>❌ Skip ได้ 95%</td>
+    </tr>
+  </table>
+
+  <div class="callout warn">
+    <b>ข้อยกเว้น:</b> <code>build_training_from_collector.py</code> mode <code>quantile</code>
+    (default) ทำให้ target balanced อยู่แล้ว → ไม่ต้อง relabel เพิ่ม
+  </div>
+
+  <!-- =================== 5. DECIDE =================== -->
+  <h2 id="decide">5. ใช้/ไม่ใช้ — Decision Tree</h2>
+
+  <div class="diagram">                คุณ train ด้วยอะไร?
+                       │
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+   Supervised ML                   RL / PPO
+   (PyCaret app.py เก่า)           (rl_app.py ปัจจุบัน)
+        │                             │
+        ▼                             ▼
+   class balanced?               ✗ Skip relabel
+        │                          (target ถูก drop)
+   ┌────┴────┐                       │
+   ▼         ▼                       ▼
+  YES       NO              [แต่ดูใน Tools Log
+   │         │               จาก build script ว่า
+   ▼         ▼               quantile ทำงานปกติ
+  ✗ Skip   ✓ Use            → ถ้า OK = จบ]
+          Relabel
+          (Quantile
+           33/33/33)</div>
+
+  <h3>กรณีเฉพาะที่ควรใช้ใน RL workflow</h3>
+  <table>
+    <tr><th>สถานการณ์</th><th>ทำไม</th></tr>
+    <tr>
+      <td>📊 ต้องการ <b>ดู</b> class distribution ก่อนเทรน</td>
+      <td>เปิด Card ③ → Source CSV → ดูสรุปก่อนกด "Relabel Now"</td>
+    </tr>
+    <tr>
+      <td>🔬 ทดลอง <b>analyze_confidence.py</b></td>
+      <td>script นี้ใช้ target → ต้อง balanced</td>
+    </tr>
+    <tr>
+      <td>🔄 Hybrid: PyCaret + RL</td>
+      <td>ใช้ supervised คัด setup → RL deploy</td>
+    </tr>
+  </table>
+
+  <hr>
+
+  <h2>🎯 สรุปสั้น</h2>
+
+  <div class="card">
+    <ul>
+      <li><b>UP/DOWN/FLAT</b> = label ทิศทางราคา N แท่งข้างหน้า</li>
+      <li><b>Imbalance</b> เกิดเมื่อ class หนึ่งมีเยอะกว่ามาก → supervised model ขี้เกียจ</li>
+      <li><b>Relabel ⭐ Quantile</b> = แก้โดยบังคับ 33/33/33</li>
+      <li><b>ใน RL</b> ไม่จำเป็น เพราะ <code>target</code> ถูก drop + model เรียนจาก reward</li>
+      <li><b>เก็บ Card ③ ไว้</b> สำหรับ supervised tools / analyze / hybrid workflow</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <b>คำแนะนำ:</b> ใน workflow ปกติ → <b>Skip Card ③</b> ใช้ default ของ
+    <code>build_training_from_collector.py</code> (quantile) ก็พอ
+  </div>
+
+  <div class="footer">
+    Reference: Tools Card ③ "Relabel (Fix class imbalance)" — Meta RL Trading Project
+  </div>
+
+</div>
+</body>
+</html>

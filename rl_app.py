@@ -876,15 +876,11 @@ class RLTradingStudio(ctk.CTk):
     def _pipeline_effective_rows(self, rows):
         if rows is None:
             return None
-        try:
-            train_pct = float(self.pipe_train_pct.get().strip() or "1.0")
-        except Exception:
-            train_pct = 1.0
+        train_pct = self._parse_train_pct(self.pipe_train_pct.get(), 0.85)
         try:
             window = int(float(self.pipe_window.get().strip() or "0"))
         except Exception:
             window = 0
-        train_pct = min(max(train_pct, 0.01), 1.0)
         return max(int(rows * train_pct) - max(window, 0), 1)
 
     def _round_steps(self, value):
@@ -1149,6 +1145,18 @@ class RLTradingStudio(ctk.CTk):
             return
         open_widget._close_popup()
 
+    def _parse_train_pct(self, raw, default=0.85):
+        """Accept either percentage (e.g. 85, "85") or decimal (e.g. 0.85, "0.85").
+        Heuristic: value > 1 -> percentage, value <= 1 -> already-decimal.
+        Returns float clamped to (0, 1]."""
+        try:
+            v = float(str(raw).strip())
+        except (ValueError, TypeError):
+            v = default
+        if v > 1.0:
+            v = v / 100.0
+        return min(max(v, 0.01), 1.0)
+
     def _is_process_busy(self):
         return self.runner.is_running() or getattr(self, "pipeline_running", False)
 
@@ -1218,8 +1226,8 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(setup, text="Train pct", text_color=COLOR_DIM).grid(
             row=2, column=2, sticky="w", padx=18, pady=6)
-        self.pipe_train_pct = ctk.CTkEntry(setup, width=120)
-        self.pipe_train_pct.insert(0, "1.0")
+        self.pipe_train_pct = ctk.CTkEntry(setup, width=120, placeholder_text="85")
+        self.pipe_train_pct.insert(0, "85")
         self.pipe_train_pct.grid(row=2, column=3, sticky="w", padx=(8, 18), pady=6)
         self.pipe_train_pct.bind("<KeyRelease>", lambda _e: self._update_pipeline_data_hint())
 
@@ -1835,7 +1843,7 @@ class RLTradingStudio(ctk.CTk):
             steps = int(float(self.pipe_steps.get().strip() or "200000"))
             window = int(float(self.pipe_window.get().strip() or "10"))
             conf = float(self.pipe_conf.get().strip() or "0.85")
-            train_pct = float(self.pipe_train_pct.get().strip() or "1.0")
+            train_pct = self._parse_train_pct(self.pipe_train_pct.get(), 0.85)
         except ValueError:
             messagebox.showerror("Invalid settings", "Steps/window/confidence/train_pct must be numeric.")
             return
@@ -4048,7 +4056,7 @@ class RLTradingStudio(ctk.CTk):
                       font=ctk.CTkFont(size=12)).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(wm, text="Max Hold", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)).grid(row=0, column=1, sticky="w", padx=(8, 0))
-        ctk.CTkLabel(wm, text="Train Pct (time-based split)", text_color=COLOR_DIM,
+        ctk.CTkLabel(wm, text="Train % (time-based split)", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)).grid(row=0, column=2, sticky="w", padx=(8, 0))
 
         self.train_window = ctk.CTkEntry(wm, placeholder_text="10")
@@ -4059,8 +4067,8 @@ class RLTradingStudio(ctk.CTk):
         self.train_maxhold.insert(0, "30")
         self.train_maxhold.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(2, 0))
 
-        self.train_pct = ctk.CTkEntry(wm, placeholder_text="0.85")
-        self.train_pct.insert(0, "0.85")
+        self.train_pct = ctk.CTkEntry(wm, placeholder_text="85")
+        self.train_pct.insert(0, "85")
         self.train_pct.grid(row=1, column=2, sticky="ew", padx=(8, 0), pady=(2, 0))
 
         ctk.CTkLabel(c3, text="Model Name", text_color=COLOR_DIM,
@@ -4777,7 +4785,7 @@ class RLTradingStudio(ctk.CTk):
             "--steps", steps,
             "--window", window,
             "--max_hold", max_hold,
-            "--train_pct", self.train_pct.get().strip() or "0.85",
+            "--train_pct", str(self._parse_train_pct(self.train_pct.get(), 0.85)),
             "--reward_mode", reward,
             "--algo", algo,
             "--name", name,

@@ -5357,6 +5357,19 @@ class RLTradingStudio(ctk.CTk):
         yscroll.grid(row=0, column=1, sticky="ns")
         self.model_tree.bind("<<TreeviewSelect>>", self._refresh_equity_viewer)
 
+        # ⭐ Isolate mousewheel so scrolling the table doesn't also scroll the
+        #   outer page (otherwise both scrollbars react and feel jumpy).
+        def _tree_wheel(event, tree=self.model_tree):
+            tree.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            return "break"
+        self.model_tree.bind("<MouseWheel>", _tree_wheel)
+        yscroll.bind("<MouseWheel>", _tree_wheel)
+        # Linux compat
+        self.model_tree.bind("<Button-4>", lambda e:
+            (self.model_tree.yview_scroll(-1, "units"), "break")[1])
+        self.model_tree.bind("<Button-5>", lambda e:
+            (self.model_tree.yview_scroll(1, "units"), "break")[1])
+
         # =====================================================
         # CARD 2: Equity Curve Viewer
         # =====================================================

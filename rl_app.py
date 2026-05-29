@@ -1262,16 +1262,24 @@ class RLTradingStudio(ctk.CTk):
         self.pipe_bt_mode.set("Agent + SL/TP")
         self.pipe_bt_mode.grid(row=4, column=3, sticky="w", padx=(8, 18), pady=6)
 
+        self.pipe_build = ctk.CTkCheckBox(
+            setup,
+            text="Auto-build from DataCollector_RL CSV (run build_training_from_collector.py first)",
+            text_color=COLOR_DIM,
+        )
+        self.pipe_build.grid(row=5, column=0, columnspan=4, sticky="w",
+                             padx=18, pady=(8, 4))
+
         self.pipe_relabel = ctk.CTkCheckBox(
             setup,
             text="Relabel first with quantile 33/33/33",
             text_color=COLOR_DIM,
         )
-        self.pipe_relabel.grid(row=5, column=0, columnspan=2, sticky="w",
-                               padx=18, pady=(8, 12))
+        self.pipe_relabel.grid(row=6, column=0, columnspan=2, sticky="w",
+                               padx=18, pady=(4, 12))
 
         btns = ctk.CTkFrame(setup, fg_color="transparent")
-        btns.grid(row=5, column=2, columnspan=2, sticky="e", padx=18, pady=(8, 12))
+        btns.grid(row=6, column=2, columnspan=2, sticky="e", padx=18, pady=(4, 12))
         self.pipe_run_btn = ctk.CTkButton(
             btns, text="Run full pipeline", command=self._run_full_pipeline,
             fg_color=COLOR_GREEN, hover_color="#2ea043", width=170)
@@ -1391,7 +1399,7 @@ class RLTradingStudio(ctk.CTk):
 
         stage_row = ctk.CTkFrame(progress, fg_color="transparent")
         stage_row.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
-        for label in ["Relabel", "Train PPO", "Backtest", "Chart"]:
+        for label in ["Build", "Relabel", "Train PPO", "Backtest", "Chart"]:
             pill = ctk.CTkLabel(
                 stage_row, text=label, height=30, corner_radius=8,
                 fg_color=COLOR_BG_INPUT, text_color=COLOR_DIM,
@@ -1851,6 +1859,7 @@ class RLTradingStudio(ctk.CTk):
                 return
 
         use_relabel = bool(self.pipe_relabel.get())
+        use_build   = bool(self.pipe_build.get())
         mode = "pure_agent" if "Pure" in self.pipe_bt_mode.get() else "agent_sltp"
 
         self.pipeline_running = True
@@ -1867,7 +1876,7 @@ class RLTradingStudio(ctk.CTk):
 
         t = threading.Thread(
             target=self._pipeline_worker,
-            args=(csv_name, bt_csv, use_relabel, model_name, steps, window, conf, mode, train_pct, hparams),
+            args=(csv_name, bt_csv, use_relabel, use_build, model_name, steps, window, conf, mode, train_pct, hparams),
             daemon=True,
         )
         t.start()
@@ -1881,22 +1890,33 @@ class RLTradingStudio(ctk.CTk):
             except Exception:
                 pass
 
-    def _pipeline_worker(self, csv_name, bt_csv, use_relabel, model_name,
-                         steps, window, conf, mode, train_pct, hparams):
+    def _pipeline_worker(self, csv_name, bt_csv, use_relabel, use_build,
+                         model_name, steps, window, conf, mode, train_pct, hparams):
         train_csv = csv_name
         stages_total = 3
+        if use_build:
+            stages_total += 1
         if use_relabel and not Path(csv_name).stem.endswith("_relabeled"):
             stages_total += 1
 
         stage = 1
         try:
+            # Stage: Build training CSV from DataCollector_RL output
+            if use_build:
+                built_name = f"training_data_{Path(csv_name).stem}.csv"
+                build_cmd = [sys.executable, "build_training_from_collector.py",
+                             "--in", csv_name, "--out", built_name]
+                self._pipeline_run_cmd(build_cmd, stage, "Build", stages_total)
+                train_csv = built_name
+                stage += 1
+
             if use_relabel:
-                if Path(csv_name).stem.endswith("_relabeled"):
+                if Path(train_csv).stem.endswith("_relabeled"):
                     self._pipeline_log("Relabel skipped because source already ends with _relabeled.", "warn")
                 else:
-                    relabel_cmd = [sys.executable, "relabel.py", csv_name, "--mode", "quantile"]
+                    relabel_cmd = [sys.executable, "relabel.py", train_csv, "--mode", "quantile"]
                     self._pipeline_run_cmd(relabel_cmd, stage, "Relabel", stages_total)
-                    train_csv = self._expected_relabeled_path(csv_name).name
+                    train_csv = self._expected_relabeled_path(train_csv).name
                     stage += 1
 
             train_cmd = [
@@ -5392,7 +5412,8 @@ class RLTradingStudio(ctk.CTk):
         header.grid_columnconfigure(0, weight=2)
         header.grid_columnconfigure(1, weight=1)
         header.grid_columnconfigure(2, weight=1)
-        for i, txt in enumerate(["NAME", "SIZE", "MODIFIED"]):
+        header.grid_columnconfigure(3, weight=1)
+        for i, txt in enumerate(["NAME", "SIZE", "MODIFIED", "PARAMS"]):
             ctk.CTkLabel(header, text=txt, text_color=COLOR_DIM,
                 font=ctk.CTkFont(size=11, weight="bold")
                 ).grid(row=0, column=i, sticky="w", padx=14, pady=8)
@@ -5403,11 +5424,24 @@ class RLTradingStudio(ctk.CTk):
             size_kb = stat.st_size / 1024
             modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
 
+            # Params status: sidecar JSON or embedded in config.mqh
+            params_sidecar = WORK_DIR / f"{zp.stem}.params.json"
+            config_mqh = (WORK_DIR / "mt5_files" / "MQL5" / "Include"
+                          / f"{zp.stem}_config.mqh")
+            if params_sidecar.exists():
+                params_label, params_color = "✓ sidecar", COLOR_GREEN
+            elif config_mqh.exists() and "RL_ApplyDataCollectorConfig" in \
+                    config_mqh.read_text(encoding="utf-8", errors="ignore"):
+                params_label, params_color = "✓ embedded", COLOR_GREEN
+            else:
+                params_label, params_color = "— defaults", COLOR_YELLOW
+
             row = ctk.CTkFrame(self.models_container, fg_color="transparent")
             row.grid(row=i + 1, column=0, sticky="ew", pady=2)
             row.grid_columnconfigure(0, weight=2)
             row.grid_columnconfigure(1, weight=1)
             row.grid_columnconfigure(2, weight=1)
+            row.grid_columnconfigure(3, weight=1)
 
             ctk.CTkLabel(row, text=f"🤖  {zp.stem}",
                 font=ctk.CTkFont(size=13, family="Consolas")
@@ -5418,6 +5452,10 @@ class RLTradingStudio(ctk.CTk):
             ctk.CTkLabel(row, text=modified,
                 text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
                 ).grid(row=0, column=2, sticky="w", padx=14, pady=6)
+            ctk.CTkLabel(row, text=params_label,
+                text_color=params_color,
+                font=ctk.CTkFont(size=12, weight="bold")
+                ).grid(row=0, column=3, sticky="w", padx=14, pady=6)
 
     # --------------------------------------------------------
     # PAGE: SETTINGS

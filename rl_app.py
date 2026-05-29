@@ -4037,16 +4037,19 @@ class RLTradingStudio(ctk.CTk):
         self.train_steps.insert(0, "200000")
         self.train_steps.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
 
-        # Window + max_hold (row)
+        # Window + max_hold + train_pct (row)
         wm = ctk.CTkFrame(c3, fg_color="transparent")
         wm.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
         wm.grid_columnconfigure(0, weight=1)
         wm.grid_columnconfigure(1, weight=1)
+        wm.grid_columnconfigure(2, weight=1)
 
         ctk.CTkLabel(wm, text="Window Size", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)).grid(row=0, column=0, sticky="w")
         ctk.CTkLabel(wm, text="Max Hold", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)).grid(row=0, column=1, sticky="w", padx=(8, 0))
+        ctk.CTkLabel(wm, text="Train Pct (time-based split)", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)).grid(row=0, column=2, sticky="w", padx=(8, 0))
 
         self.train_window = ctk.CTkEntry(wm, placeholder_text="10")
         self.train_window.insert(0, "10")
@@ -4055,6 +4058,10 @@ class RLTradingStudio(ctk.CTk):
         self.train_maxhold = ctk.CTkEntry(wm, placeholder_text="30")
         self.train_maxhold.insert(0, "30")
         self.train_maxhold.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(2, 0))
+
+        self.train_pct = ctk.CTkEntry(wm, placeholder_text="0.85")
+        self.train_pct.insert(0, "0.85")
+        self.train_pct.grid(row=1, column=2, sticky="ew", padx=(8, 0), pady=(2, 0))
 
         ctk.CTkLabel(c3, text="Model Name", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
@@ -4770,6 +4777,7 @@ class RLTradingStudio(ctk.CTk):
             "--steps", steps,
             "--window", window,
             "--max_hold", max_hold,
+            "--train_pct", self.train_pct.get().strip() or "0.85",
             "--reward_mode", reward,
             "--algo", algo,
             "--name", name,

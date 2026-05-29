@@ -2738,74 +2738,57 @@ class RLTradingStudio(ctk.CTk):
         intro.grid(row=0, column=0, sticky="w", padx=8, pady=(0, 16))
 
         # =====================================================
-        # CARD 1: Import from MT5 Tester
+        # CARD 1: Import from DataCollector_RL (Common\Files)
         # =====================================================
-        c1 = Card(page, title="① 📥 Import from MT5 Tester")
+        c1 = Card(page, title="① 🤖 Import from DataCollector_RL")
         c1.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         c1.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(c1,
-            text="ดึงไฟล์ CSV จาก MT5 Strategy Tester → Convert UTF-16 → UTF-8 → เพิ่ม header → save ที่ project folder",
+            text="คัดลอก CSV + params.json จาก MT5 Common\\Files → project folder. "
+                 "params.json รับประกัน parity ระหว่าง training และ live EA.",
             text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
             wraplength=900, justify="left"
             ).grid(row=1, column=0, sticky="w", padx=18, pady=(2, 12))
 
-        ctk.CTkLabel(c1, text="MT5 Source CSV", text_color=COLOR_DIM,
+        ctk.CTkLabel(c1, text="Source CSV (Common\\Files)", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
                       ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 4))
 
-        path_frame = ctk.CTkFrame(c1, fg_color="transparent")
-        path_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 8))
-        path_frame.grid_columnconfigure(0, weight=1)
+        src_row = ctk.CTkFrame(c1, fg_color="transparent")
+        src_row.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 8))
+        src_row.grid_columnconfigure(0, weight=1)
 
-        self.tool_mt5_path = ctk.CTkEntry(path_frame,
-            placeholder_text="C:\\...\\Tester\\...\\MQL5\\Files\\training_data_v3.csv",
-            font=ctk.CTkFont(family="Consolas", size=12))
-        self.tool_mt5_path.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.tool_collector_src = ScrollableOptionMenu(src_row, values=["(none)"], width=480)
+        self.tool_collector_src.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
-        ctk.CTkButton(path_frame, text="📂 Browse",
-            command=self._browse_mt5_csv,
+        ctk.CTkButton(src_row, text="🔄 Refresh",
+            command=self._refresh_collector_sources,
             fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
             width=110
         ).grid(row=0, column=1)
 
-        ctk.CTkButton(path_frame, text="🔍 Auto-detect",
-            command=self._autodetect_mt5_csv,
-            fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
-            width=130
-        ).grid(row=0, column=2, padx=(8, 0))
+        # Output name + build option
+        opts1 = ctk.CTkFrame(c1, fg_color="transparent")
+        opts1.grid(row=4, column=0, sticky="ew", padx=18, pady=(4, 12))
+        opts1.grid_columnconfigure(0, weight=1)
 
-        # Output options
-        opts = ctk.CTkFrame(c1, fg_color="transparent")
-        opts.grid(row=4, column=0, sticky="ew", padx=18, pady=(8, 12))
-        opts.grid_columnconfigure(0, weight=1)
-        opts.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(opts, text="Output filename", text_color=COLOR_DIM,
+        ctk.CTkLabel(opts1, text="Output basename", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
                       ).grid(row=0, column=0, sticky="w", pady=(0, 4))
-        ctk.CTkLabel(opts, text="Indicator config", text_color=COLOR_DIM,
-                      font=ctk.CTkFont(size=12)
-                      ).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
+        self.tool_collector_out = ctk.CTkEntry(opts1,
+            placeholder_text="training_data_<symbol>_rl.csv")
+        self.tool_collector_out.grid(row=1, column=0, sticky="ew")
 
-        self.tool_out_name = ctk.CTkEntry(opts, placeholder_text="training_data_v3.csv")
-        self.tool_out_name.insert(0, "training_data_v3.csv")
-        self.tool_out_name.grid(row=1, column=0, sticky="ew")
+        self.tool_collector_build = ctk.CTkCheckBox(opts1,
+            text="Run build_training_from_collector.py "
+                 "(adds future_return + target, selects features)",
+            text_color=COLOR_TEXT)
+        self.tool_collector_build.select()
+        self.tool_collector_build.grid(row=2, column=0, sticky="w", pady=(12, 0))
 
-        self.tool_indi_mode = ctk.CTkOptionMenu(opts,
-            values=[
-                "Auto-detect (recommended)",
-                "v3 — Standard (50 features)",
-                "v4 — v3 + Candle Patterns (60 features)",
-                "All AGGREGATE (4 indicators)",
-                "All MULTI (4 periods each)",
-                "Custom (manual)",
-            ],
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.tool_indi_mode.grid(row=1, column=1, sticky="ew", padx=(8, 0))
-
-        ctk.CTkButton(c1, text="📥 Import + Convert + Add Header",
-            command=self._import_mt5_csv,
+        ctk.CTkButton(c1, text="📥 Import + Build training CSV",
+            command=self._import_from_collector,
             fg_color=COLOR_ACCENT, hover_color="#4493f8",
             height=40, font=ctk.CTkFont(size=14, weight="bold")
             ).grid(row=5, column=0, sticky="ew", padx=18, pady=(4, 16))
@@ -3055,69 +3038,13 @@ class RLTradingStudio(ctk.CTk):
             ).grid(row=6, column=0, sticky="ew", padx=18, pady=(4, 16))
 
         # =====================================================
-        # CARD 6: Import from DataCollector_RL (Common\Files)
+        # CARD 6: Tools Log
         # =====================================================
-        c6_imp = Card(page, title="⑥ 🤖 Import from DataCollector_RL")
-        c6_imp.grid(row=6, column=0, sticky="ew", pady=(0, 12))
-        c6_imp.grid_columnconfigure(0, weight=1)
+        c6 = Card(page, title="📝 Tools Log")
+        c6.grid(row=6, column=0, sticky="ew")
+        c6.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(c6_imp,
-            text="คัดลอก CSV + params.json จาก MT5 Common\\Files → project folder. "
-                 "params.json รับประกัน parity ระหว่าง training และ live EA.",
-            text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
-            wraplength=900, justify="left"
-            ).grid(row=1, column=0, sticky="w", padx=18, pady=(2, 12))
-
-        ctk.CTkLabel(c6_imp, text="Source CSV (Common\\Files)", text_color=COLOR_DIM,
-                      font=ctk.CTkFont(size=12)
-                      ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 4))
-
-        src_row = ctk.CTkFrame(c6_imp, fg_color="transparent")
-        src_row.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 8))
-        src_row.grid_columnconfigure(0, weight=1)
-
-        self.tool_collector_src = ScrollableOptionMenu(src_row, values=["(none)"], width=480)
-        self.tool_collector_src.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-
-        ctk.CTkButton(src_row, text="🔄 Refresh",
-            command=self._refresh_collector_sources,
-            fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
-            width=110
-        ).grid(row=0, column=1)
-
-        # Output name + build option
-        opts2 = ctk.CTkFrame(c6_imp, fg_color="transparent")
-        opts2.grid(row=4, column=0, sticky="ew", padx=18, pady=(4, 12))
-        opts2.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(opts2, text="Output basename", text_color=COLOR_DIM,
-                      font=ctk.CTkFont(size=12)
-                      ).grid(row=0, column=0, sticky="w", pady=(0, 4))
-        self.tool_collector_out = ctk.CTkEntry(opts2,
-            placeholder_text="training_data_<symbol>_rl.csv")
-        self.tool_collector_out.grid(row=1, column=0, sticky="ew")
-
-        self.tool_collector_build = ctk.CTkCheckBox(opts2,
-            text="Run build_training_from_collector.py "
-                 "(adds future_return + target, selects features)",
-            text_color=COLOR_TEXT)
-        self.tool_collector_build.select()
-        self.tool_collector_build.grid(row=2, column=0, sticky="w", pady=(12, 0))
-
-        ctk.CTkButton(c6_imp, text="📥 Import + Build training CSV",
-            command=self._import_from_collector,
-            fg_color=COLOR_ACCENT, hover_color="#4493f8",
-            height=40, font=ctk.CTkFont(size=14, weight="bold")
-            ).grid(row=5, column=0, sticky="ew", padx=18, pady=(4, 16))
-
-        # =====================================================
-        # CARD 7: Log
-        # =====================================================
-        c7 = Card(page, title="📝 Tools Log")
-        c7.grid(row=7, column=0, sticky="ew")
-        c7.grid_columnconfigure(0, weight=1)
-
-        log_frame = ctk.CTkFrame(c7, fg_color="#0a0e14", corner_radius=8,
+        log_frame = ctk.CTkFrame(c6, fg_color="#0a0e14", corner_radius=8,
                                    border_width=1, border_color="#30363d")
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
 

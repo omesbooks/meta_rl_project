@@ -4762,8 +4762,25 @@ class RLTradingStudio(ctk.CTk):
         steps = self.train_steps.get() or "200000"
         window = self.train_window.get() or "10"
         max_hold = self.train_maxhold.get() or "30"
-        name = self.train_name.get() or "rl_prod_v1"
+        name = (self.train_name.get() or "rl_prod_v1").strip()
         reward = self.train_reward.get().split()[0]
+
+        # Guard against silent overwrite — a duplicate name would clobber
+        # the existing .zip / _norm.csv / .params.json / _best/ folder
+        # without warning. Ask once; if the user confirms, proceed and the
+        # overwrite will happen as before.
+        if (WORK_DIR / f"{name}.zip").exists():
+            ok = messagebox.askyesno(
+                "Overwrite model?",
+                f"{name}.zip already exists.\n\n"
+                f"Training will overwrite:\n"
+                f"  • {name}.zip\n"
+                f"  • {name}_norm.csv\n"
+                f"  • {name}.params.json (if any)\n"
+                f"  • {name}_best/ folder\n\n"
+                f"Continue and overwrite?")
+            if not ok:
+                return
 
         # Map algorithm dropdown to CLI value
         algo_map = {

@@ -5493,13 +5493,74 @@ class RLTradingStudio(ctk.CTk):
             height=42, width=140
             ).grid(row=0, column=1, padx=(8, 0))
 
-        # === Card 3: Log + Results ===
-        c3 = Card(page, title="📊 Output")
-        c3.grid(row=2, column=0, sticky="ew")
+        # === Card 3: Breakpoints table ===
+        c3 = Card(page, title="📍 Detected Breakpoints")
+        c3.grid(row=2, column=0, sticky="ew", pady=(0, 12))
         c3.grid_columnconfigure(0, weight=1)
-        log_frame = ctk.CTkFrame(c3, fg_color="#0a0e14", corner_radius=8)
+
+        self.regime_summary = ctk.CTkLabel(c3,
+            text="(run detection to populate)",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12))
+        self.regime_summary.grid(row=1, column=0, sticky="w", padx=18, pady=(4, 8))
+
+        tree_frame = ctk.CTkFrame(c3, fg_color="#0a0e14", corner_radius=8)
+        tree_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 8))
+        tree_frame.grid_columnconfigure(0, weight=1)
+
+        # Style the treeview to match dark theme
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        style.configure("Regime.Treeview",
+            background="#0a0e14", foreground="#c9d1d9",
+            fieldbackground="#0a0e14", borderwidth=0, rowheight=26,
+            font=("Segoe UI", 11))
+        style.configure("Regime.Treeview.Heading",
+            background="#161b22", foreground="#58a6ff",
+            font=("Segoe UI", 11, "bold"), borderwidth=0)
+        style.map("Regime.Treeview",
+            background=[("selected", "#264f78")],
+            foreground=[("selected", "#ffffff")])
+
+        self.regime_tree = ttk.Treeview(tree_frame,
+            columns=("date", "event", "delta"),
+            show="headings", height=8, style="Regime.Treeview",
+            selectmode="browse")
+        self.regime_tree.heading("date",  text="Breakpoint Date")
+        self.regime_tree.heading("event", text="Known Event Match")
+        self.regime_tree.heading("delta", text="Days Apart")
+        self.regime_tree.column("date",  width=160, anchor="w")
+        self.regime_tree.column("event", width=320, anchor="w")
+        self.regime_tree.column("delta", width=120, anchor="center")
+        self.regime_tree.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+
+        # Action buttons
+        actions = ctk.CTkFrame(c3, fg_color="transparent")
+        actions.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 14))
+        actions.grid_columnconfigure(0, weight=1)
+        ctk.CTkButton(actions,
+            text="🎯 Use Selected as Train Cutoff",
+            command=self._use_regime_cutoff,
+            fg_color=COLOR_GREEN, hover_color="#2ea043",
+            height=38
+        ).grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(actions,
+            text="📄 Open Chart",
+            command=self._open_regime_chart,
+            fg_color="#30363d", hover_color="#3d4450",
+            border_width=1, border_color="#484f58",
+            height=38, width=140
+        ).grid(row=0, column=1, padx=(8, 0))
+
+        # === Card 4: Log ===
+        c4 = Card(page, title="📊 Log")
+        c4.grid(row=3, column=0, sticky="ew")
+        c4.grid_columnconfigure(0, weight=1)
+        log_frame = ctk.CTkFrame(c4, fg_color="#0a0e14", corner_radius=8)
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
-        self.regime_log = self._make_log_widget(log_frame, height=22)
+        self.regime_log = self._make_log_widget(log_frame, height=12)
 
         # Init param visibility (HMM is default)
         self._regime_update_param_visibility()
@@ -5580,6 +5641,148 @@ class RLTradingStudio(ctk.CTk):
             os.startfile(str(chart))
         except Exception as e:
             messagebox.showerror("Open failed", str(e))
+
+    def _load_regime_results(self):
+        """Read regime_single_data.json after subprocess finishes,
+        populate the Treeview, and compute event-match metadata."""
+        json_path = WORK_DIR / "regime_single_data.json"
+        if not json_path.exists():
+            self._log(self.regime_log,
+                "(no regime_single_data.json found — chart wasn't generated)",
+                "warn")
+            return
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            self._log(self.regime_log, f"Failed to read JSON: {e}", "error")
+            return
+
+        # Clear previous rows
+        for item in self.regime_tree.get_children():
+            self.regime_tree.delete(item)
+
+        breaks = data.get("breaks", [])
+        events = data.get("events", {})
+        method = data.get("method", "?").upper()
+        score = data.get("score", 0)
+        n_bars = data.get("n_bars", 0)
+        time_sec = data.get("time_sec", 0)
+
+        # Sort known events by date once
+        try:
+            from datetime import datetime
+            event_dates = {n: datetime.strptime(d, "%Y-%m-%d")
+                           for n, d in events.items()}
+        except Exception:
+            event_dates = {}
+
+        # Populate rows
+        matched = 0
+        for b in breaks:
+            try:
+                from datetime import datetime
+                bdt = datetime.strptime(b, "%Y-%m-%d")
+            except Exception:
+                self.regime_tree.insert("", "end", values=(b, "—", "—"))
+                continue
+
+            # Find closest known event within ±90 days
+            best_name, best_delta = None, None
+            for name, edt in event_dates.items():
+                delta = abs((bdt - edt).days)
+                if delta <= 90 and (best_delta is None or delta < best_delta):
+                    best_name, best_delta = name, delta
+
+            if best_name:
+                matched += 1
+                self.regime_tree.insert("", "end",
+                    values=(b, f"✓ {best_name}", f"{best_delta}d"))
+            else:
+                self.regime_tree.insert("", "end",
+                    values=(b, "—", "—"))
+
+        # Summary line
+        self.regime_summary.configure(
+            text=(f"Method: {method}  ·  "
+                  f"{len(breaks)} breakpoints  ·  "
+                  f"{score}/3 known events matched  ·  "
+                  f"{n_bars:,} bars analyzed in {time_sec:.2f}s"),
+            text_color=COLOR_GREEN if score >= 2 else COLOR_YELLOW)
+
+    def _use_regime_cutoff(self):
+        """Filter CSV to rows >= selected breakpoint, save as a new file,
+        forward the .params.json sidecar, then jump to Train page with it."""
+        sel = self.regime_tree.selection()
+        if not sel:
+            messagebox.showwarning("No row selected",
+                "Click a breakpoint row in the table first.")
+            return
+        if not getattr(self, "regime_csv_path", None):
+            messagebox.showwarning("No CSV", "No CSV loaded.")
+            return
+
+        date_str = self.regime_tree.item(sel[0])["values"][0]
+        match_label = self.regime_tree.item(sel[0])["values"][1]
+
+        src_csv = Path(self.regime_csv_path)
+        dst_csv = src_csv.parent / f"{src_csv.stem}_from_{date_str}.csv"
+
+        msg = (f"Filter CSV to rows where timestamp >= {date_str}\n"
+               f"{'(' + match_label + ')' if match_label != '—' else ''}\n\n"
+               f"Source:  {src_csv.name}\n"
+               f"Output:  {dst_csv.name}\n\n"
+               f"After saving, you'll be moved to the Train page with the "
+               f"new file pre-selected.")
+        if not messagebox.askyesno("Use as Train Cutoff?", msg):
+            return
+
+        try:
+            import pandas as pd
+            df = pd.read_csv(src_csv)
+            if "timestamp" not in df.columns:
+                messagebox.showerror("Bad CSV",
+                    "CSV has no 'timestamp' column — can't filter by date.")
+                return
+            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+            df = df.sort_values("timestamp").reset_index(drop=True)
+            before = len(df)
+            cutoff = pd.Timestamp(date_str)
+            df = df[df["timestamp"] >= cutoff].reset_index(drop=True)
+            after = len(df)
+            df.to_csv(dst_csv, index=False)
+        except Exception as e:
+            messagebox.showerror("Filter failed", str(e))
+            return
+
+        # Forward the .params.json sidecar if it exists
+        src_params = src_csv.with_suffix("").with_suffix(".params.json")
+        if not src_params.exists():
+            src_params = src_csv.parent / (src_csv.stem + ".params.json")
+        dst_params = dst_csv.with_suffix("").with_suffix(".params.json")
+        if src_params.exists():
+            try:
+                import shutil
+                shutil.copy(src_params, dst_params)
+                params_msg = f"\n  + forwarded {src_params.name}"
+            except Exception as e:
+                params_msg = f"\n  (params sidecar copy failed: {e})"
+        else:
+            params_msg = ""
+
+        self._log(self.regime_log,
+            f"[cutoff] saved {dst_csv.name} · {after:,} / {before:,} rows kept"
+            f"{params_msg}",
+            "success")
+
+        # Jump to Train page with the new CSV
+        try:
+            self.show_page("train")
+            self._set_train_csv(str(dst_csv))
+        except Exception as e:
+            messagebox.showwarning("Train page",
+                f"CSV saved but couldn't auto-select on Train page:\n{e}")
 
     # --------------------------------------------------------
     # PAGE: MODELS
@@ -6257,6 +6460,7 @@ Built with: CustomTkinter + stable-baselines3
             'walkfwd': getattr(self, 'wf_log', None),
             'finetune': getattr(self, 'ft_log', None),
             'analyze': getattr(self, 'an_log', None),
+            'regime': getattr(self, 'regime_log', None),
         }.get(page)
         if log_widget:
             tag = self._classify_log(line)
@@ -6370,6 +6574,7 @@ Built with: CustomTkinter + stable-baselines3
             'walkfwd': getattr(self, 'wf_log', None),
             'finetune': getattr(self, 'ft_log', None),
             'analyze': getattr(self, 'an_log', None),
+            'regime': getattr(self, 'regime_log', None),
         }.get(page)
         if log_widget:
             self._log(log_widget, msg,
@@ -6378,6 +6583,10 @@ Built with: CustomTkinter + stable-baselines3
         # Refresh model list if was training
         if page in ('train', 'finetune'):
             self._refresh_dropdowns()
+
+        # Populate regime breakpoint table on success
+        if page == 'regime' and rc == 0:
+            self._load_regime_results()
 
 
 # ============================================================

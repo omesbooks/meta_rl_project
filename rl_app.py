@@ -91,6 +91,7 @@ NAV_ITEMS = [
     ("walkfwd",   "🔬",    "Walk-Forward",          "🔬 Walk-Forward Validation"),
     ("finetune",  "🔄",    "Fine-tune",             "🔄 Fine-tune Existing Model"),
     ("analyze",   "🔍",    "Analyze",               "🔍 Confidence Analysis"),
+    ("regime",    "🌐",    "Regime Check",          "🌐 Regime Detection"),
     ("models",    "🗂️",    "Models",                "🗂️ Model Library"),
     ("settings",  "⚙️",    "Settings",              "⚙️ Settings"),
 ]
@@ -1047,6 +1048,7 @@ class RLTradingStudio(ctk.CTk):
             "walkfwd": self._build_walkfwd_page,
             "finetune": self._build_finetune_page,
             "analyze": self._build_analyze_page,
+            "regime": self._build_regime_page,
             "models": self._build_models_page,
             "settings": self._build_settings_page,
         }
@@ -5343,6 +5345,241 @@ class RLTradingStudio(ctk.CTk):
         self._log(self.an_log, f"$ {' '.join(cmd)}", "info")
         self.status_label.configure(text="● Analyzing...", text_color=COLOR_ACCENT)
         self.runner.start(cmd)
+
+    # --------------------------------------------------------
+    # PAGE: REGIME CHECK
+    # --------------------------------------------------------
+    def _build_regime_page(self):
+        page = ctk.CTkFrame(self.content, fg_color="transparent")
+        page.grid_columnconfigure(0, weight=1)
+        self.pages["regime"] = page
+
+        # === Card 1: Dataset + Method picker ===
+        c1 = Card(page, title="🌐 Regime Detection")
+        c1.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        c1.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(c1,
+            text=("ตรวจหาช่วงเวลาที่ตลาดเปลี่ยน regime (Brexit, COVID, GFC) "
+                  "ด้วยอัลกอริทึม structural-break / clustering "
+                  "→ ใช้กำหนด train cutoff หรือเป็น feature เพิ่ม"),
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12), wraplength=900,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", padx=18, pady=(4, 12))
+
+        # Dataset row
+        ds_frame = ctk.CTkFrame(c1, fg_color=COLOR_BG_INPUT, corner_radius=8,
+                                 border_width=1, border_color="#30363d")
+        ds_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
+        ds_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(ds_frame, text="📊", font=ctk.CTkFont(size=24)
+                      ).grid(row=0, column=0, padx=14, pady=10)
+        info_f = ctk.CTkFrame(ds_frame, fg_color="transparent")
+        info_f.grid(row=0, column=1, sticky="w", padx=4, pady=10)
+        self.regime_csv_label = ctk.CTkLabel(info_f, text="No file selected",
+            font=ctk.CTkFont(size=13, weight="bold"))
+        self.regime_csv_label.pack(anchor="w")
+        self.regime_csv_meta = ctk.CTkLabel(info_f, text="Click Browse to select",
+            font=ctk.CTkFont(size=11), text_color=COLOR_DIM)
+        self.regime_csv_meta.pack(anchor="w", pady=(2, 0))
+        ctk.CTkButton(ds_frame, text="📂 Browse",
+            command=self._browse_regime_csv,
+            fg_color=COLOR_ACCENT, hover_color="#4493f8", width=110
+        ).grid(row=0, column=2, padx=14, pady=10)
+
+        # Method picker
+        method_frame = ctk.CTkFrame(c1, fg_color="transparent")
+        method_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 4))
+        method_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(method_frame, text="Method", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=0, column=0, sticky="w")
+
+        self.regime_method = ctk.StringVar(value="hmm")
+        for i, (val, label, desc) in enumerate([
+            ("hmm",
+             "HMM 3-state ⭐",
+             "เห็น regime ผ่าน vol+return joint dist · ดีสุดจากการทดสอบ (3/3 events) · ~3s"),
+            ("kmeans",
+             "K-Means rolling",
+             "Cluster บน rolling [mean, std, slope] · เร็วสุด ~60ms · 2/3 events"),
+            ("pelt",
+             "PELT (changepoint)",
+             "Optimal segmentation ด้วย RBF kernel · 2/3 events · ช้า ~3 นาที"),
+        ]):
+            row = ctk.CTkFrame(method_frame, fg_color="transparent")
+            row.grid(row=1 + i, column=0, sticky="ew", pady=(6, 0))
+            rb = ctk.CTkRadioButton(row, text=label, variable=self.regime_method,
+                value=val, command=self._regime_update_param_visibility,
+                font=ctk.CTkFont(size=13, weight="bold"))
+            rb.pack(anchor="w")
+            ctk.CTkLabel(row, text=desc, text_color=COLOR_DIM,
+                font=ctk.CTkFont(size=11), wraplength=850, justify="left"
+                ).pack(anchor="w", padx=(28, 0))
+
+        # === Card 2: Method params (dynamic) ===
+        c2 = Card(page, title="⚙️ Method parameters")
+        c2.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        c2.grid_columnconfigure((0, 1, 2), weight=1)
+
+        # HMM params
+        self.regime_param_hmm = ctk.CTkFrame(c2, fg_color="transparent")
+        self.regime_param_hmm.grid(row=1, column=0, columnspan=3, sticky="ew",
+                                    padx=18, pady=(0, 12))
+        self.regime_param_hmm.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkLabel(self.regime_param_hmm, text="States",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
+            ).grid(row=0, column=0, sticky="w")
+        self.regime_hmm_states = ctk.CTkEntry(self.regime_param_hmm,
+            placeholder_text="3")
+        self.regime_hmm_states.insert(0, "3")
+        self.regime_hmm_states.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkLabel(self.regime_param_hmm,
+            text="จำนวน hidden state (3 = bull/bear/sideways)",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11)
+            ).grid(row=2, column=0, sticky="w", pady=(2, 0))
+
+        # K-Means params
+        self.regime_param_km = ctk.CTkFrame(c2, fg_color="transparent")
+        self.regime_param_km.grid(row=1, column=0, columnspan=3, sticky="ew",
+                                   padx=18, pady=(0, 12))
+        self.regime_param_km.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkLabel(self.regime_param_km, text="Clusters (k)",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
+            ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(self.regime_param_km, text="Window (days)",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
+            ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.regime_km_k = ctk.CTkEntry(self.regime_param_km, placeholder_text="3")
+        self.regime_km_k.insert(0, "3")
+        self.regime_km_k.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        self.regime_km_win = ctk.CTkEntry(self.regime_param_km, placeholder_text="60")
+        self.regime_km_win.insert(0, "60")
+        self.regime_km_win.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+
+        # PELT params
+        self.regime_param_pelt = ctk.CTkFrame(c2, fg_color="transparent")
+        self.regime_param_pelt.grid(row=1, column=0, columnspan=3, sticky="ew",
+                                     padx=18, pady=(0, 12))
+        self.regime_param_pelt.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkLabel(self.regime_param_pelt, text="Penalty",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
+            ).grid(row=0, column=0, sticky="w")
+        self.regime_pelt_pen = ctk.CTkEntry(self.regime_param_pelt,
+            placeholder_text="50")
+        self.regime_pelt_pen.insert(0, "50")
+        self.regime_pelt_pen.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkLabel(self.regime_param_pelt,
+            text="สูง = ตัด break น้อย (จับเฉพาะ shift ใหญ่ ๆ) · ต่ำ = ตัดถี่",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11)
+            ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
+
+        # === Run buttons ===
+        btn_frame = ctk.CTkFrame(c2, fg_color="transparent")
+        btn_frame.grid(row=2, column=0, columnspan=3, sticky="ew",
+                        padx=18, pady=(0, 12))
+        btn_frame.grid_columnconfigure(0, weight=1)
+        btn_frame.grid_columnconfigure(1, weight=0)
+        ctk.CTkButton(btn_frame, text="▶ Run Detection",
+            command=self._run_regime_detection,
+            fg_color=COLOR_ACCENT, hover_color="#4493f8", height=42
+            ).grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(btn_frame, text="📄 Open Chart",
+            command=self._open_regime_chart,
+            fg_color="#30363d", hover_color="#3d4450",
+            border_width=1, border_color="#484f58",
+            height=42, width=140
+            ).grid(row=0, column=1, padx=(8, 0))
+
+        # === Card 3: Log + Results ===
+        c3 = Card(page, title="📊 Output")
+        c3.grid(row=2, column=0, sticky="ew")
+        c3.grid_columnconfigure(0, weight=1)
+        log_frame = ctk.CTkFrame(c3, fg_color="#0a0e14", corner_radius=8)
+        log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
+        self.regime_log = self._make_log_widget(log_frame, height=22)
+
+        # Init param visibility (HMM is default)
+        self._regime_update_param_visibility()
+
+    def _regime_update_param_visibility(self):
+        """Show only the params block for the currently-selected method."""
+        m = self.regime_method.get()
+        for w in (self.regime_param_hmm, self.regime_param_km, self.regime_param_pelt):
+            w.grid_remove()
+        if m == "hmm":
+            self.regime_param_hmm.grid()
+        elif m == "kmeans":
+            self.regime_param_km.grid()
+        elif m == "pelt":
+            self.regime_param_pelt.grid()
+
+    def _browse_regime_csv(self):
+        path = filedialog.askopenfilename(
+            title="Select CSV for regime analysis",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            initialdir=str(WORK_DIR))
+        if not path:
+            return
+        self.regime_csv_path = path
+        name = Path(path).name
+        try:
+            import pandas as pd
+            df = pd.read_csv(path, usecols=lambda c: c.lower() in ("timestamp", "close"))
+            n = len(df)
+            if "timestamp" in df.columns:
+                ts = pd.to_datetime(df["timestamp"], errors="coerce")
+                meta = f"{n:,} rows · {ts.min().date()} → {ts.max().date()}"
+            else:
+                meta = f"{n:,} rows · (no timestamp col?)"
+        except Exception as e:
+            meta = f"(error reading: {e})"
+        self.regime_csv_label.configure(text=name)
+        self.regime_csv_meta.configure(text=meta)
+
+    def _run_regime_detection(self):
+        if self._is_process_busy():
+            messagebox.showwarning("Busy", "Another task running")
+            return
+        if not getattr(self, "regime_csv_path", None):
+            messagebox.showwarning("No CSV", "Please pick a CSV first.")
+            return
+
+        method = self.regime_method.get()
+        cmd = [sys.executable, "regime_compare.py", self.regime_csv_path,
+               "--method", method]
+
+        try:
+            if method == "hmm":
+                states = int(self.regime_hmm_states.get().strip() or "3")
+                cmd += ["--n-states", str(states)]
+            elif method == "kmeans":
+                k = int(self.regime_km_k.get().strip() or "3")
+                win = int(self.regime_km_win.get().strip() or "60")
+                cmd += ["--k", str(k), "--win", str(win)]
+            elif method == "pelt":
+                pen = float(self.regime_pelt_pen.get().strip() or "50")
+                cmd += ["--penalty", str(pen)]
+        except ValueError:
+            messagebox.showerror("Invalid params", "Numeric params required.")
+            return
+
+        self._log(self.regime_log, f"$ {' '.join(cmd)}", "info")
+        self.status_label.configure(text="● Detecting regime...", text_color=COLOR_ACCENT)
+        self.runner.start(cmd)
+
+    def _open_regime_chart(self):
+        chart = WORK_DIR / "regime_single.html"
+        if not chart.exists():
+            messagebox.showinfo("No chart yet",
+                "Run a detection first — the chart is generated after analysis.")
+            return
+        try:
+            os.startfile(str(chart))
+        except Exception as e:
+            messagebox.showerror("Open failed", str(e))
 
     # --------------------------------------------------------
     # PAGE: MODELS

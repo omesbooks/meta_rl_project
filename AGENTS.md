@@ -220,3 +220,19 @@ Live PPO metrics (6 health pills) are parsed from SB3 stdout:
   > - Section headers: search the numbered titles, e.g. `2.5 Covariance and Correlation`,
   >   `3.2 Confidence Intervals`, `4.4 Dimensionality Reduction`.
   > - Typical flow: `grep -n "Covariance"` → note the line → `Read` with `offset`/`limit` around it.
+
+- `reference/ml4t/` — chapter READMEs from Stefan Jansen, *Machine Learning for
+  Algorithmic Trading* (2nd ed., 2020). 24 chapter overviews + main book TOC +
+  install guide. Start with `reference/ml4t/INDEX.md` for which chapter to read.
+  Highest-relevance chapters for this project:
+  - **22_deep_reinforcement_learning** ⭐ — RL for trading (our chapter)
+  - **05_strategy_evaluation** — backtest pitfalls, Sharpe/PF/DD interpretation
+  - **08_ml4t_workflow** — end-to-end pipeline structure
+  - **09_time_series_models** — stationarity tests, regime drift, ARIMA
+  - **20_autoencoders_for_conditional_risk_factors** — latent regime extraction
+  - **24_alpha_factor_library** — pre-built feature ideas for `RL_Indicators.mqh`
+
+  > **How to read it:** files are 80–520 lines each, grep across all to find a topic
+  > then open the matching chapter:
+  > `grep -rn -i "stationarity" reference/ml4t/`
+  > Don't paste the whole folder into context — pick by topic.

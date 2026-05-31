@@ -1,8 +1,8 @@
 # AGENTS.md — Meta RL Trading Project
 
 > Guide for AI agents (Claude Code, Codex, Cursor) working on this codebase.
-> Last updated: 2026-05-26
-> For a full dependency map see `graphify-out/GRAPH_REPORT.md` (534 nodes, 927 edges).
+> Last updated: 2026-05-31
+> For a full dependency map see `graphify-out/GRAPH_REPORT.md` (1,257 nodes, 1,761 edges, 75 communities).
 
 ---
 
@@ -53,6 +53,9 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Pull MT5 data | `python pull_mt5_data.py --start 2010-01-01 --end 2020-12-31 --name <out>` |
 | Quarterly cycle | `python quarterly_update.py [--auto-deploy] [--dry-run]` |
 | Live trading | `python live_trader.py [--demo|--live|--paper]` |
+| Regime detection (single method) | `python regime_compare.py <csv> --method {hmm,kmeans,pelt} [--n-states N] [--k K] [--penalty P]` |
+| Regime detection (compare 6 methods) | `python regime_compare.py <csv> --method all` |
+| Auto-label price shocks with Gemini | `python gemini_labeler.py <csv> --symbol GBPUSD --top-k 15 --api-key $env:GEMINI_API_KEY` |
 
 ---
 
@@ -61,11 +64,11 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 ### Core engine
 | File | Role |
 |------|------|
-| `rl_app.py` | **Main GUI** (`RLTradingStudio`, ~5000 lines). Pages: Train, Pipeline, Backtest, Walk-forward, Fine-tune, Analyze, Models, Tools, Settings. Drives everything via subprocess. |
+| `rl_app.py` | **Main GUI** (`RLTradingStudio`, ~6000 lines). Pages: Train, Pipeline, Backtest, Walk-forward, Fine-tune, Analyze, **Regime Check** (new), Models, Tools, Settings. Drives everything via subprocess. |
 | `trading_env.py` | Gymnasium env (`TradingEnv`). 4 actions, V4 reward, random episode start. The single source of truth for env behavior. |
-| `rl_train.py` | PPO trainer CLI. Loads CSV → normalize → split → train → save `.zip` + `_norm.csv`. |
-| `backtest_live.py` | Production-grade backtest (`run_backtest_live`, `SimAccount`). Matches `live_trader.py` logic exactly. Confidence filter + 3-layer risk. |
-| `export_to_onnx.py` | PPO `.zip` → `.onnx` + `_config.mqh` + `_EA.mq5` (from template). `PolicyWrapper` adds softmax. |
+| `rl_train.py` | PPO trainer CLI. Loads CSV → time-sorted split → **train-only** z-score normalize → train → save `.zip` + `_norm.csv` + forwards `<input>.params.json` sidecar → `<model>.params.json`. Accepts `--train_pct` (decimal or percentage). |
+| `backtest_live.py` | Production-grade backtest (`run_backtest_live`, `SimAccount`). Matches `live_trader.py` logic exactly. Confidence filter + 3-layer risk. Window auto-detected from `model.observation_space.shape`. |
+| `export_to_onnx.py` | PPO `.zip` → `.onnx` + `_config.mqh` + `_EA.mq5` (from template). Embeds `<model>.params.json` → emits `RL_ApplyDataCollectorConfig()` in the `.mqh` so the EA reproduces the collector's exact indicator periods. `PolicyWrapper` adds softmax. |
 
 ### Validation & tuning
 | File | Role |
@@ -76,6 +79,14 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | `rl_backtest.py` | Quick env-based backtest + equity curve. |
 | `rl_backtest_filtered.py` | Backtest that skips low-confidence trades (simulate selective entry). |
 | `rl_analyze.py` / `analyze_confidence.py` | Confidence → accuracy analysis (is there a usable threshold?). |
+
+### Regime detection & event labeling (new)
+| File | Role |
+|------|------|
+| `regime_compare.py` | Six structural-break detection methods on a price CSV: **HMM 3-state**, **K-Means rolling** features, **PELT** (changepoint), **Bai-Perron**, **BinSeg**, **Rolling t-test**. CLI flags: `--method {hmm,kmeans,pelt,all}` plus per-method params. Writes `regime_single.html` (chart with breakpoints) and `regime_single_data.json` (used by the GUI table). `KNOWN_EVENTS` auto-loads from `known_events.json` if present, else falls back to 3 hardcoded events (Lehman 2008-09-15, Brexit 2016-06-23, Truss 2022-09-26). |
+| `gemini_labeler.py` | **Auto-label price-shock events** so users don't have to maintain `KNOWN_EVENTS` by hand. `detect_shocks()` picks the top-K shock dates by z-score of `\|return\|` over a rolling 60-day baseline; selection iterates *descending z-score* (not by date — that was an early bug that filled the K-slot quota from the earliest years and silently dropped Brexit). `label_one()` then asks **Google Gemini** (gemini-2.5-flash, free tier) what event each date corresponds to. Output is written to `known_events.json` with `last_updated`, `symbol`, `source_csv`, and one entry per event with `event/category/confidence/rationale/source`. Falls back to `Shock @ YYYY-MM` placeholder labels if no API key is set. |
+| `known_events.json` (gitignored) | Generated event list. Drop-in replacement for `regime_compare.KNOWN_EVENTS`. Refresh by running `gemini_labeler.py` or the Regime Check page "Refresh events with Gemini" button. |
+| `api_keys.json` (gitignored) | User's Gemini API key. Loaded by `_load_api_keys()` in `rl_app.py`. Edit via the Settings page → "API Keys" card. **Never** commit this file. |
 
 ### Data layer
 | File | Role |
@@ -180,6 +191,41 @@ Live PPO metrics (6 health pills) are parsed from SB3 stdout:
 `ep_rew_mean, approx_kl, clip_fraction, explained_variance, entropy_loss, value_loss`
 (see `METRIC_INFO` + `classify_metric()` for good/warn/bad thresholds).
 
+## 8b. Regime Check page workflow
+
+End-to-end loop the GUI supports for fixing regime-drift in training data:
+
+```
+Browse CSV
+  ↓
+[Refresh events with Gemini]  (gemini_labeler.py subprocess → known_events.json)
+  ↓
+Pick method (HMM ⭐ / K-Means / PELT) + params → [Run Detection]
+  ↓
+regime_compare.py subprocess → regime_single_data.json + regime_single.html
+  ↓
+GUI auto-populates the breakpoints table from regime_single_data.json
+on subprocess success (see _handle_done → _load_regime_results).
+Each row shows: date, nearest known event (✓ name / —), days-apart.
+  ↓
+User selects a breakpoint row → [Use Selected as Train Cutoff]
+  ↓
+_use_regime_cutoff() filters the CSV (rows where timestamp >= cutoff),
+saves as <basename>_from_<YYYY-MM-DD>.csv, copies the .params.json
+sidecar to match, then switches to the Train page with the new file
+pre-selected via _set_train_csv().
+  ↓
+User trains PPO on the regime-aligned subset → eval reward improves
+(empirically: GBPUSD H4 full-history -38.7% return → post-Brexit cut
+should align train and test distributions).
+```
+
+Why this exists: the surrounding research showed eval reward kept getting
+worse (`-26.9` then `-38.7%`) because the GBPUSD price distribution shifted
+~18% between training years (2004–2022) and the test slice (2022–2026).
+HMM identified Brexit-2016 and COVID-2020 as the breakpoints; retraining on
+the post-Brexit subset removes the distribution shift.
+
 ---
 
 ## 9. Gotchas (bugs we've actually hit)
@@ -194,6 +240,12 @@ Live PPO metrics (6 health pills) are parsed from SB3 stdout:
 | ".onnx" splits into ".onnx.data" | consolidate with `save_model(save_as_external_data=False)` |
 | EA "array out of range" | feature-count mismatch → rely on dynamic mapping in `RL_Indicators.mqh` |
 | Thai/emoji garbled in logs | missing UTF-8 stdout wrapper |
+| Train page silently overwrites a prior model | `_start_training` now pops an "Overwrite model?" confirm dialog when `<name>.zip` already exists (mirrors what the Pipeline page always did). |
+| Train page Dataset card shows ⚠ no .params.json | The chosen CSV has no sidecar in its folder. Use the "Attach .params" button to copy one from anywhere — `_attach_train_params` validates the JSON and copies it to `<csv_basename>.params.json`. |
+| Regime page table empty / score 2/3 instead of N/15 | The summary used to hardcode `/3` (the old hardcoded event count). Fixed to use `n_events = len(event_dates)` from `regime_single_data.json`. |
+| Gemini run misses Brexit despite z=7.0 being highest | `detect_shocks` used to take top-K*5 candidates, **sort by date**, then iterate front-to-back — once early-year clustered shocks filled K slots, later high-z events were dropped. Now iterates *descending z-score* with a global min-gap check. |
+| Gemini API rate-limit errors | Free-tier limit is 15 req/min. `gemini_labeler.py` sleeps `RATE_LIMIT_SLEEP = 4.5s` between calls so a 15-event refresh fits under the limit. |
+| Looking up Gemini key in code | Never hardcode. Stored in gitignored `api_keys.json`, accessed via `_load_api_keys()`. The Settings page UI saves/loads it; the masked entry shows `Show` toggle for visibility. |
 
 ---
 
@@ -204,7 +256,16 @@ Live PPO metrics (6 health pills) are parsed from SB3 stdout:
 - `mt5_files/README_ONNX_Setup.md` — MT5 ONNX setup.
 - `mt5_files/MQL5/Experts/README_DataCollector_v4.md` — data collector usage.
 - `mt5_files/MQL5/Indicators/README_CandlePatterns.md` — candle pattern reference.
-- `graphify-out/GRAPH_REPORT.md` — knowledge graph (god nodes, communities, gaps).
+- `graphify-out/GRAPH_REPORT.md` — knowledge graph (god nodes, communities, gaps). Regenerate with `/graphify` or `/graphify . --update`.
+- `graphify-out/graph.html` — interactive Pyvis visualization. Open in any browser, no server needed.
+
+### Project HTML explainers (open in browser)
+- `gbpusd_regimes.html` — chart of the 3 GBP/USD regimes (pre-Crisis, Crisis/QE, Brexit Era) with regime-mean overlays.
+- `regime_compare.html` — side-by-side comparison of all six regime-detection methods on the same series.
+- `regime_single.html` — single-method result (regenerated on each Regime Check run).
+- `ParityConfig_explained.html` — why `.params.json` sidecars exist and how `RL_ApplyDataCollectorConfig` works.
+- `DataCollector_v4_explained.html` — collector internals.
+- `ClassImbalance_explained.html` — UP/DOWN/FLAT class-balance handling in `relabel.py`.
 
 ### Knowledge Base (quant theory)
 - `reference/MIT-Quant-Bible.md` — MIT Sloan Quant Bible (converted from PDF, 51 pages).

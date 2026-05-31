@@ -5827,13 +5827,15 @@ class RLTradingStudio(ctk.CTk):
                 self.regime_tree.insert("", "end",
                     values=(b, "—", "—"))
 
-        # Summary line
+        # Summary line — denominator = total known events (not hardcoded 3)
+        n_events = len(event_dates) if event_dates else 0
+        good = (n_events == 0) or (score / max(n_events, 1) >= 0.4)
         self.regime_summary.configure(
             text=(f"Method: {method}  ·  "
                   f"{len(breaks)} breakpoints  ·  "
-                  f"{score}/3 known events matched  ·  "
+                  f"{score}/{n_events} known events matched  ·  "
                   f"{n_bars:,} bars analyzed in {time_sec:.2f}s"),
-            text_color=COLOR_GREEN if score >= 2 else COLOR_YELLOW)
+            text_color=COLOR_GREEN if good else COLOR_YELLOW)
 
     def _use_regime_cutoff(self):
         """Filter CSV to rows >= selected breakpoint, save as a new file,

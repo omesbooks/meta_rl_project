@@ -55,8 +55,14 @@ def detect_shocks(daily: pd.DataFrame, top_k: int = 15,
     """Find the top-K price shocks using volatility-normalized z-score.
 
     A shock is a day where |return| is unusually large vs a rolling 60-day baseline.
-    Selects top-K candidates while enforcing a minimum separation between them
+    Selects highest-z candidates first (greedy), then skips any subsequent
+    candidate that falls within ``min_gap_days`` of an already-selected one
     so we don't get a cluster of 5 days from the same event.
+
+    Note: it's critical to iterate by descending z-score (not by date), otherwise
+    a cluster of moderately-strong shocks in the early years can fill the K-slot
+    quota before higher-z shocks from later years (e.g. Brexit z=7.0 in 2016)
+    even get considered.
     """
     daily = daily.copy()
     daily["abs_ret"] = daily.ret.abs()
@@ -65,22 +71,28 @@ def detect_shocks(daily: pd.DataFrame, top_k: int = 15,
     daily["z"] = (daily.abs_ret - daily.base_mean) / daily.base_std.replace(0, np.nan)
     daily = daily.dropna(subset=["z"])
 
-    candidates = daily.nlargest(top_k * 5, "z")
-    candidates = candidates.sort_values("date")
+    # Take more than top_k so we have room to skip clustered candidates,
+    # then iterate by DESCENDING z-score (importance first).
+    candidates = daily.nlargest(top_k * 6, "z").sort_values("z", ascending=False)
 
-    selected = []
-    last_date = None
+    selected_dates: list[pd.Timestamp] = []
+    selected_rows: list[dict] = []
     for _, row in candidates.iterrows():
-        if last_date is None or (row.date - last_date).days >= min_gap_days:
-            selected.append({
-                "date": row.date.strftime("%Y-%m-%d"),
-                "shock_pct": round(float(row.ret * 100), 2),
-                "z_score": round(float(row.z), 2),
-            })
-            last_date = row.date
-        if len(selected) >= top_k:
+        # Skip if too close to any already-selected shock
+        if any(abs((row.date - d).days) < min_gap_days for d in selected_dates):
+            continue
+        selected_dates.append(row.date)
+        selected_rows.append({
+            "date": row.date.strftime("%Y-%m-%d"),
+            "shock_pct": round(float(row.ret * 100), 2),
+            "z_score": round(float(row.z), 2),
+        })
+        if len(selected_rows) >= top_k:
             break
-    return selected
+
+    # Return chronologically so the JSON file reads naturally
+    selected_rows.sort(key=lambda r: r["date"])
+    return selected_rows
 
 
 # -------------------- Layer D: Gemini labeler --------------------

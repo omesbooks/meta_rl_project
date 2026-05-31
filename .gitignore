@@ -91,6 +91,15 @@ desktop.ini
 graphify-out/
 
 # ============================================================
+# API keys & user-specific runtime caches (Regime page)
+# ============================================================
+api_keys.json
+known_events.json
+regime_single_data.json
+regime_compare_data.json
+gbpusd_chart_data.json
+
+# ============================================================
 # Allow these (whitelist override)
 # ============================================================
 !example_data_format.csv

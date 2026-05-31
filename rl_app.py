@@ -194,6 +194,28 @@ def _load_branding_config():
     except Exception as e:
         print(f"[branding] Failed to load config: {e}")
 
+# ============================================================
+# 🔑 API KEYS — saved separately, gitignored
+# ============================================================
+API_KEYS_FILE = Path(__file__).parent / "api_keys.json"
+
+
+def _load_api_keys() -> dict:
+    if API_KEYS_FILE.exists():
+        try:
+            return json.loads(API_KEYS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_api_keys(keys: dict) -> None:
+    try:
+        API_KEYS_FILE.write_text(json.dumps(keys, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"[api_keys] save failed: {e}")
+
+
 def _save_branding_config(branding_overrides: dict, colors: dict):
     """Save current branding + colors to JSON file"""
     import json
@@ -5493,9 +5515,53 @@ class RLTradingStudio(ctk.CTk):
             height=42, width=140
             ).grid(row=0, column=1, padx=(8, 0))
 
+        # === Auto-event refresh row ===
+        ev_card = Card(page, title="🤖 Auto-update events (Gemini)")
+        ev_card.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        ev_card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(ev_card,
+            text=("ให้ Gemini หา event names เอง — auto-detect price shocks "
+                  "แล้วถาม AI ว่าเป็นเหตุการณ์อะไร (Brexit, COVID, ...). "
+                  "ใส่ key ใน Settings ก่อน."),
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
+            wraplength=900, justify="left"
+            ).grid(row=1, column=0, sticky="w", padx=18, pady=(4, 8))
+
+        ev_row = ctk.CTkFrame(ev_card, fg_color="transparent")
+        ev_row.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 6))
+        ev_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(ev_row, text="Symbol", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(ev_row, text="Top-K shocks", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.regime_ev_symbol = ctk.CTkEntry(ev_row, placeholder_text="GBPUSD",
+                                              width=140)
+        self.regime_ev_symbol.insert(0, "GBPUSD")
+        self.regime_ev_symbol.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self.regime_ev_topk = ctk.CTkEntry(ev_row, placeholder_text="15",
+                                            width=80)
+        self.regime_ev_topk.insert(0, "15")
+        self.regime_ev_topk.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(2, 0))
+
+        self.regime_ev_status = ctk.CTkLabel(ev_card,
+            text=self._regime_event_status_text(),
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11),
+            wraplength=900, justify="left")
+        self.regime_ev_status.grid(row=3, column=0, sticky="w",
+                                    padx=18, pady=(4, 6))
+
+        ctk.CTkButton(ev_card, text="🤖 Refresh events with Gemini",
+            command=self._refresh_events_with_gemini,
+            fg_color=COLOR_GREEN, hover_color="#2ea043",
+            height=38
+            ).grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 14))
+
         # === Card 3: Breakpoints table ===
         c3 = Card(page, title="📍 Detected Breakpoints")
-        c3.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        c3.grid(row=3, column=0, sticky="ew", pady=(0, 12))
         c3.grid_columnconfigure(0, weight=1)
 
         self.regime_summary = ctk.CTkLabel(c3,
@@ -5556,7 +5622,7 @@ class RLTradingStudio(ctk.CTk):
 
         # === Card 4: Log ===
         c4 = Card(page, title="📊 Log")
-        c4.grid(row=3, column=0, sticky="ew")
+        c4.grid(row=4, column=0, sticky="ew")
         c4.grid_columnconfigure(0, weight=1)
         log_frame = ctk.CTkFrame(c4, fg_color="#0a0e14", corner_radius=8)
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
@@ -5641,6 +5707,64 @@ class RLTradingStudio(ctk.CTk):
             os.startfile(str(chart))
         except Exception as e:
             messagebox.showerror("Open failed", str(e))
+
+    def _regime_event_status_text(self) -> str:
+        """Show last_updated + n_events from known_events.json (if any)."""
+        p = WORK_DIR / "known_events.json"
+        if not p.exists():
+            return "● No known_events.json yet — using 3 hardcoded events (Lehman/Brexit/Truss)"
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            n = data.get("n_events", 0)
+            ts = data.get("last_updated", "?")
+            sym = data.get("symbol", "?")
+            return f"✓ {n} events loaded · symbol {sym} · last updated {ts}"
+        except Exception as e:
+            return f"⚠ known_events.json present but unreadable: {e}"
+
+    def _refresh_events_with_gemini(self):
+        """Run gemini_labeler.py as subprocess to refresh known_events.json."""
+        if self._is_process_busy():
+            messagebox.showwarning("Busy", "Another task running")
+            return
+        if not getattr(self, "regime_csv_path", None):
+            messagebox.showwarning("No CSV",
+                "Please pick a CSV first (Browse above) — Gemini needs price data "
+                "to detect shock dates before labeling.")
+            return
+
+        keys = _load_api_keys()
+        api_key = keys.get("gemini", "").strip()
+        if not api_key:
+            ok = messagebox.askyesno(
+                "No Gemini key",
+                "No Gemini API key found in Settings.\n\n"
+                "Continue anyway? (You'll get shock dates but no event names — "
+                "events will be labeled 'Shock @ YYYY-MM'.)\n\n"
+                "Click No to go to Settings and add a key first.")
+            if not ok:
+                self.show_page("settings")
+                return
+
+        try:
+            symbol = self.regime_ev_symbol.get().strip() or "GBPUSD"
+            top_k = int(self.regime_ev_topk.get().strip() or "15")
+        except ValueError:
+            messagebox.showerror("Invalid params", "Top-K must be a number.")
+            return
+
+        cmd = [sys.executable, "gemini_labeler.py", self.regime_csv_path,
+               "--symbol", symbol, "--top-k", str(top_k)]
+        if api_key:
+            cmd += ["--api-key", api_key]
+
+        # Mask the key in the log line
+        masked = [(c if c != api_key else (api_key[:8] + "..." + api_key[-4:]))
+                  for c in cmd]
+        self._log(self.regime_log, f"$ {' '.join(masked)}", "info")
+        self.status_label.configure(text="● Labeling with Gemini...",
+            text_color=COLOR_ACCENT)
+        self.runner.start(cmd)
 
     def _load_regime_results(self):
         """Read regime_single_data.json after subprocess finishes,
@@ -6158,10 +6282,74 @@ class RLTradingStudio(ctk.CTk):
             ).grid(row=2, column=0, sticky="w", padx=18, pady=(0, 16))
 
         # ============================================================
+        # CARD 2.5: API Keys (Gemini for auto-event-labeling)
+        # ============================================================
+        c_api = Card(page, title="🔑 API Keys")
+        c_api.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        c_api.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(c_api,
+            text=("ใส่ API key สำหรับ auto-feature ที่ดึงข้อมูลจาก external services. "
+                  "เก็บใน api_keys.json (gitignored, ไม่ถูก commit)."),
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
+            wraplength=900, justify="left"
+            ).grid(row=1, column=0, sticky="w", padx=18, pady=(4, 10))
+
+        # Gemini key row
+        keys = _load_api_keys()
+        gem_frame = ctk.CTkFrame(c_api, fg_color="transparent")
+        gem_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 8))
+        gem_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(gem_frame, text="🤖 Gemini API Key",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12, weight="bold")
+            ).grid(row=0, column=0, columnspan=3, sticky="w")
+        ctk.CTkLabel(gem_frame,
+            text="ฟรี 1,500 req/วัน · ใช้สำหรับ auto-label events ใน Regime Check",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11)
+            ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 4))
+
+        self.gemini_key_entry = ctk.CTkEntry(gem_frame,
+            placeholder_text="AIza... (vาสมัครฟรีที่ aistudio.google.com/app/apikey)",
+            show="*")
+        self.gemini_key_entry.insert(0, keys.get("gemini", ""))
+        self.gemini_key_entry.grid(row=2, column=0, sticky="ew", padx=(0, 8))
+
+        self.gemini_key_show = ctk.BooleanVar(value=False)
+        def _toggle_show():
+            self.gemini_key_entry.configure(
+                show="" if self.gemini_key_show.get() else "*")
+        ctk.CTkCheckBox(gem_frame, text="Show",
+            variable=self.gemini_key_show, command=_toggle_show,
+            font=ctk.CTkFont(size=11), width=70
+            ).grid(row=2, column=1, sticky="w", padx=(0, 8))
+
+        ctk.CTkButton(gem_frame, text="💾 Save",
+            command=self._save_api_keys_handler,
+            fg_color=COLOR_ACCENT, hover_color="#4493f8",
+            height=32, width=90
+            ).grid(row=2, column=2, sticky="e")
+
+        self.gemini_key_status = ctk.CTkLabel(gem_frame,
+            text=("✓ key saved" if keys.get("gemini") else "no key set"),
+            text_color=COLOR_GREEN if keys.get("gemini") else COLOR_DIM,
+            font=ctk.CTkFont(size=11))
+        self.gemini_key_status.grid(row=3, column=0, columnspan=3,
+                                     sticky="w", pady=(4, 0))
+
+        ctk.CTkButton(c_api, text="🔗 Get free Gemini key",
+            command=lambda: os.startfile("https://aistudio.google.com/app/apikey")
+                if os.name == "nt" else None,
+            fg_color="#30363d", hover_color="#3d4450",
+            border_width=1, border_color="#484f58",
+            height=30, width=180
+            ).grid(row=3, column=0, sticky="w", padx=18, pady=(8, 14))
+
+        # ============================================================
         # CARD 3: About
         # ============================================================
         c2 = Card(page, title="ℹ️ About")
-        c2.grid(row=2, column=0, sticky="ew")
+        c2.grid(row=3, column=0, sticky="ew")
         c2.grid_columnconfigure(0, weight=1)
 
         about = """RL Trading Studio v1.0
@@ -6180,6 +6368,23 @@ Built with: CustomTkinter + stable-baselines3
         ctk.CTkLabel(c2, text=about, text_color=COLOR_DIM,
             font=ctk.CTkFont(size=12), justify="left", anchor="w"
             ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 16))
+
+    # --------------------------------------------------------
+    # API key handler
+    # --------------------------------------------------------
+    def _save_api_keys_handler(self):
+        keys = _load_api_keys()
+        gemini = self.gemini_key_entry.get().strip()
+        keys["gemini"] = gemini
+        _save_api_keys(keys)
+        if gemini:
+            self.gemini_key_status.configure(
+                text="✓ key saved", text_color=COLOR_GREEN)
+            messagebox.showinfo("Saved", "Gemini API key saved.")
+        else:
+            self.gemini_key_status.configure(
+                text="no key set", text_color=COLOR_DIM)
+            messagebox.showinfo("Cleared", "Gemini API key cleared.")
 
     # --------------------------------------------------------
     # Branding settings handlers
@@ -6586,7 +6791,17 @@ Built with: CustomTkinter + stable-baselines3
 
         # Populate regime breakpoint table on success
         if page == 'regime' and rc == 0:
-            self._load_regime_results()
+            # If a regime_single_data.json was just written, it's a detection run
+            # → populate the breakpoint table.
+            single = WORK_DIR / "regime_single_data.json"
+            if single.exists() and hasattr(self, "regime_tree"):
+                # mtime check: only repopulate if file was touched in last 60s
+                if (time.time() - single.stat().st_mtime) < 60:
+                    self._load_regime_results()
+            # Refresh the known_events status line — covers Gemini refresh path
+            if hasattr(self, "regime_ev_status"):
+                self.regime_ev_status.configure(
+                    text=self._regime_event_status_text())
 
 
 # ============================================================

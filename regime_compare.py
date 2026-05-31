@@ -24,11 +24,32 @@ import numpy as np
 import pandas as pd
 
 # Known regime-changing events (ground truth)
-KNOWN_EVENTS = {
+# Tries known_events.json (built by gemini_labeler.py) first; falls back to
+# this hardcoded baseline so the script still works without API setup.
+_HARDCODED_EVENTS = {
     "Lehman crash": pd.Timestamp("2008-09-15"),
     "Brexit referendum": pd.Timestamp("2016-06-23"),
     "Truss mini-budget": pd.Timestamp("2022-09-26"),
 }
+
+
+def _load_known_events():
+    """Auto-load events from known_events.json if present, else use hardcoded."""
+    p = Path(__file__).parent / "known_events.json"
+    if p.exists():
+        try:
+            import json
+            data = json.loads(p.read_text(encoding="utf-8"))
+            events = {ev["event"]: pd.Timestamp(ev["date"])
+                      for ev in data.get("events", [])}
+            if events:
+                return events
+        except Exception:
+            pass
+    return _HARDCODED_EVENTS
+
+
+KNOWN_EVENTS = _load_known_events()
 MATCH_TOLERANCE_DAYS = 90  # ภายใน 3 เดือน = match
 
 

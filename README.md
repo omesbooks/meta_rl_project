@@ -1,175 +1,146 @@
-# 🧠 Meta RL Trading Project
+# Meta RL Trading Project
 
-End-to-end Reinforcement Learning pipeline for forex trading (EUR/USD) using PPO.
-จากการเก็บข้อมูล MT5 → train RL agent → backtest → deploy.
+End-to-end Reinforcement Learning trading studio for MT5 data collection, PPO training, backtesting, walk-forward validation, and MT5 export.
 
----
+The active application is `rl_app.py` through the Windows launcher `run_rl_app.bat`.
 
-## 📋 Features
+## Quick Install
 
-- 🎮 **Modern GUI** (`rl_app.py`) — All-in-one Studio with Train, Backtest, Walk-forward, Fine-tune
-- 📊 **Data Pipeline** — Import from MT5, auto-clean redundant features, train/test split
-- 🤖 **RL Trainer** — PPO with custom TradingEnv, V4 reward shaping (Net-PnL aware)
-- 📈 **Backtest** — Production-grade simulation matching live_trader.py
-- 🔬 **Feature Engineering** — Multi-timeframe + volatility regime features
-- 📉 **Walk-forward Validation** — Robustness testing
-- 🔄 **Smart Fine-tuning** — Continue training with mixed old+new data
-- 📊 **Visualization** — Interactive Plotly charts, correlation heatmaps
+For a new machine or another Codex workspace:
 
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────┐     ┌──────────────────────┐
-│  MT5 Strategy Tester│ ──▶│  DataCollector_v3.mq5│
-│  (historical data)  │     │  (export CSV)        │
-└─────────────────────┘     └──────────────────────┘
-                                      │
-                                      ▼
-┌─────────────────────────────────────────────────────┐
-│  rl_app.py GUI                                       │
-│  ┌────────────┬───────────┬──────────┬───────────┐  │
-│  │ Tools      │ Train     │ Backtest │ Walk-fwd  │  │
-│  │ - Import   │ - PPO     │ - Pure   │ - 5 fold  │  │
-│  │ - Split    │ - V4 rwrd │ - SLTP   │ - Robust? │  │
-│  │ - Clean    │ - Live    │ - Charts │           │  │
-│  │ - Corr     │   metrics │          │           │  │
-│  └────────────┴───────────┴──────────┴───────────┘  │
-└─────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-                            ┌──────────────────┐
-                            │ live_trader.py   │
-                            │ (production MT5) │
-                            └──────────────────┘
+```powershell
+git clone https://github.com/omesbooks/meta_rl_project.git
+cd meta_rl_project
+.\run_rl_app.bat
 ```
 
----
+`run_rl_app.bat` is the recommended path on Windows. It creates/uses `.venv`, installs `requirements.txt`, and launches the dashboard.
 
-## 🚀 Quick Start
+If the virtual environment already exists, you can also run:
 
-### Installation
-```bash
-pip install -r requirements.txt
+```powershell
+.\.venv\Scripts\python.exe rl_app.py
 ```
 
-### Run GUI
-```bash
-python rl_app.py
+## Using With Codex
+
+After cloning the repo, open the project folder in Codex and ask:
+
+```text
+อ่าน AGENTS.md แล้วเช็ค setup จากนั้นรัน .\run_rl_app.bat ให้หน่อย
 ```
 
-### Or use CLI
+Codex should use the project instructions in `AGENTS.md`, keep the working directory at the repo root, and use `.venv\Scripts\python.exe` for Python commands.
 
-**Train:**
-```bash
-python rl_train.py training_data.csv --steps 200000 --name rl_v1
+## What Users Need Locally
+
+This repo does not include large generated runtime files such as datasets, trained models, logs, ONNX exports, or user-specific params.
+
+Each user should generate or provide their own:
+
+- MT5 CSV dataset from DataCollector_RL
+- optional matching `.params.json` sidecar for feature parity
+- trained model `.zip`
+- ONNX/EA export artifacts
+- API keys in local `api_keys.json` if using Gemini event labeling
+
+These generated files are intentionally ignored by git.
+
+## Main Dashboard Flow
+
+1. Run DataCollector_RL in MT5 to create a CSV in `Common\Files`.
+2. Open the dashboard and go to `Data Tools`.
+3. Use `Import from DataCollector_RL` to copy CSV + params into the project.
+4. Use date split and feature analysis if needed.
+5. Train PPO on the `Train` page or run the `Pipeline`.
+6. Backtest the trained model.
+7. Use Walk-Forward and Regime Check for robustness.
+8. Export passing models to ONNX/MT5 EA.
+
+The detailed user guide is in:
+
+```text
+docs\metafxclub studio guide
 ```
 
-**Backtest:**
-```bash
-python backtest_live.py rl_v1 test_data.csv --mode pure_agent
+Start with:
+
+- `00_reading_order.md`
+- `03_dashboard_user_flow_guide.html`
+- `15_data_prep_import_detail.html`
+
+Reference/background explainers are separated in:
+
+```text
+docs\explainers
 ```
 
-**Feature Engineering (Phase A):**
-```bash
-python feature_engineer.py training_data_h4.csv
-# → adds Multi-TF (D1) features + Volatility regime
+## Core Files
+
+| Path | Purpose |
+| --- | --- |
+| `rl_app.py` | Main CustomTkinter dashboard |
+| `run_rl_app.bat` | Windows launcher and setup path |
+| `trading_env.py` | Gymnasium trading environment and reward behavior |
+| `rl_train.py` | PPO training CLI |
+| `backtest_live.py` | Production-style backtest |
+| `backtest_chart.py` | Backtest chart/report generation |
+| `rl_walkforward.py` | Walk-forward validation |
+| `rl_finetune.py` | Fine-tuning workflow |
+| `export_to_onnx.py` | PPO model to ONNX + MT5 EA/config |
+| `regime_compare.py` | Regime detection / structural break tooling |
+| `gemini_labeler.py` | Optional Gemini-based event labeling |
+| `mt5_files/` | MT5 indicators, collector, EA template, include files |
+| `tools/` | Supporting CLI tools grouped by purpose |
+| `legacy/` | Older PyCaret/MQL files kept for reference |
+| `docs/metafxclub studio guide/` | Current flow guide plan and deep-dive docs |
+
+## Common Commands
+
+Train from CLI:
+
+```powershell
+.\.venv\Scripts\python.exe rl_train.py <csv> --steps 200000 --window 10 --name rl_v1
 ```
 
----
+Backtest:
 
-## 📂 Key Files
-
-| File | Purpose |
-|------|---------|
-| `rl_app.py` | **Main GUI** — CustomTkinter modern interface |
-| `trading_env.py` | Custom Gymnasium env (V4 reward, random episode start) |
-| `rl_train.py` | PPO trainer with full hyperparameter control |
-| `backtest_live.py` | Production-grade backtest matching `live_trader.py` |
-| `feature_engineer.py` | Multi-TF + Volatility regime feature pipeline |
-| `rl_finetune.py` | Smart fine-tuning with old/new data mixing |
-| `rl_walkforward.py` | Walk-forward validation (5-fold robustness) |
-| `live_trader.py` | Production trader (MT5 live) |
-| `DataCollector_v3.mq5` | MT5 EA for data collection |
-
----
-
-## 🔬 Reward Function (V4)
-
-The reward is engineered to align with **real $ profit** (not gameable):
-
-```python
-reward = trade_closed_pnl × 50          # real net P&L dominates
-       + bonus(0.01 if pnl > 0.5%)      # only meaningful wins
-       + unrealized_delta × 0.1         # tiny direction hint
-       - 0.001 * give_back_penalty      # encourage closing on peak
-       - 0.005 * trade_penalty          # cost-aware (no over-trading)
-       - 0.0001 * idle_penalty          # avoid all-Hold
+```powershell
+.\.venv\Scripts\python.exe backtest_live.py rl_v1 <csv> --conf 0.85 --window 10 --mode pure_agent
 ```
 
-Spread + commission baked into entry/exit prices (matches live broker).
+Walk-forward:
 
----
+```powershell
+.\.venv\Scripts\python.exe rl_walkforward.py <csv> --windows 5 --steps 50000
+```
 
-## 📊 Project Journey
+Export to MT5:
 
-| Version | Setup | PF | Notes |
-|---------|-------|-----|-------|
-| V2-V6 | H1, buggy random start | 0.66-0.75 | 1.8% data coverage bug |
-| V7 | H1 fixed start | <0.85 | Real edge weak |
-| V8 | H4 standard features | <0.85 | Same wall |
-| V9 | H4 fine-tune | ~0.95 | Small improvement |
-| **V10** | **H4 + Multi-TF features** | **0.99** | **Near break-even!** |
+```powershell
+.\.venv\Scripts\python.exe export_to_onnx.py rl_v1 --name rl_v1_deploy
+```
 
-Key insight: `d1_rsi` (daily RSI) has correlation 0.138 with future returns — 3.4× stronger than any standard indicator.
+## Data Notes
 
----
+For the RL workflow, the CSV should contain market state columns such as:
 
-## 🎯 Lessons Learned
+- `timestamp`, `symbol`
+- `open`, `high`, `low`, `close`, `volume`
+- numeric indicators/features from the MT5 collector
 
-1. **Random episode start is critical** — Fixed start = agent memorizes 1.8% of data
-2. **Reward hacking is real** — Reward bonuses must be threshold-based, not flat
-3. **Multi-timeframe features add edge** — Daily context filters H4 noise
-4. **Train reward ≠ test PF** — Always backtest on out-of-sample
-5. **Cost matters** — Spread + commission must be in reward signal honestly
+RL does not require `future_return` or `UP/DOWN/FLAT` target labels. Those are supervised/PyCaret concepts and are kept only for legacy workflows.
 
----
+## Safety Notes
 
-## 🛠️ Tools / Scripts
+This is research software. A model that trains successfully is not automatically tradable.
 
-- `feature_engineer.py` — Phase A feature engineering
-- `generate_metrics_pptx.py` — RL metrics slide deck generator
-- `generate_training_slides.py` — How-training-works visual guide
-- `quarterly_update.py` — Auto-retrain pipeline
-- `rl_analyze.py` — Per-trade decision analysis
+Always validate with:
 
----
+- out-of-sample backtest
+- walk-forward validation
+- drawdown review
+- confidence threshold review
+- MT5 Strategy Tester before any live deployment
 
-## 📦 Data Format
-
-Training CSV must contain (after import):
-- `timestamp, symbol, open, high, low, close, volume`
-- 30-50 numeric features (RSI, EMA, ATR, etc.)
-- `future_return, target` (auto-generated)
-
-Use `DataCollector_v3.mq5` to export from MT5 with standard indicator config.
-
----
-
-## 🤝 Acknowledgements
-
-Built iteratively over multiple weeks of experimentation with:
-- [stable-baselines3](https://github.com/DLR-RM/stable-baselines3)
-- [gymnasium](https://gymnasium.farama.org/)
-- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter)
-- [Plotly](https://plotly.com/)
-
----
-
-## 📝 License
-
-Private research project. Use at your own risk.
-
-> ⚠️ **Disclaimer**: This is research code. Trading involves substantial risk of loss.
-> Past performance does not indicate future results. Do not deploy without extensive validation.
+Trading involves substantial risk of loss. Do not deploy without extensive validation.

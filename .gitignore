@@ -26,6 +26,7 @@ ENV/
 # Data files (large, regenerable)
 # ============================================================
 *.csv
+*.params.json
 !requirements.txt
 !.gitignore
 

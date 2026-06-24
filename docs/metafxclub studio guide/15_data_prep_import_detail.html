@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data Prep Import Detail</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 34px 22px 56px;
+    }
+
+    header {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 28px;
+      box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #def5ea;
+      color: var(--green);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+
+    .lead {
+      max-width: 900px;
+      color: var(--muted);
+      font-size: 18px;
+      margin-top: 12px;
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    section {
+      margin-top: 18px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+
+    .flow {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef3ec;
+      color: #233044;
+      font-size: 14px;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .callout {
+      border-left: 5px solid var(--green);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+
+    .callout.warn {
+      border-left-color: var(--yellow);
+      background: var(--soft-warn);
+    }
+
+    .kbd {
+      display: inline-block;
+      background: #111827;
+      color: #fff;
+      border-radius: 6px;
+      padding: 2px 8px;
+      font-weight: 700;
+      font-size: 0.9em;
+    }
+
+    .path {
+      overflow-wrap: anywhere;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 18px;
+      text-align: center;
+    }
+
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Flow Step 1 · Data Prep</span>
+      <h1>เตรียมข้อมูลจาก MT5 เข้า Dashboard</h1>
+      <p class="lead">
+        บทนี้อธิบายช่วงแรกสุดของ workflow: ให้ DataCollector_RL ใน MT5 สร้างไฟล์ข้อมูล,
+        ตรวจว่าไฟล์ถูกบันทึกจริง, แล้ว import CSV พร้อม <code>.params.json</code>
+        เข้ามาในโปรเจกต์เพื่อใช้ train RL ต่อ
+      </p>
+      <nav>
+        <a href="#big-picture">ภาพรวม</a>
+        <a href="#what-files">ไฟล์ที่ต้องมี</a>
+        <a href="#dashboard-steps">ขั้นตอนใน Dashboard</a>
+        <a href="#verify">เช็คว่า Data ใช้ได้</a>
+        <a href="#common-issues">ปัญหาที่พบบ่อย</a>
+        <a href="#handoff">ส่งต่อขั้นถัดไป</a>
+      </nav>
+    </header>
+
+    <section id="big-picture">
+      <h2>ภาพรวมแบบเข้าใจง่าย</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">1 · Collect</span>
+          <h3>MT5 เป็นคนสร้างข้อมูล</h3>
+          <p>
+            เปิด DataCollector_RL ใน MT5 เพื่อ export bars และ feature ที่ EA ฝั่ง MT5 ใช้จริง
+            ผลลัพธ์หลักคือไฟล์ <code>.csv</code>
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">2 · Import</span>
+          <h3>Dashboard คัดลอกเข้าโปรเจกต์</h3>
+          <p>
+            หน้า Data Tools จะอ่านไฟล์จาก <code>Common\Files</code>
+            แล้วคัดลอกมาไว้ที่ root ของโปรเจกต์ เช่น <code>uj_h4_dataset.csv</code>
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">3 · Check</span>
+          <h3>เช็คก่อน train</h3>
+          <p>
+            ก่อนเอาไป train ต้องเช็คว่า CSV มี rows จริง, timestamp เรียงได้,
+            feature ไม่ว่าง และถ้าจะ deploy ต้องมี <code>.params.json</code> คู่กัน
+          </p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <strong>จำสั้น ๆ:</strong>
+        ขั้นนี้ยังไม่ใช่การ train และไม่ใช่การสร้าง target UP/DOWN/FLAT
+        สำหรับ RL เราต้องการ market state ที่สะอาดและ replay ได้เหมือนฝั่ง MT5 มากที่สุด
+      </div>
+    </section>
+
+    <section id="what-files">
+      <h2>ไฟล์ที่ต้องเข้าใจ</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ไฟล์ / โฟลเดอร์</th>
+            <th>ทำหน้าที่อะไร</th>
+            <th>สำคัญกับ RL อย่างไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Common\Files</code></td>
+            <td>
+              โฟลเดอร์กลางของ MetaTrader ที่ EA/Script สามารถเขียนไฟล์ออกมาได้
+              ปกติอยู่ที่
+              <div class="path"><code>C:\Users\&lt;user&gt;\AppData\Roaming\MetaQuotes\Terminal\Common\Files</code></div>
+            </td>
+            <td>เป็นจุดรับไฟล์จาก DataCollector_RL ก่อน dashboard จะ import เข้ามา</td>
+          </tr>
+          <tr>
+            <td><code>uj_h4_dataset.csv</code></td>
+            <td>ไฟล์ข้อมูลแท่งราคาและ feature เช่น timestamp, OHLCV, indicators, candle features</td>
+            <td>เป็น dataset หลักที่ <code>rl_train.py</code> ใช้สร้าง environment ให้ agent ฝึก</td>
+          </tr>
+          <tr>
+            <td><code>uj_h4_dataset.params.json</code></td>
+            <td>sidecar config ที่บอกค่า parameter ของ collector เช่น indicator periods และ setting ที่ใช้ตอนเก็บข้อมูล</td>
+            <td>ช่วยให้ตอน export/deploy ฝั่ง EA คำนวณ feature ให้ตรงกับตอน train ลดความเสี่ยง train อย่างหนึ่งแต่ live อีกอย่างหนึ่ง</td>
+          </tr>
+          <tr>
+            <td><code>training_data_*.csv</code></td>
+            <td>ชื่อไฟล์ปลายทางใน project folder หลัง import</td>
+            <td>เป็นไฟล์ที่ user เลือกต่อในหน้า Train, Pipeline, Backtest หรือ Data Tools module อื่น</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="dashboard-steps">
+      <h2>ขั้นตอนใช้งานใน Dashboard</h2>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag green">MT5</span>
+            <h3>รัน DataCollector_RL ใน MT5</h3>
+            <p>
+              ให้เปิด chart symbol/timeframe ที่ต้องการ แล้วรัน collector เพื่อให้สร้าง CSV
+              ลงใน <code>Common\Files</code> ตัวอย่างชื่อไฟล์เช่น <code>uj_h4_dataset.csv</code>
+            </p>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Data Tools</span>
+            <h3>เปิดหน้า Import from DataCollector_RL</h3>
+            <p>
+              ใน Dashboard ไปที่ <span class="kbd">Data Tools</span>
+              แล้วดู card <strong>Import from DataCollector_RL</strong>
+              dropdown <strong>Source CSV</strong> จะอ่านไฟล์จาก <code>Common\Files</code>
+            </p>
+            <ul>
+              <li>ถ้าไม่เห็นไฟล์ ให้กด <strong>Refresh</strong></li>
+              <li>ถ้ายังไม่เห็น ให้กลับไปเช็คว่า MT5 เขียนไฟล์ไว้ใน Common Files จริงหรือไม่</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag blue">Name</span>
+            <h3>ตั้ง Output basename</h3>
+            <p>
+              ตั้งชื่อไฟล์ปลายทางให้อ่านแล้วรู้ทันทีว่าเป็น symbol/timeframe/ชุดข้อมูลอะไร
+              เช่น <code>training_data_uj_h4_dataset.csv</code>
+            </p>
+            <ul>
+              <li>ใช้ชื่อสั้นแต่สื่อความหมาย เช่น <code>training_data_xau_h1_2026.csv</code></li>
+              <li>หลีกเลี่ยงชื่อซ้ำกับไฟล์ที่สำคัญ เพราะ import จะเขียนทับไฟล์ปลายทางได้</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag green">Import</span>
+            <h3>กด Import CSV + params</h3>
+            <p>
+              Dashboard จะคัดลอก CSV เข้ามาที่ project folder และถ้ามีไฟล์
+              <code>.params.json</code> ชื่อเดียวกัน ก็จะคัดลอกมาคู่กันด้วย
+            </p>
+            <p>
+              หลัง import สำเร็จ dropdown ของหน้า Data Tools ควรเห็นไฟล์ใหม่ทันที
+              ถ้าเป็นหน้าที่เปิดค้างไว้ ให้ใช้ปุ่ม Refresh ของ module นั้นได้
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="verify">
+      <h2>Checklist: เช็คว่า CSV มีข้อมูลจริงและพร้อมใช้</h2>
+      <div class="grid two">
+        <div class="card">
+          <span class="tag green">ต้องผ่าน</span>
+          <h3>เช็คระดับไฟล์</h3>
+          <ul>
+            <li>มีไฟล์ <code>.csv</code> ใน project folder</li>
+            <li>ขนาดไฟล์ไม่ใช่ 0 KB</li>
+            <li>มีไฟล์ <code>.params.json</code> คู่กัน ถ้าจะ export/deploy ไป MT5</li>
+            <li>ชื่อไฟล์ไม่มีช่องว่างหรืออักขระแปลกที่ทำให้เลือกยาก</li>
+          </ul>
+        </div>
+        <div class="card">
+          <span class="tag green">ต้องผ่าน</span>
+          <h3>เช็คระดับข้อมูล</h3>
+          <ul>
+            <li>มี column เวลา เช่น <code>timestamp</code></li>
+            <li>มีราคา <code>open</code>, <code>high</code>, <code>low</code>, <code>close</code></li>
+            <li>timestamp เรียงตามเวลาได้ และไม่มีช่วงเวลาย้อนกลับผิดปกติ</li>
+            <li>มีจำนวน rows มากพอสำหรับ train/test split</li>
+            <li>feature หลักไม่เป็นค่าว่างทั้ง column</li>
+          </ul>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>สิ่งที่เห็น</th>
+            <th>แปลว่าอะไร</th>
+            <th>ควรทำต่อ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>CSV มี rows เยอะและมี params คู่กัน</td>
+            <td>ข้อมูลพร้อมเข้าสู่ขั้น quality check หรือ train ได้</td>
+            <td>ไปหน้า Data Tools ต่อเพื่อ split/feature analysis หรือไปหน้า Train</td>
+          </tr>
+          <tr>
+            <td>CSV มีแต่ไม่มี params</td>
+            <td>ยัง train ได้ แต่ parity ตอน export/deploy อาจไม่ครบ</td>
+            <td>ใช้ได้สำหรับทดลอง แต่ก่อน deploy ควรหา params มาคู่กัน</td>
+          </tr>
+          <tr>
+            <td>CSV ไม่โผล่ใน dropdown</td>
+            <td>dashboard ยังไม่ rescan หรือไฟล์ไม่ได้อยู่ใน path ที่คาดไว้</td>
+            <td>กด Refresh, เช็ค Common Files, หรือเปิดโฟลเดอร์ project ดูว่าไฟล์อยู่จริง</td>
+          </tr>
+          <tr>
+            <td>CSV เปิดแล้ว column ผิดหรือ timestamp อ่านไม่ได้</td>
+            <td>collector/export format อาจไม่ตรงกับที่ dashboard คาดไว้</td>
+            <td>กลับไปเช็ค DataCollector_RL และ format ของไฟล์ก่อน train</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="common-issues">
+      <h2>ปัญหาที่พบบ่อย</h2>
+      <div class="grid two">
+        <div class="card warn">
+          <span class="tag warn">ไม่เห็นไฟล์</span>
+          <h3>Source CSV เป็น none</h3>
+          <p>
+            มักเกิดจาก DataCollector_RL ยังไม่ได้เขียนไฟล์ลง <code>Common\Files</code>
+            หรือ dashboard เปิดค้างก่อนมีไฟล์ ให้กด Refresh ใน card Import from DataCollector_RL
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">ไม่มี params</span>
+          <h3>CSV มาแต่ sidecar ไม่มา</h3>
+          <p>
+            ถ้าไม่มี <code>.params.json</code> ระบบจะใช้ default ฝั่ง MT5 ตอน export ได้บางกรณี
+            แต่ควรถือว่ายังไม่พร้อม production เพราะ feature parity อาจคลาดเคลื่อน
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">ชื่อไฟล์สับสน</span>
+          <h3>ไม่รู้ว่าไฟล์ไหนล่าสุด</h3>
+          <p>
+            ตั้งชื่อ output ให้มี symbol/timeframe/date หรือเวอร์ชัน เช่น
+            <code>training_data_uj_h4_2026_06.csv</code>
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">เข้าใจผิด</span>
+          <h3>Import ไม่ได้แปลว่า Train แล้ว</h3>
+          <p>
+            ปุ่ม Import ทำหน้าที่คัดลอกไฟล์เท่านั้น ไม่ได้รัน train,
+            ไม่ได้ backtest และไม่ได้รับประกันว่า model จะดี
+          </p>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>สำหรับ RL:</strong>
+        ไม่จำเป็นต้องสร้าง <code>future_return</code> หรือ target
+        <code>UP/DOWN/FLAT</code> ในขั้นนี้ เพราะ RL เรียนจาก state, action, reward
+        ไม่ใช่ supervised label แบบ PyCaret classification
+      </div>
+    </section>
+
+    <section id="handoff">
+      <h2>ส่งต่อขั้นถัดไป</h2>
+      <p>
+        เมื่อ import เสร็จและเช็คว่า CSV ใช้ได้แล้ว ให้ไปต่อได้ 2 ทาง:
+      </p>
+      <div class="grid two">
+        <div class="card green">
+          <span class="tag green">ทางแนะนำ</span>
+          <h3>Data Quality ก่อน Train</h3>
+          <p>
+            เปิดหน้า Data Tools ต่อเพื่อ split train/test by date และใช้ Feature Analysis
+            ตรวจ correlation ก่อน train จริง เหมาะกับงานสอน user เพราะเห็นวินัยข้อมูลชัดเจน
+          </p>
+          <p><a href="../explainers/04_data_tools_modules_explained.html">อ่านต่อ: Data Tools Modules</a></p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">ทางเร็ว</span>
+          <h3>ไป Train โดยตรง</h3>
+          <p>
+            ถ้าเป็นไฟล์ที่เชื่อถือได้และมีข้อมูลครบ สามารถเลือก CSV ในหน้า Train
+            แล้วเริ่ม train model ได้ แต่ยังต้อง backtest/walk-forward ก่อน export
+          </p>
+          <p><a href="03_dashboard_user_flow_guide.html#flow-train">กลับไปดู flow หลัก</a></p>
+        </div>
+      </div>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="03_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="../explainers/05_data_collector_v4_explained.html">DataCollector v4 Explained</a> ·
+      <a href="../explainers/06_parity_config_explained.html">Parity Config Explained</a>
+    </p>
+  </main>
+</body>
+</html>

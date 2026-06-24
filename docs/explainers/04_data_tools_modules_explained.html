@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Tools Modules Explained</title>
+  <style>
+    :root {
+      --bg: #0f141b;
+      --panel: #1b212b;
+      --panel-soft: #222a35;
+      --ink: #f4f7fb;
+      --muted: #9fb0c5;
+      --line: #354151;
+      --accent: #d8b400;
+      --accent-soft: #302a06;
+      --green: #3ccf7d;
+      --green-soft: #133423;
+      --blue: #58a6ff;
+      --blue-soft: #13283f;
+      --purple: #a78bfa;
+      --purple-soft: #271f3f;
+      --red: #ff746d;
+      --red-soft: #3a1d20;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 44px 0 28px;
+      border-bottom: 1px solid var(--line);
+      background: #111720;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 900px;
+      font-size: clamp(34px, 5vw, 56px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 860px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    main {
+      padding: 28px 0 52px;
+    }
+
+    section {
+      margin: 22px 0;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 24px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .module {
+      position: relative;
+      min-height: 100%;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+    }
+
+    .module .top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .num {
+      display: inline-grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      color: var(--ink);
+      font-weight: 800;
+      flex: 0 0 auto;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .tag.green {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .tag.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .tag.purple {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .tag.red {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 15px;
+    }
+
+    th,
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: #151b24;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: #111720;
+      color: #f7dc5a;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .flow .step {
+      min-height: 94px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #151b24;
+    }
+
+    .callout {
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      border-radius: 6px;
+      background: var(--accent-soft);
+      color: #fff3a6;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .grid,
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 18px;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">MetaFxClub RL Studio</p>
+      <h1>Data Tools Modules Explained</h1>
+      <p class="lead">
+        หน้า Data Tools คือพื้นที่เตรียมข้อมูลก่อนเข้า Train, Backtest และ Export
+        จุดประสงค์คือให้ user ทำงานกับไฟล์จาก MT5 ได้โดยไม่ต้องเปิด command line
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section>
+      <h2>หน้า Data Tools ใช้ทำอะไร</h2>
+      <p>
+        ให้คิดหน้านี้เป็นโต๊ะเตรียมวัตถุดิบก่อน train โมเดล RL:
+        เอาไฟล์จาก MT5 เข้ามา, แบ่งข้อมูลตามเวลา, ตรวจ feature ที่ซ้ำกัน,
+        และส่งโมเดลที่ผ่านการ train แล้วออกไปเป็นไฟล์ MT5
+      </p>
+      <div class="flow">
+        <div class="step">
+          <strong>1. Import</strong>
+          <p class="muted">ดึง CSV จาก MT5 เข้ามาในโปรเจกต์</p>
+        </div>
+        <div class="step">
+          <strong>2. Split</strong>
+          <p class="muted">แยกอดีตเป็น train และอนาคตเป็น test</p>
+        </div>
+        <div class="step">
+          <strong>3. Clean</strong>
+          <p class="muted">เช็ค feature ซ้ำหรือสัมพันธ์กันสูง</p>
+        </div>
+        <div class="step">
+          <strong>4. Export</strong>
+          <p class="muted">แปลงโมเดลเป็น ONNX และไฟล์ MT5</p>
+        </div>
+        <div class="step">
+          <strong>5. Log</strong>
+          <p class="muted">ดูผลลัพธ์และ error ของทุกเครื่องมือ</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>โมดูลในหน้า Data Tools</h2>
+      <div class="grid">
+        <article class="module">
+          <div class="top">
+            <span class="num">1</span>
+            <div>
+              <span class="tag green">First step</span>
+              <h3>Import from DataCollector_RL</h3>
+            </div>
+          </div>
+          <p>
+            ใช้คัดลอกไฟล์ CSV ที่ DataCollector_RL เขียนไว้ใน MT5
+            จาก <code>Common\Files</code> เข้ามาไว้ใน project folder
+            พร้อมคัดลอกไฟล์ <code>.params.json</code> ถ้ามี
+          </p>
+          <ul>
+            <li><strong>ใช้เมื่อ:</strong> เพิ่งรัน DataCollector_RL ใน MT5 tester หรือ live chart เสร็จ</li>
+            <li><strong>Input:</strong> Source CSV จาก MT5 Common Files</li>
+            <li><strong>Output:</strong> CSV สำหรับ train เช่น <code>training_data_gu_h4_dataset.csv</code></li>
+            <li><strong>สำคัญ:</strong> <code>.params.json</code> ช่วยให้ feature/indicator settings ตรงกันระหว่าง train กับ EA</li>
+          </ul>
+        </article>
+
+        <article class="module">
+          <div class="top">
+            <span class="num">2</span>
+            <div>
+              <span class="tag blue">Validation</span>
+              <h3>Split Train/Test by Date</h3>
+            </div>
+          </div>
+          <p>
+            ใช้แยกข้อมูลเป็น 2 ไฟล์ตามวันที่: ฝั่งก่อนวัน split เป็น train
+            และฝั่งตั้งแต่วัน split เป็นต้นไปเป็น test
+          </p>
+          <ul>
+            <li><strong>ใช้เมื่อ:</strong> อยากมีไฟล์ train/test แยกชัดเจนสำหรับสอนหรือทดสอบ out-of-sample</li>
+            <li><strong>Input:</strong> CSV ที่มีคอลัมน์ <code>timestamp</code></li>
+            <li><strong>Output:</strong> ไฟล์ <code>_train.csv</code> และ <code>_test.csv</code></li>
+            <li><strong>ข้อควรรู้:</strong> Train page มี <code>Train %</code> อยู่แล้ว จึงไม่จำเป็นทุกครั้งสำหรับ RL basic flow</li>
+          </ul>
+        </article>
+
+        <article class="module">
+          <div class="top">
+            <span class="num">3</span>
+            <div>
+              <span class="tag">Optional</span>
+              <h3>Auto-remove Redundant Features</h3>
+            </div>
+          </div>
+          <p>
+            เป็นตัวเลือกในโมดูล Split ถ้าเปิดไว้ ระบบจะลบ feature ที่ correlation
+            สูงเกิน threshold หลัง split แล้วใช้ชุด feature เดียวกันกับ train และ test
+          </p>
+          <ul>
+            <li><strong>ใช้เมื่อ:</strong> dataset มี feature จำนวนมากและสงสัยว่าหลายตัวซ้ำกัน</li>
+            <li><strong>ค่า default:</strong> threshold <code>0.85</code></li>
+            <li><strong>ประโยชน์:</strong> ลดขนาด input ของ neural network และลดโอกาส overfitting</li>
+            <li><strong>ข้อควรระวัง:</strong> ถ้าลบ feature มากเกินไป โมเดลอาจเสีย signal ที่มีประโยชน์</li>
+          </ul>
+        </article>
+
+        <article class="module">
+          <div class="top">
+            <span class="num">4</span>
+            <div>
+              <span class="tag blue">Feature QA</span>
+              <h3>Feature Analysis & Cleanup</h3>
+            </div>
+          </div>
+          <p>
+            ใช้ตรวจความสัมพันธ์ระหว่าง features และทำความสะอาด feature ที่ซ้ำกัน
+            โดยไม่จำเป็นต้อง split ก่อน
+          </p>
+          <ul>
+            <li><strong>Show Correlation Matrix:</strong> ดูภาพรวมว่า feature ไหนสัมพันธ์กันสูง</li>
+            <li><strong>Clean Redundant Features:</strong> สร้างไฟล์ใหม่ที่ตัด feature ซ้ำออก</li>
+            <li><strong>Input:</strong> CSV ที่เลือกจาก dropdown</li>
+            <li><strong>เหมาะกับ:</strong> การเตรียม dataset ก่อน train รอบจริง หรือก่อนสอนเรื่อง feature quality</li>
+          </ul>
+        </article>
+
+        <article class="module">
+          <div class="top">
+            <span class="num">5</span>
+            <div>
+              <span class="tag purple">Deploy</span>
+              <h3>Export to MT5 (ONNX)</h3>
+            </div>
+          </div>
+          <p>
+            ใช้หลังจาก train และ backtest จนพอใจแล้ว เพื่อแปลงโมเดล PPO
+            เป็นไฟล์ ONNX และสร้างไฟล์สำหรับ MT5
+          </p>
+          <ul>
+            <li><strong>Input:</strong> model ที่ train แล้ว เช่น <code>rl_prod_v1.zip</code> หรือ best model</li>
+            <li><strong>Output:</strong> <code>Files/*.onnx</code>, <code>Include/*_config.mqh</code>, <code>Experts/*_EA.mq5</code></li>
+            <li><strong>ใช้เมื่อ:</strong> ต้องการเอาโมเดลไปทดสอบหรือ deploy ใน MT5</li>
+            <li><strong>ข้อควรจำ:</strong> ไม่ใช่ขั้นตอน data prep แต่เป็นขั้นตอนหลัง train/backtest</li>
+          </ul>
+        </article>
+
+        <article class="module">
+          <div class="top">
+            <span class="num">6</span>
+            <div>
+              <span class="tag red">Debug</span>
+              <h3>Tools Log</h3>
+            </div>
+          </div>
+          <p>
+            เป็นกล่องข้อความที่แสดงสถานะของทุก action ในหน้า Data Tools
+            เช่น import สำเร็จ, split ได้กี่ rows, export ล้มเหลวเพราะไม่เจอ model
+          </p>
+          <ul>
+            <li><strong>ใช้เมื่อ:</strong> ต้องการรู้ว่าเครื่องมือทำอะไรไปแล้ว</li>
+            <li><strong>ช่วย debug:</strong> ถ้ามี error ให้ดูข้อความใน log ก่อน</li>
+            <li><strong>สำหรับสอน user:</strong> ให้ user อ่าน log เพื่อเข้าใจว่าขั้นตอนสำเร็จหรือยัง</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>ควรใช้ลำดับไหนในงานจริง</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>สถานการณ์</th>
+            <th>ลำดับที่แนะนำ</th>
+            <th>หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>สอน user ตั้งแต่เริ่มเก็บข้อมูล</td>
+            <td>Import -> Split optional -> Feature Analysis optional -> Train page</td>
+            <td>ถ้าเน้น RL basic ให้ Import แล้วไป Train page ได้เลย เพราะ Train page มี train/test split ตามเปอร์เซ็นต์อยู่แล้ว</td>
+          </tr>
+          <tr>
+            <td>เตรียม dataset ให้สะอาดก่อน train รอบจริง</td>
+            <td>Import -> Feature Analysis -> Clean Redundant Features -> Train page</td>
+            <td>เหมาะกับ dataset ที่มี feature เยอะหรือ indicator หลายชุดที่อาจซ้ำกัน</td>
+          </tr>
+          <tr>
+            <td>ต้องการ test แบบแยกไฟล์ชัดเจน</td>
+            <td>Import -> Split Train/Test by Date -> Train ด้วย train file -> Backtest ด้วย test file</td>
+            <td>ดีสำหรับสอนเรื่อง out-of-sample และหลีกเลี่ยง look-ahead bias</td>
+          </tr>
+          <tr>
+            <td>โมเดลผ่าน backtest แล้ว จะเอาไป MT5</td>
+            <td>Export to MT5 (ONNX)</td>
+            <td>ใช้หลังจาก model ดีพอแล้ว ไม่ควร export โมเดลที่ยัง backtest แพ้</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>สิ่งที่ถูกตัดออกจาก RL-only flow</h2>
+      <p class="callout">
+        โมดูล Relabel UP/DOWN/FLAT และการ run <code>build_training_from_collector.py</code>
+        ถูกซ่อน/ตัดออกจากหน้าใช้งานหลัก เพราะเป็นแนว supervised ML/PyCaret มากกว่า RL
+        ส่วน RL ใช้ action + reward จาก <code>TradingEnv</code> ไม่ได้ใช้ target label แบบ UP/DOWN/FLAT เป็นคำตอบหลัก
+      </p>
+    </section>
+
+    <section>
+      <h2>สรุปสั้นสำหรับ user</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>โมดูล</th>
+            <th>คำจำง่าย</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Import from DataCollector_RL</td>
+            <td>เอาข้อมูลจาก MT5 เข้ามาในโปรเจกต์</td>
+          </tr>
+          <tr>
+            <td>Split Train/Test by Date</td>
+            <td>แยกอดีตไว้ train และอนาคตไว้ test</td>
+          </tr>
+          <tr>
+            <td>Feature Analysis & Cleanup</td>
+            <td>เช็คว่า feature ซ้ำกันไหม แล้วตัดของซ้ำออก</td>
+          </tr>
+          <tr>
+            <td>Export to MT5 (ONNX)</td>
+            <td>แปลงโมเดลที่ train ดีแล้วเป็นไฟล์ใช้งานใน MT5</td>
+          </tr>
+          <tr>
+            <td>Tools Log</td>
+            <td>ดูว่าแต่ละปุ่มทำงานสำเร็จหรือมี error อะไร</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

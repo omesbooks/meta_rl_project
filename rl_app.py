@@ -1294,24 +1294,8 @@ class RLTradingStudio(ctk.CTk):
         self.pipe_bt_mode.set("Agent + SL/TP")
         self.pipe_bt_mode.grid(row=4, column=3, sticky="w", padx=(8, 18), pady=6)
 
-        self.pipe_build = ctk.CTkCheckBox(
-            setup,
-            text="Auto-build from DataCollector_RL CSV (run build_training_from_collector.py first)",
-            text_color=COLOR_DIM,
-        )
-        self.pipe_build.grid(row=5, column=0, columnspan=4, sticky="w",
-                             padx=18, pady=(8, 4))
-
-        self.pipe_relabel = ctk.CTkCheckBox(
-            setup,
-            text="Relabel first with quantile 33/33/33",
-            text_color=COLOR_DIM,
-        )
-        self.pipe_relabel.grid(row=6, column=0, columnspan=2, sticky="w",
-                               padx=18, pady=(4, 12))
-
         btns = ctk.CTkFrame(setup, fg_color="transparent")
-        btns.grid(row=6, column=2, columnspan=2, sticky="e", padx=18, pady=(4, 12))
+        btns.grid(row=5, column=0, columnspan=4, sticky="e", padx=18, pady=(12, 12))
         self.pipe_run_btn = ctk.CTkButton(
             btns, text="Run full pipeline", command=self._run_full_pipeline,
             fg_color=COLOR_GREEN, hover_color="#2ea043", width=170)
@@ -1807,8 +1791,8 @@ class RLTradingStudio(ctk.CTk):
             if not ok:
                 return
 
-        use_relabel = bool(self.pipe_relabel.get())
-        use_build   = bool(self.pipe_build.get())
+        use_relabel = False
+        use_build = False
         mode = "pure_agent" if "Pure" in self.pipe_bt_mode.get() else "agent_sltp"
 
         self.pipeline_running = True
@@ -2736,7 +2720,7 @@ class RLTradingStudio(ctk.CTk):
             width=110
         ).grid(row=0, column=1)
 
-        # Output name + build option
+        # Output name
         opts1 = ctk.CTkFrame(c1, fg_color="transparent")
         opts1.grid(row=4, column=0, sticky="ew", padx=18, pady=(4, 12))
         opts1.grid_columnconfigure(0, weight=1)
@@ -2748,14 +2732,7 @@ class RLTradingStudio(ctk.CTk):
             placeholder_text="training_data_<symbol>_rl.csv")
         self.tool_collector_out.grid(row=1, column=0, sticky="ew")
 
-        self.tool_collector_build = ctk.CTkCheckBox(opts1,
-            text="Run build_training_from_collector.py "
-                 "(adds future_return + target, selects features)",
-            text_color=COLOR_TEXT)
-        self.tool_collector_build.select()
-        self.tool_collector_build.grid(row=2, column=0, sticky="w", pady=(12, 0))
-
-        ctk.CTkButton(c1, text="📥 Import + Build training CSV",
+        ctk.CTkButton(c1, text="📥 Import CSV + params",
             command=self._import_from_collector,
             fg_color=COLOR_ACCENT, hover_color="#4493f8",
             height=40, font=ctk.CTkFont(size=14, weight="bold")
@@ -2857,50 +2834,10 @@ class RLTradingStudio(ctk.CTk):
             ).grid(row=8, column=0, sticky="ew", padx=18, pady=(4, 16))
 
         # =====================================================
-        # CARD 3: Relabel
+        # CARD 3: Feature Analysis & Cleanup ⭐ NEW
         # =====================================================
-        c3 = Card(page, title="③ ⚖️ Relabel (Fix class imbalance)")
-        c3.grid(row=3, column=0, sticky="ew", pady=(0, 12))
-        c3.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(c3,
-            text="ปรับสัดส่วน UP/DOWN/FLAT ให้สมดุล (ป้องกัน lazy classifier trap)",
-            text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
-            wraplength=900, justify="left"
-            ).grid(row=1, column=0, sticky="w", padx=18, pady=(2, 12))
-
-        relabel_grid = ctk.CTkFrame(c3, fg_color="transparent")
-        relabel_grid.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
-        relabel_grid.grid_columnconfigure(0, weight=1)
-        relabel_grid.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(relabel_grid, text="Source CSV", text_color=COLOR_DIM,
-            font=ctk.CTkFont(size=12)).grid(row=0, column=0, sticky="w", pady=(0, 4))
-        ctk.CTkLabel(relabel_grid, text="Method", text_color=COLOR_DIM,
-            font=ctk.CTkFont(size=12)).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
-
-        self.tool_relabel_csv = ScrollableOptionMenu(relabel_grid, values=["(none)"],
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.tool_relabel_csv.grid(row=1, column=0, sticky="ew")
-
-        self.tool_relabel_method = ctk.CTkOptionMenu(relabel_grid,
-            values=["Quantile 33/33/33 (recommended)",
-                     "Fixed threshold ±0.001",
-                     "Binary UP/DOWN (drop FLAT)"],
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.tool_relabel_method.grid(row=1, column=1, sticky="ew", padx=(8, 0))
-
-        ctk.CTkButton(c3, text="⚖️ Relabel Now",
-            command=self._relabel_csv,
-            fg_color=COLOR_ACCENT, hover_color="#4493f8",
-            height=40, font=ctk.CTkFont(size=14, weight="bold")
-            ).grid(row=3, column=0, sticky="ew", padx=18, pady=(4, 16))
-
-        # =====================================================
-        # CARD 4: Feature Analysis & Cleanup ⭐ NEW
-        # =====================================================
-        c4 = Card(page, title="④ 🔬 Feature Analysis & Cleanup")
-        c4.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        c4 = Card(page, title="③ 🔬 Feature Analysis & Cleanup")
+        c4.grid(row=3, column=0, sticky="ew", pady=(0, 12))
         c4.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(c4,
@@ -2920,9 +2857,19 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(feat_grid, text="Correlation threshold", text_color=COLOR_DIM,
             font=ctk.CTkFont(size=12)).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
 
-        self.tool_feat_csv = ScrollableOptionMenu(feat_grid, values=["(none)"],
+        feat_csv_row = ctk.CTkFrame(feat_grid, fg_color="transparent")
+        feat_csv_row.grid(row=1, column=0, sticky="ew")
+        feat_csv_row.grid_columnconfigure(0, weight=1)
+
+        self.tool_feat_csv = ScrollableOptionMenu(feat_csv_row, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.tool_feat_csv.grid(row=1, column=0, sticky="ew")
+        self.tool_feat_csv.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        ctk.CTkButton(feat_csv_row, text="Refresh",
+            command=self._refresh_project_csv_dropdowns,
+            fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
+            width=110
+        ).grid(row=0, column=1)
 
         self.tool_feat_threshold = ctk.CTkEntry(feat_grid,
             placeholder_text="0.85",
@@ -2949,10 +2896,10 @@ class RLTradingStudio(ctk.CTk):
             ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
 
         # =====================================================
-        # CARD 5: Export to MT5 (ONNX) ⭐ NEW
+        # CARD 4: Export to MT5 (ONNX) ⭐ NEW
         # =====================================================
-        c5 = Card(page, title="⑤ 🚀 Export to MT5 (ONNX)")
-        c5.grid(row=5, column=0, sticky="ew", pady=(0, 12))
+        c5 = Card(page, title="④ 🚀 Export to MT5 (ONNX)")
+        c5.grid(row=4, column=0, sticky="ew", pady=(0, 12))
         c5.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(c5,
@@ -3006,10 +2953,10 @@ class RLTradingStudio(ctk.CTk):
             ).grid(row=6, column=0, sticky="ew", padx=18, pady=(4, 16))
 
         # =====================================================
-        # CARD 6: Tools Log
+        # CARD 5: Tools Log
         # =====================================================
         c6 = Card(page, title="📝 Tools Log")
-        c6.grid(row=6, column=0, sticky="ew")
+        c6.grid(row=5, column=0, sticky="ew")
         c6.grid_columnconfigure(0, weight=1)
 
         log_frame = ctk.CTkFrame(c6, fg_color="#0a0e14", corner_radius=8,
@@ -3020,6 +2967,7 @@ class RLTradingStudio(ctk.CTk):
 
         # populate collector sources after log widget is ready
         self._refresh_collector_sources()
+        self._refresh_tools_dropdowns()
 
     # --------------------------------------------------------
     # Tools functions
@@ -3055,8 +3003,7 @@ class RLTradingStudio(ctk.CTk):
                   f"[collector] {len(files)} CSV(s) in Common\\Files", "info")
 
     def _import_from_collector(self):
-        """Copy CSV + params.json from Common\\Files → project, then
-           optionally run build_training_from_collector.py."""
+        """Copy CSV + params.json from Common\\Files → project."""
         if self._is_process_busy():
             messagebox.showwarning("Busy", "Another task is running")
             return
@@ -3075,16 +3022,15 @@ class RLTradingStudio(ctk.CTk):
         src_params = src_csv.with_suffix(".params.json")
         out_name = (self.tool_collector_out.get().strip() or
                     f"training_data_{Path(src_name).stem}.csv")
-        run_build = bool(self.tool_collector_build.get())
 
         import threading
         threading.Thread(
             target=self._import_from_collector_worker,
-            args=(src_csv, src_params, out_name, run_build),
+            args=(src_csv, src_params, out_name),
             daemon=True,
         ).start()
 
-    def _import_from_collector_worker(self, src_csv, src_params, out_name, run_build):
+    def _import_from_collector_worker(self, src_csv, src_params, out_name):
         import shutil
         try:
             self.after(0, lambda: self.status_label.configure(
@@ -3092,12 +3038,7 @@ class RLTradingStudio(ctk.CTk):
 
             # 1) Copy raw CSV
             dst_csv = WORK_DIR / Path(out_name).with_suffix(".csv").name
-            # If user said "training_data_xxx.csv" and we will run build,
-            # the raw copy should land under a different name to keep both.
-            if run_build:
-                raw_copy = WORK_DIR / src_csv.name   # keep original filename
-            else:
-                raw_copy = dst_csv
+            raw_copy = dst_csv
             shutil.copy(src_csv, raw_copy)
             self.after(0, lambda p=raw_copy: self._log(
                 self.tools_log, f"[copy] CSV  -> {p.name}", "success"))
@@ -3113,30 +3054,9 @@ class RLTradingStudio(ctk.CTk):
                     "[warn] no params.json sidecar — EA will use RL_Indicators defaults",
                     "warn"))
 
-            # 3) Optionally run build_training_from_collector
-            if run_build:
-                cmd = [sys.executable, "build_training_from_collector.py",
-                       "--in", str(raw_copy), "--out", out_name]
-                self.after(0, lambda c=cmd: self._log(
-                    self.tools_log, "$ " + " ".join(c), "info"))
-                env = os.environ.copy()
-                env["PYTHONIOENCODING"] = "utf-8"
-                proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    cwd=str(WORK_DIR), text=True, encoding="utf-8",
-                    errors="replace", bufsize=1, env=env)
-                for line in iter(proc.stdout.readline, ""):
-                    line = line.rstrip()
-                    if not line: continue
-                    tag = self._classify_log(line)
-                    self.after(0, lambda l=line, t=tag: self._log(self.tools_log, l, t))
-                proc.wait()
-                if proc.returncode != 0:
-                    raise RuntimeError(f"build script exit {proc.returncode}")
-
-            self.after(0, lambda: self._refresh_dropdowns())
+            self.after(0, lambda: self._refresh_project_csv_dropdowns(log=False))
             self.after(0, lambda: self._log(self.tools_log,
-                "[done] dataset ready for training", "success"))
+                "[done] collector files imported", "success"))
         except Exception as e:
             self.after(0, lambda err=e: self._log(
                 self.tools_log, f"[error] {err}", "error"))
@@ -3547,15 +3467,37 @@ class RLTradingStudio(ctk.CTk):
             self._log(self.tools_log, f"Error: {e}", "error")
             self._log(self.tools_log, traceback.format_exc(), "error")
 
+    def _refresh_project_csv_dropdowns(self, log=True):
+        """Force-rescan project CSV files and update all CSV dropdowns."""
+        self._file_cache.pop("csv_sig", None)
+        self._file_cache.pop("csvs", None)
+        self._refresh_dropdowns()
+        self._refresh_tools_dropdowns()
+
+        if log and hasattr(self, "tools_log"):
+            csvs = self._list_csv_files()
+            count = 0 if csvs == ["(none)"] else len(csvs)
+            level = "success" if count else "warn"
+            self._log(self.tools_log,
+                      f"[refresh] found {count} CSV(s) in project folder",
+                      level)
+
     def _refresh_tools_dropdowns(self):
         csvs = self._list_csv_files()
-        menus = [self.tool_split_csv, self.tool_relabel_csv]
+        menus = []
+        if hasattr(self, 'tool_split_csv'):
+            menus.append(self.tool_split_csv)
+        if hasattr(self, 'tool_relabel_csv'):
+            menus.append(self.tool_relabel_csv)
         if hasattr(self, 'tool_feat_csv'):
             menus.append(self.tool_feat_csv)
         for menu in menus:
             try:
+                current = menu.get()
                 menu.configure(values=csvs)
-                if menu.get() in ("(none)", "") and csvs[0] != "(none)":
+                if csvs[0] == "(none)":
+                    menu.set("(none)")
+                elif current in ("(none)", "") or current not in csvs:
                     menu.set(csvs[0])
             except: pass
 
@@ -3563,8 +3505,11 @@ class RLTradingStudio(ctk.CTk):
         if hasattr(self, 'tool_export_model'):
             model_list = self._list_model_names()
             try:
+                current = self.tool_export_model.get()
                 self.tool_export_model.configure(values=model_list)
-                if self.tool_export_model.get() in ("(none)", "") and model_list[0] != "(none)":
+                if model_list[0] == "(none)":
+                    self.tool_export_model.set("(none)")
+                elif current in ("(none)", "") or current not in model_list:
                     self.tool_export_model.set(model_list[0])
             except: pass
 
@@ -6500,8 +6445,11 @@ Built with: CustomTkinter + stable-baselines3
             if menu is None:
                 continue
             try:
+                current = menu.get()
                 menu.configure(values=models)
-                if menu.get() in ("(none)", "") and models[0] != "(none)":
+                if models[0] == "(none)":
+                    menu.set("(none)")
+                elif current in ("(none)", "") or current not in models:
                     menu.set(models[0])
             except: pass
 
@@ -6514,8 +6462,11 @@ Built with: CustomTkinter + stable-baselines3
             if menu is None:
                 continue
             try:
+                current = menu.get()
                 menu.configure(values=csvs)
-                if menu.get() in ("(none)", "") and csvs[0] != "(none)":
+                if csvs[0] == "(none)":
+                    menu.set("(none)")
+                elif current in ("(none)", "") or current not in csvs:
                     menu.set(csvs[0])
             except: pass
 

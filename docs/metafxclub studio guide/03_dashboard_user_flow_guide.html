@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard User Flow Guide</title>
+  <style>
+    :root {
+      --bg: #f5f7f4;
+      --paper: #ffffff;
+      --ink: #142033;
+      --muted: #617089;
+      --line: #d8ded5;
+      --accent: #c9a400;
+      --accent-soft: #fff4bd;
+      --green: #178755;
+      --green-soft: #e3f5ec;
+      --blue: #256eb3;
+      --blue-soft: #e6f0fb;
+      --purple: #7657c7;
+      --purple-soft: #eee8ff;
+      --red: #c13b32;
+      --red-soft: #ffe6e2;
+      --dark: #111820;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+
+    .wrap {
+      width: min(1160px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 44px 0 30px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 920px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.06;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 920px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    main {
+      padding: 30px 0 56px;
+    }
+
+    section {
+      margin: 22px 0;
+      padding: 24px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 25px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: #eef2ea;
+      color: #1d2939;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf8;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      color: #6b5700;
+      background: var(--accent-soft);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .tag.green {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .tag.blue {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .tag.purple {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+
+    .tag.red {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    .flow {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 58px 1fr 260px;
+      gap: 16px;
+      align-items: start;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf8;
+    }
+
+    .num {
+      display: inline-grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      color: #ffffff;
+      background: var(--dark);
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .step ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+
+    .step li {
+      margin: 4px 0;
+    }
+
+    .deep {
+      padding: 12px;
+      border: 1px dashed #bcc7b8;
+      border-radius: 8px;
+      background: #f6f8f2;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .deep strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 5px;
+    }
+
+    .callout {
+      padding: 15px 17px;
+      border-left: 4px solid var(--accent);
+      border-radius: 6px;
+      background: var(--accent-soft);
+      color: #4e4100;
+    }
+
+    .warn {
+      border-left-color: var(--red);
+      background: var(--red-soft);
+      color: #62201b;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 15px;
+    }
+
+    th,
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: #f1f4ef;
+    }
+
+    .mini-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .mini-nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fbfcf8;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .status {
+      display: inline-block;
+      min-width: 74px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .ok {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .maybe {
+      color: #836900;
+      background: var(--accent-soft);
+    }
+
+    .no {
+      color: var(--red);
+      background: var(--red-soft);
+    }
+
+    @media (max-width: 980px) {
+      .grid,
+      .two {
+        grid-template-columns: 1fr;
+      }
+
+      .step {
+        grid-template-columns: 1fr;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">MetaFxClub RL Studio</p>
+      <h1>คู่มือ Flow การใช้งาน Dashboard</h1>
+      <p class="lead">
+        เอกสารนี้เป็นแผนที่การใช้งาน dashboard ตั้งแต่เตรียมข้อมูลจาก MT5 ไปจนถึง train, validate,
+        backtest, export และดูแลโมเดล ใช้เป็นคู่มือสอน user และเป็นโครงสำหรับแตกเอกสารเจาะลึกแต่ละส่วนในอนาคต
+      </p>
+      <nav class="mini-nav">
+        <a href="#quick-start">Quick Start</a>
+        <a href="#main-flow">Main Flow</a>
+        <a href="#page-map">Page Map</a>
+        <a href="#decision-gates">Decision Gates</a>
+        <a href="#deep-dive-plan">Deep Dive Plan</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="quick-start">
+      <h2>Quick Start สำหรับ User ใหม่</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="tag green">Goal</span>
+          <h3>เริ่มจากข้อมูลที่ถูกต้อง</h3>
+          <p>ให้ user เริ่มจาก DataCollector_RL ใน MT5 แล้ว import CSV เข้าโปรเจกต์ผ่านหน้า Data Tools</p>
+        </div>
+        <div class="card">
+          <span class="tag blue">Train</span>
+          <h3>Train แล้วดูผล ไม่ใช่ train แล้วเชื่อทันที</h3>
+          <p>โมเดล RL ต้องผ่าน quick test, backtest, และ walk-forward ก่อนคิดเรื่อง export</p>
+        </div>
+        <div class="card">
+          <span class="tag purple">Deploy</span>
+          <h3>Export เฉพาะโมเดลที่ผ่าน gate</h3>
+          <p>ถ้า return/PF/drawdown ยังแย่ ให้กลับไปปรับข้อมูลหรือ train ใหม่ ไม่ควร export ไป MT5</p>
+        </div>
+      </div>
+      <p class="callout">
+        จำง่าย ๆ: <strong>Data -> Train -> Backtest -> Walk-Forward -> Export</strong>.
+        ถ้าขั้นไหนไม่ผ่าน ให้ย้อนกลับไปแก้ข้อมูลหรือ hyperparameters ก่อน ไม่ข้ามไป deploy
+      </p>
+    </section>
+
+    <section id="main-flow">
+      <h2>Main Flow การใช้งาน Dashboard</h2>
+      <div class="flow">
+        <article class="step" id="flow-data">
+          <div class="num">1</div>
+          <div>
+            <span class="tag green">Data Prep</span>
+            <h3>เตรียมข้อมูลจาก MT5</h3>
+            <p>รัน DataCollector_RL ใน MT5 เพื่อสร้าง CSV แล้วเปิดหน้า <strong>Data Tools</strong> เพื่อ import ไฟล์เข้ามาในโปรเจกต์</p>
+            <ul>
+              <li>เลือก CSV จาก <code>Common\Files</code></li>
+              <li>ตั้ง output basename เช่น <code>training_data_gu_h4_dataset.csv</code></li>
+              <li>กด Import CSV + params</li>
+              <li>ถ้ามี <code>.params.json</code> ให้เก็บคู่กับ CSV เพื่อ parity ตอน export/deploy</li>
+            </ul>
+          </div>
+          <aside class="deep">
+            <strong>Deep dive ต่อ</strong>
+            <a href="15_data_prep_import_detail.html">15_data_prep_import_detail.html</a>
+            อธิบาย DataCollector_RL, Common Files, <code>.params.json</code>, และการเช็คว่า CSV มีข้อมูลจริง
+          </aside>
+        </article>
+
+        <article class="step" id="flow-quality">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Quality Check</span>
+            <h3>เช็คคุณภาพข้อมูลและ Feature</h3>
+            <p>ถ้า dataset มี feature จำนวนมาก ให้ใช้ Feature Analysis & Cleanup เพื่อดู correlation และลด feature ซ้ำ</p>
+            <ul>
+              <li>ใช้ Show Correlation Matrix เพื่อดู feature ที่สัมพันธ์กันสูง</li>
+              <li>ใช้ Clean Redundant Features เมื่ออยากลด input ที่ซ้ำกัน</li>
+              <li>Split Train/Test by Date ใช้เมื่ออยากแยกไฟล์ train/test ชัดเจน</li>
+              <li>สำหรับ RL basic flow สามารถใช้ Train % ในหน้า Train/Pipeline แทน split เป็นไฟล์ได้</li>
+            </ul>
+          </div>
+          <aside class="deep">
+            <strong>Deep dive ต่อ</strong>
+            อธิบาย Data Tools แต่ละโมดูล, correlation threshold, และ train/test discipline
+          </aside>
+        </article>
+
+        <article class="step" id="flow-train">
+          <div class="num">3</div>
+          <div>
+            <span class="tag blue">Training</span>
+            <h3>Train โมเดล RL</h3>
+            <p>เลือกหน้า <strong>Train</strong> เมื่อต้องการควบคุมการ train เอง หรือหน้า <strong>Pipeline</strong> ถ้าต้องการรัน flow ยาวแบบรวดเดียว</p>
+            <ul>
+              <li>เลือก dataset CSV</li>
+              <li>เลือก PPO เป็นค่าแนะนำ</li>
+              <li>ใช้ reward mode <code>realized</code></li>
+              <li>ตั้ง Train %, Window Size, Max Hold, Training Steps</li>
+              <li>ดู reward trend และ PPO health metrics ระหว่าง train</li>
+            </ul>
+          </div>
+          <aside class="deep">
+            <strong>Deep dive ต่อ</strong>
+            อธิบาย PPO settings, reward, train pct, window size, max hold, และการอ่าน train log
+          </aside>
+        </article>
+
+        <article class="step" id="flow-backtest">
+          <div class="num">4</div>
+          <div>
+            <span class="tag purple">Validation</span>
+            <h3>Backtest โมเดล</h3>
+            <p>ใช้หน้า <strong>Backtest</strong> เพื่อดูว่าโมเดลที่ train แล้วทำงานกับข้อมูลทดสอบได้จริงหรือไม่</p>
+            <ul>
+              <li>เลือก model และ CSV สำหรับ backtest</li>
+              <li>ตั้ง confidence threshold เช่น <code>0.85</code></li>
+              <li>ดู return, profit factor, win rate, max drawdown, จำนวน trades</li>
+              <li>ถ้าผลลบหนักหรือ PF ต่ำกว่า 1 ให้กลับไปแก้ data/train</li>
+            </ul>
+          </div>
+          <aside class="deep">
+            <strong>Deep dive ต่อ</strong>
+            อธิบาย confidence filter, backtest modes, metric interpretation, และ common failure patterns
+          </aside>
+        </article>
+
+        <article class="step" id="flow-robustness">
+          <div class="num">5</div>
+          <div>
+            <span class="tag purple">Robustness</span>
+            <h3>Walk-Forward และ Regime Check</h3>
+            <p>ถ้า backtest ดูดี ให้ใช้ Walk-Forward เพื่อเช็คว่า edge ไม่ได้ดีแค่ช่วงเดียว และใช้ Regime Check เมื่อตลาดเปลี่ยน regime</p>
+            <ul>
+              <li>Walk-Forward เทรน/ทดสอบหลายช่วงเวลา</li>
+              <li>Regime Check ช่วยหาจุดเปลี่ยนโครงสร้างตลาด</li>
+              <li>ถ้า window ส่วนใหญ่ไม่ผ่าน ให้ถือว่าโมเดลยังไม่ robust</li>
+              <li>ถ้าเจอ regime shift ให้ตัด dataset หรือ fine-tune ใหม่</li>
+            </ul>
+          </div>
+          <aside class="deep">
+            <strong>Deep dive ต่อ</strong>
+            อธิบาย walk-forward custom logic, regime methods, breakpoint table, และ train cutoff
+          </aside>
+        </article>
+
+        <article class="step" id="flow-improve">
+          <div class="num">6</div>
+          <div>
+            <span class="tag">Improve</span>
+            <h3>Fine-tune หรือ Train ใหม่</h3>
+            <p>ถ้าโมเดลเดิมยังพอมี edge แต่ตลาดเปลี่ยน ให้ fine-tune ด้วยข้อมูลใหม่ ถ้าโมเดลแย่มากให้ train ใหม่จาก dataset ที่สะอาดกว่า</p>
+            <ul>
+              <li>Fine-tune เหมาะกับการอัปเดตจากโมเดลเดิม</li>
+              <li>Train ใหม่เหมาะเมื่อเปลี่ยน symbol/timeframe/features หรือโมเดลเดิมไม่ดี</li>
+              <li>หลัง fine-tune ต้อง backtest และ walk-forward ใหม่</li>
+            </ul>
+          </div>
+          <aside class="deep">
+            <strong>Deep dive ต่อ</strong>
+            อธิบาย train vs fine-tune, catastrophic forgetting, และ quarterly update flow
+          </aside>
+        </article>
+
+        <article class="step" id="flow-export">
+          <div class="num">7</div>
+          <div>
+            <span class="tag green">Export</span>
+            <h3>Export ไป MT5</h3>
+            <p>เมื่อโมเดลผ่าน gate แล้ว ใช้หน้า Data Tools หรือ Export flow เพื่อแปลง PPO เป็น ONNX และสร้างไฟล์ MT5</p>
+            <ul>
+              <li>เลือก source model</li>
+              <li>ตั้ง deploy name</li>
+              <li>export เป็น <code>.onnx</code>, <code>_config.mqh</code>, และ <code>_EA.mq5</code></li>
+              <li>นำไฟล์ไปทดสอบใน MT5 Strategy Tester ก่อนใช้งานจริง</li>
+            </ul>
+          </div>
+          <aside class="deep">
+            <strong>Deep dive ต่อ</strong>
+            อธิบาย ONNX export, MT5 folder structure, config parity, และ strategy tester checklist
+          </aside>
+        </article>
+
+        <article class="step" id="flow-manage">
+          <div class="num">8</div>
+          <div>
+            <span class="tag">Manage</span>
+            <h3>จัดการโมเดลและตั้งค่า</h3>
+            <p>ใช้หน้า <strong>Models</strong> เพื่อดู model library และใช้ <strong>Settings</strong> สำหรับ branding/API keys/ค่าระบบ</p>
+            <ul>
+              <li>ดูรายชื่อ model ที่ train แล้ว</li>
+              <li>ตรวจ artifacts ที่เกี่ยวกับ model</li>
+              <li>ตั้งค่า branding และ API key สำหรับ Gemini ใน Regime Check</li>
+            </ul>
+          </div>
+          <aside class="deep">
+            <strong>Deep dive ต่อ</strong>
+            อธิบาย model artifact set, cleanup policy, settings page, และ API key handling
+          </aside>
+        </article>
+      </div>
+    </section>
+
+    <section id="page-map">
+      <h2>Page Map: แต่ละหน้าใน Dashboard ใช้ทำอะไร</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>หน้า</th>
+            <th>ใช้เมื่อ</th>
+            <th>ผลลัพธ์ที่ควรได้</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Data Tools</td>
+            <td>เตรียม CSV, split, clean feature, export ONNX</td>
+            <td>Dataset ที่พร้อม train หรือไฟล์ MT5 สำหรับ deploy</td>
+          </tr>
+          <tr>
+            <td>Pipeline</td>
+            <td>ต้องการรัน train -> backtest -> chart/report แบบ flow เดียว</td>
+            <td>Model, backtest result, chart/report และ log รวม</td>
+          </tr>
+          <tr>
+            <td>Train</td>
+            <td>ต้องการ train แบบควบคุมละเอียด</td>
+            <td><code>.zip</code> model, norm stats, best model folder, train log</td>
+          </tr>
+          <tr>
+            <td>Backtest</td>
+            <td>ต้องการทดสอบโมเดลกับ dataset</td>
+            <td>Return, PF, DD, trades, equity curve</td>
+          </tr>
+          <tr>
+            <td>Walk-Forward</td>
+            <td>ต้องการพิสูจน์ robustness หลายช่วงเวลา</td>
+            <td>ผลลัพธ์ราย window และ verdict ว่า robust หรือไม่</td>
+          </tr>
+          <tr>
+            <td>Fine-tune</td>
+            <td>ต้องการอัปเดตโมเดลเดิมด้วยข้อมูลใหม่</td>
+            <td>โมเดลใหม่ที่ต่อยอดจาก base model</td>
+          </tr>
+          <tr>
+            <td>Analyze</td>
+            <td>ต้องการวิเคราะห์ confidence/accuracy</td>
+            <td>ความเข้าใจว่า threshold ไหนน่าใช้</td>
+          </tr>
+          <tr>
+            <td>Regime Check</td>
+            <td>สงสัยว่าตลาดเปลี่ยน regime หรือ dataset เก่าเกินไป</td>
+            <td>breakpoints, event labels, และ cutoff dataset สำหรับ train ใหม่</td>
+          </tr>
+          <tr>
+            <td>Models</td>
+            <td>ต้องการดู/จัดการ model library</td>
+            <td>ภาพรวม model และ artifacts ที่มีอยู่</td>
+          </tr>
+          <tr>
+            <td>Settings</td>
+            <td>ตั้งค่า app, branding, API keys</td>
+            <td>ค่าระบบพร้อมใช้งาน</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="decision-gates">
+      <h2>Decision Gates: เมื่อไหร่ควรไปต่อ</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Gate</th>
+            <th>ผ่าน</th>
+            <th>ยังไม่ผ่าน</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Data ready</td>
+            <td><span class="status ok">Go</span> CSV มี rows, timestamp เรียงได้, feature ครบ, มี params ถ้าจะ deploy</td>
+            <td><span class="status no">Fix</span> กลับไป DataCollector_RL หรือ Data Tools import ใหม่</td>
+          </tr>
+          <tr>
+            <td>Train healthy</td>
+            <td><span class="status ok">Go</span> reward ไม่ collapse, PPO metrics ไม่ผิดปกติ, ไม่มี error/nan</td>
+            <td><span class="status maybe">Tune</span> ลด learning rate, steps, feature, หรือเปลี่ยน dataset</td>
+          </tr>
+          <tr>
+            <td>Backtest acceptable</td>
+            <td><span class="status ok">Go</span> PF > 1, drawdown รับได้, trades ไม่บางเกินไป</td>
+            <td><span class="status no">Stop</span> ห้าม export ใช้งานจริง ให้กลับไป data/train</td>
+          </tr>
+          <tr>
+            <td>Walk-forward robust</td>
+            <td><span class="status ok">Go</span> หลาย window ผ่าน ไม่ใช่ดีแค่ช่วงเดียว</td>
+            <td><span class="status maybe">Review</span> เช็ค regime shift หรือ fine-tune ใหม่</td>
+          </tr>
+          <tr>
+            <td>MT5 test ready</td>
+            <td><span class="status ok">Go</span> export สำเร็จ EA compile/tester ได้</td>
+            <td><span class="status no">Fix</span> เช็ค ONNX, config, feature parity, MT5 logs</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="deep-dive-plan">
+      <h2>โครงสำหรับเจาะรายละเอียดในอนาคต</h2>
+      <p>
+        ตารางนี้คือ backlog ของเอกสารละเอียดที่สามารถแตกออกจาก flow หลักได้
+        เวลาเพิ่มคู่มือใหม่ ให้ใช้เลขต่อท้ายในโฟลเดอร์นี้หรือแยกเป็นโฟลเดอร์ย่อยเฉพาะหน้า
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>หัวข้อ deep dive</th>
+            <th>ควรตอบคำถามอะไร</th>
+            <th>สถานะตอนนี้</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Data prep import</td>
+            <td>รัน DataCollector_RL, หาไฟล์ใน Common Files, import CSV + params, ตรวจว่า dataset พร้อมใช้</td>
+            <td><span class="status ok">มีแล้ว</span> <a href="15_data_prep_import_detail.html">15_data_prep_import_detail.html</a></td>
+          </tr>
+          <tr>
+            <td>Data Tools detail</td>
+            <td>แต่ละปุ่มทำอะไร ใช้เมื่อไหร่ input/output คืออะไร</td>
+            <td><span class="status ok">มีแล้ว</span> <a href="../explainers/04_data_tools_modules_explained.html">04_data_tools_modules_explained.html</a></td>
+          </tr>
+          <tr>
+            <td>DataCollector & params</td>
+            <td>CSV มาจากไหน, `.params.json` สำคัญยังไง, parity คืออะไร</td>
+            <td><span class="status ok">มีแล้ว</span> <a href="../explainers/05_data_collector_v4_explained.html">05_data_collector_v4_explained.html</a></td>
+          </tr>
+          <tr>
+            <td>Reward system</td>
+            <td>agent ได้คะแนนจากอะไร ทำไม realized reward เหมาะกับ RL trading</td>
+            <td><span class="status ok">มีแล้ว</span> <a href="../explainers/07_rl_reward_explained.html">07_rl_reward_explained.html</a></td>
+          </tr>
+          <tr>
+            <td>Train page detail</td>
+            <td>Training steps, Train %, window size, max hold, PPO settings อ่านอย่างไร</td>
+            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>16_train_page_detail.html</code></td>
+          </tr>
+          <tr>
+            <td>Backtest page detail</td>
+            <td>PF, DD, confidence, mode, equity curve แปลว่าอะไร</td>
+            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>17_backtest_page_detail.html</code></td>
+          </tr>
+          <tr>
+            <td>Walk-forward detail</td>
+            <td>window split, robust verdict, rolling vs anchored, อ่านผลยังไง</td>
+            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>18_walk_forward_detail.html</code></td>
+          </tr>
+          <tr>
+            <td>Regime Check detail</td>
+            <td>HMM/KMeans/PELT, breakpoints, Gemini labels, train cutoff ใช้อย่างไร</td>
+            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>19_regime_check_detail.html</code></td>
+          </tr>
+          <tr>
+            <td>Export to MT5 detail</td>
+            <td>ONNX, EA, config, MT5 Strategy Tester checklist</td>
+            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>20_export_mt5_detail.html</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>ข้อควรระวังเวลาสอน User</h2>
+      <div class="grid two">
+        <div class="card">
+          <span class="tag red">Do not skip</span>
+          <h3>อย่าข้าม validation</h3>
+          <p>โมเดลที่ train สำเร็จไม่ได้แปลว่าเทรดดี ต้องดู backtest/walk-forward เสมอ</p>
+        </div>
+        <div class="card">
+          <span class="tag red">Do not mix</span>
+          <h3>อย่าสับสน RL กับ PyCaret</h3>
+          <p>RL ไม่ได้ใช้ UP/DOWN/FLAT target เป็นหัวใจหลัก แต่เรียนจาก action และ reward ใน environment</p>
+        </div>
+      </div>
+      <p class="callout warn">
+        ถ้า user ถามว่า “พร้อม deploy หรือยัง” ให้ตอบจาก evidence เท่านั้น:
+        training log, backtest result, walk-forward result และ MT5 tester result ไม่ใช่จากการที่ไฟล์ export สำเร็จเฉย ๆ
+      </p>
+    </section>
+  </main>
+</body>
+</html>

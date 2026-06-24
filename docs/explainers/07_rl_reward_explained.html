@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RL Reward System Explained</title>
+  <style>
+    :root {
+      --bg: #f7f7f1;
+      --paper: #ffffff;
+      --ink: #17202a;
+      --muted: #667085;
+      --line: #d8ddcf;
+      --gold: #c9a100;
+      --gold-soft: #fff4bf;
+      --green: #1c8a55;
+      --green-soft: #dff4e9;
+      --red: #c24135;
+      --red-soft: #ffe3df;
+      --blue: #245b8f;
+      --blue-soft: #e5f0fb;
+      --shadow: 0 16px 40px rgba(23, 32, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.6;
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 44px 0 28px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #f7f7f1 100%);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--gold);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 880px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .lead {
+      max-width: 860px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    main {
+      padding: 30px 0 52px;
+    }
+
+    section {
+      margin: 28px 0;
+      padding: 26px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    h2 {
+      margin: 0 0 16px;
+      font-size: 24px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .two {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .tile {
+      min-height: 100%;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf7;
+    }
+
+    .tile.good {
+      border-color: #afd8c2;
+      background: var(--green-soft);
+    }
+
+    .tile.bad {
+      border-color: #efb8b1;
+      background: var(--red-soft);
+    }
+
+    .tile.info {
+      border-color: #bdd2e9;
+      background: var(--blue-soft);
+    }
+
+    .tile.warn {
+      border-color: #ead77c;
+      background: var(--gold-soft);
+    }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eef1e6;
+      color: #3a4634;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .formula {
+      margin: 16px 0 0;
+      padding: 18px;
+      border-radius: 8px;
+      background: #17202a;
+      color: #f7f7f1;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 15px;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .step {
+      position: relative;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcf7;
+    }
+
+    .step .num {
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      margin-bottom: 10px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 15px;
+    }
+
+    th,
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: #394553;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: #f4f6ef;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: #eef1e6;
+      color: #1f2937;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+    }
+
+    .score {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .pos {
+      color: var(--green);
+    }
+
+    .neg {
+      color: var(--red);
+    }
+
+    .note {
+      padding: 14px 16px;
+      border-left: 4px solid var(--gold);
+      background: #fff9d7;
+      border-radius: 6px;
+      color: #4d4215;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      .grid,
+      .two,
+      .timeline {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 20px;
+      }
+
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">MetaFxClub RL Studio</p>
+      <h1>ระบบ Reward ของโมดูล Train RL</h1>
+      <p class="lead">
+        ตอนนี้ระบบ train ใช้ Reward แบบ <strong>realized V4 Honest Reward</strong> เป็นค่าแนะนำ
+        เป้าหมายคือให้ agent เรียนรู้จากกำไรขาดทุนที่ปิดไม้จริง มากกว่าการไล่คะแนนจากกำไรลอยตัวชั่วคราว
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section>
+      <h2>ภาพรวมแบบสั้น</h2>
+      <div class="grid">
+        <div class="tile good">
+          <span class="label">Default</span>
+          <h3>โหมดหลักคือ realized</h3>
+          <p>Train page และ Full Pipeline ส่งค่า <code>--reward_mode realized</code> เข้า <code>rl_train.py</code> เป็นค่าเริ่มต้น</p>
+        </div>
+        <div class="tile info">
+          <span class="label">Core</span>
+          <h3>Reward อยู่ใน TradingEnv</h3>
+          <p>ไฟล์หลักคือ <code>trading_env.py</code> โดย env เป็นคนคำนวณ position, P/L, force close และ reward ทุก step</p>
+        </div>
+        <div class="tile warn">
+          <span class="label">Goal</span>
+          <h3>กัน over-trading</h3>
+          <p>มีค่าปรับตอนเปิดไม้และตอนอยู่เฉย ๆ เพื่อบังคับให้ agent เทรดเมื่อสัญญาณคุ้มจริง</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Action ที่ agent เลือกได้</h2>
+      <div class="timeline">
+        <div class="step">
+          <div class="num">0</div>
+          <h3>Hold</h3>
+          <p>ไม่ทำอะไร ถ้า flat แล้ว hold จะโดนค่าปรับเล็กน้อย</p>
+        </div>
+        <div class="step">
+          <div class="num">1</div>
+          <h3>Buy</h3>
+          <p>เปิด long ถ้ายังไม่มี position และโดน spread ตอนเข้า</p>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <h3>Sell</h3>
+          <p>เปิด short ถ้ายังไม่มี position และโดน spread ตอนเข้า</p>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <h3>Close</h3>
+          <p>ปิด position ปัจจุบัน ตรงนี้คือจุดที่ reward หลักจาก net P/L ถูกให้</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>สูตร Reward ปัจจุบัน</h2>
+      <p>
+        สูตรนี้ไม่ได้ให้คะแนนจากกำไรลอยตัวเต็ม ๆ แต่ให้เป็นแค่สัญญาณช่วยเล็กน้อย
+        คะแนนใหญ่จริง ๆ จะเกิดเมื่อปิดไม้แล้วรู้ net P/L
+      </p>
+      <div class="formula">reward =
+  unrealized_delta * 0.1
++ net_pnl_on_close * 50
++ 0.01 if net_pnl_on_close > 0.5%
+- 0.005 when opening a trade
+- 0.0001 when holding flat
+- 0.0002 after holding too long
+- 0.001 when giving back more than half of a good floating profit</div>
+    </section>
+
+    <section>
+      <h2>แต่ละส่วนแปลว่าอะไร</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>เหตุการณ์</th>
+            <th>คะแนน</th>
+            <th>ความหมายสำหรับ user</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>กำไรลอยตัวดีขึ้นระหว่างถือไม้</td>
+            <td class="score pos">+ unrealized_delta x 0.1</td>
+            <td>ให้ hint เล็ก ๆ ว่าทิศทางเริ่มถูก แต่ไม่เยอะจน agent เล่นเกมกับ unrealized P/L</td>
+          </tr>
+          <tr>
+            <td>ปิดไม้แล้วได้ net P/L</td>
+            <td class="score pos">+ net_pnl x 50</td>
+            <td>นี่คือ reward หลัก ถ้าปิดได้กำไรจะบวก ถ้าปิดขาดทุนจะลบตามเงินจริง</td>
+          </tr>
+          <tr>
+            <td>ปิดไม้กำไรสุทธิมากกว่า 0.5%</td>
+            <td class="score pos">+ 0.01</td>
+            <td>ให้ bonus เฉพาะไม้ที่ชนะจริง ไม่ใช่กำไรเล็กมากที่อาจแพ้ต้นทุน</td>
+          </tr>
+          <tr>
+            <td>เปิดไม้ใหม่</td>
+            <td class="score neg">- 0.005</td>
+            <td>กันการเทรดถี่เกินไป agent ต้องมั่นใจพอถึงจะคุ้มค่าปรับนี้</td>
+          </tr>
+          <tr>
+            <td>ไม่ถือ position และเลือก Hold</td>
+            <td class="score neg">- 0.0001</td>
+            <td>กัน agent เรียนรู้ว่าไม่ต้องทำอะไรเลยตลอดเวลา</td>
+          </tr>
+          <tr>
+            <td>ถือไม้นานเกิน 70% ของ max_hold</td>
+            <td class="score neg">- 0.0002 ต่อ step</td>
+            <td>กระตุ้นให้ปิดไม้ตามเวลา ไม่ปล่อยลากยาวแบบ buy-and-hold</td>
+          </tr>
+          <tr>
+            <td>กำไรลอยตัวเคยเกิน 0.2% แล้วคืนกลับมากกว่าครึ่ง</td>
+            <td class="score neg">- 0.001</td>
+            <td>สอนให้ agent ไม่ปล่อยกำไรที่ดีไหลกลับมากเกินไป</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>ต้นทุนที่ env คิดอยู่</h2>
+      <div class="grid two">
+        <div class="tile bad">
+          <span class="label">Spread</span>
+          <h3>เข้าออกโดน spread</h3>
+          <p>ค่า default คือ <code>0.0002</code> หรือประมาณ 0.02% โดย Buy เข้าแพงขึ้น และ Sell เข้า/ออกตามฝั่งราคา</p>
+        </div>
+        <div class="tile bad">
+          <span class="label">Commission</span>
+          <h3>ปิดไม้แล้วหัก commission</h3>
+          <p>ค่า default คือ <code>0.0001</code> หรือประมาณ 0.01% ถูกนำไปหักใน <code>net_pnl</code></p>
+        </div>
+      </div>
+      <p class="note">
+        ภาพรวมต่อการเทรดหนึ่งรอบ ต้นทุนคร่าว ๆ อยู่แถว 0.05% ดังนั้น reward จึงให้ bonus เฉพาะไม้ที่กำไรสุทธิเกิน 0.5%
+        เพื่อไม่ให้ agent ดีใจกับกำไรเล็กที่อาจไม่ชนะต้นทุนจริง
+      </p>
+    </section>
+
+    <section>
+      <h2>Realized vs MTM</h2>
+      <div class="grid two">
+        <div class="tile good">
+          <span class="label">Recommended</span>
+          <h3>realized</h3>
+          <p>ให้ reward หลักตอนปิดไม้ เหมาะกับการสอนให้ agent สนใจผลลัพธ์จริงและลดพฤติกรรมถือยาวเพื่อกินคะแนนลอยตัว</p>
+        </div>
+        <div class="tile warn">
+          <span class="label">Legacy</span>
+          <h3>mtm</h3>
+          <p>ให้คะแนนตาม mark-to-market ทุก step ใช้ได้ แต่เสี่ยงทำให้ agent ติดนิสัย buy-and-hold หรือไล่ unrealized P/L</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>คำอธิบายสำหรับสอน user</h2>
+      <p>
+        ให้จำง่าย ๆ ว่า RL agent ไม่ได้เรียนจากคำว่า UP หรือ DOWN แบบโมเดล supervised ML
+        แต่เรียนจากประสบการณ์ว่า กด Buy, Sell, Hold, Close แล้วสุดท้าย equity ดีขึ้นหรือแย่ลง
+      </p>
+      <p>
+        Reward ปัจจุบันจึงออกแบบให้คล้ายการเทรดจริง: เปิดไม้มีต้นทุน, ถือยาวมีความเสี่ยง,
+        ปล่อยกำไรคืนมีค่าปรับ และปิดไม้กำไรจริงเท่านั้นที่ได้คะแนนใหญ่
+      </p>
+      <p class="note">
+        ถ้า train แล้ว reward สูงขึ้น แต่ backtest ยังขาดทุน ให้ยึด backtest และ walk-forward เป็นตัวตัดสินสุดท้าย
+        เพราะ reward เป็นสัญญาณฝึก ไม่ใช่ผลกำไรจริงของระบบ
+      </p>
+    </section>
+
+    <section>
+      <h2>ไฟล์ที่เกี่ยวข้อง</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ไฟล์</th>
+            <th>หน้าที่</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>trading_env.py</code></td>
+            <td>คำนวณ action, position, spread, commission, force close และ reward</td>
+          </tr>
+          <tr>
+            <td><code>rl_train.py</code></td>
+            <td>รับ <code>--reward_mode</code> แล้วสร้าง TradingEnv สำหรับ train/eval</td>
+          </tr>
+          <tr>
+            <td><code>rl_app.py</code></td>
+            <td>หน้า Train และ Full Pipeline ให้เลือก Reward mode และส่งค่าไปที่ CLI</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="footer">Generated as a teaching explainer for the RL-only dashboard flow.</p>
+    </section>
+  </main>
+</body>
+</html>

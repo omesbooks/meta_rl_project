@@ -1,0 +1,497 @@
+﻿<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Backtest Validation Detail</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+      --purple: #6d28d9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ede9fe;
+      color: var(--purple);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .tag.purple { background: #ede9fe; color: var(--purple); }
+    .flow { display: grid; gap: 12px; margin-top: 16px; }
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--purple);
+      background: #f4f0ff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Flow Step 4 · Validation</span>
+      <h1>Backtest โมเดลก่อนเชื่อผล Train</h1>
+      <p class="lead">
+        บทนี้อธิบายหน้า Backtest: เลือก model/dataset, ตั้ง confidence และ risk,
+        อ่านผล return/PF/drawdown/trades และตัดสินใจว่าโมเดลควรไป Walk-Forward หรือย้อนกลับไปแก้ข้อมูล/train
+      </p>
+      <nav>
+        <a href="#goal">เป้าหมาย</a>
+        <a href="#workflow">ขั้นตอนใช้งาน</a>
+        <a href="#inputs">ไฟล์ที่ใช้</a>
+        <a href="#modes">Backtest Mode</a>
+        <a href="#settings">ค่าหลัก</a>
+        <a href="#metrics">อ่าน Metrics</a>
+        <a href="#decision">ตัดสินใจ</a>
+      </nav>
+    </header>
+
+    <section id="goal">
+      <h2>Validation คืออะไรใน flow นี้</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">Proof</span>
+          <h3>พิสูจน์ด้วย trade simulation</h3>
+          <p>
+            Backtest ใช้โมเดลที่ train แล้วมาตัดสินใจบนข้อมูลย้อนหลัง
+            แล้วจำลอง position, confidence filter, risk และ exit logic
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Evidence</span>
+          <h3>ดูผลจาก metrics ไม่ใช่ความรู้สึก</h3>
+          <p>
+            ต้องดู return, profit factor, drawdown, จำนวน trades, win rate,
+            exit reasons และ skipped signals
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Gate</span>
+          <h3>ยังไม่ใช่ deploy approval</h3>
+          <p>
+            Backtest ผ่านคือไป Walk-Forward ต่อได้ ไม่ใช่แปลว่าพร้อมเทรดจริงทันที
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow">
+      <h2>ขั้นตอน Backtest ใน Dashboard</h2>
+      <p>
+        เวลาใช้สอน user ให้เริ่มจาก flow ตรงนี้ก่อน เพื่อให้เห็นว่า Backtest
+        คือการเอาโมเดลที่ train แล้วไปสอบกับข้อมูลย้อนหลัง ไม่ใช่การ train ซ้ำ
+        หลังจากนั้นค่อยขยายความว่าไฟล์ input, mode, confidence, risk และ metrics แต่ละตัวคืออะไร
+      </p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag purple">Model</span>
+            <h3>เลือก model และ test dataset</h3>
+            <p>
+              เลือก <code>&lt;model&gt;.zip</code> ที่เพิ่ง train และเลือก dataset ที่ต้องการ test.
+              ถ้าใช้ไฟล์เดียวกับ train ให้ใช้ Skip % เพื่อ test เฉพาะช่วงท้าย
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Mode</span>
+            <h3>เริ่มจาก Pure Agent</h3>
+            <p>
+              รัน <code>Pure Agent</code> เพื่อดูว่า policy เองมี edge หรือไม่
+              ก่อนเพิ่ม SL/TP และ risk management
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag green">Risk</span>
+            <h3>รัน Agent + SL/TP</h3>
+            <p>
+              ถ้า Pure Agent พอใช้ได้ ให้ลอง <code>Agent + SL/TP</code>
+              เพื่อดูผลใน setup ที่ใกล้ live มากขึ้น
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag purple">Read</span>
+            <h3>อ่านผลและ equity curve</h3>
+            <p>
+              ดู metrics ใน log, เปิด equity chart และตรวจว่า trades ไม่บางเกินไป
+              ไม่ใช่กำไรจาก trade เดียว และ drawdown ไม่เกินรับได้
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag warn">Gate</span>
+            <h3>ตัดสินใจไปต่อหรือย้อนกลับ</h3>
+            <p>
+              ถ้าผ่าน Backtest ให้ไป Walk-Forward.
+              ถ้าไม่ผ่าน ให้ย้อนกลับไป Quality Check, Regime Check, Training settings หรือ train ใหม่
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="inputs">
+      <h2>ไฟล์ที่ Backtest ใช้และสร้างออกมา</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ไฟล์ / ค่า</th>
+            <th>หน้าที่</th>
+            <th>หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>&lt;model&gt;.zip</code></td>
+            <td>โมเดลที่เลือกใน dropdown</td>
+            <td>ต้องเป็นโมเดลที่ train สำเร็จแล้ว</td>
+          </tr>
+          <tr>
+            <td><code>&lt;model&gt;_norm.csv</code></td>
+            <td>ใช้ normalize feature ตอน backtest ให้ scale ตรงกับ train</td>
+            <td>ถ้าขาด ผล backtest อาจไม่น่าเชื่อถือ</td>
+          </tr>
+          <tr>
+            <td>Test Dataset CSV</td>
+            <td>ข้อมูลที่ใช้ทดสอบโมเดล</td>
+            <td>ควรเป็นช่วงอนาคต/ท้ายไฟล์ หรือชุด out-of-sample ที่ไม่ใช้ train</td>
+          </tr>
+          <tr>
+            <td><code>&lt;model&gt;_live_bt_trades.csv</code></td>
+            <td>trade log ที่ backtest สร้าง</td>
+            <td>ใช้ตรวจ trade รายตัวและใช้ generate chart ต่อ</td>
+          </tr>
+          <tr>
+            <td><code>&lt;model&gt;_live_bt_equity.png</code></td>
+            <td>equity curve และ drawdown chart</td>
+            <td>ใช้ดูว่ากำไรเรียบหรือได้จาก trade เดียว / drawdown หนักไหม</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="modes">
+      <h2>Backtest Mode: เลือกแบบไหน</h2>
+      <div class="grid two">
+        <div class="card blue">
+          <span class="tag blue">Pure Agent</span>
+          <h3>ตรงกับ environment ตอน train</h3>
+          <p>
+            mode นี้ไม่บังคับ SL/TP เพิ่มจากภายนอก จึงเหมาะสำหรับดูว่า agent
+            ที่ train มาตัดสินใจเปิด/ปิดเองได้ดีแค่ไหน
+          </p>
+          <p>ใช้เป็น baseline หลัง train รอบแรก</p>
+        </div>
+        <div class="card green">
+          <span class="tag green">Agent + SL/TP</span>
+          <h3>ใกล้ logic live มากขึ้น</h3>
+          <p>
+            mode นี้เพิ่ม ATR-based SL/TP, risk per trade, max positions,
+            hard drawdown stop และ max hold logic
+          </p>
+          <p>ใช้ดูความเหมาะสมก่อนคิดเรื่อง deploy/live broker</p>
+        </div>
+      </div>
+      <div class="callout warn">
+        <strong>หลักการสอน:</strong>
+        ใช้ <code>Pure Agent</code> เพื่อวัดคุณภาพ policy ที่ train มา
+        แล้วใช้ <code>Agent + SL/TP</code> เพื่อดูว่าถ้าใส่ risk management แบบ live ผลยังอยู่รอดไหม
+      </div>
+    </section>
+
+    <section id="settings">
+      <h2>ค่าหลักในหน้า Backtest</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ค่า</th>
+            <th>ความหมาย</th>
+            <th>คำแนะนำเริ่มต้น</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Confidence Threshold</td>
+            <td>ถ้า action Buy/Sell มีความมั่นใจต่ำกว่าค่านี้ ระบบจะ skip signal</td>
+            <td>เริ่ม <code>0.85</code>; Close ไม่ควรถูกกรองด้วย threshold</td>
+          </tr>
+          <tr>
+            <td>Skip % / Start fraction</td>
+            <td>ข้ามช่วงต้นของ dataset แล้ว test เฉพาะท้ายไฟล์ เช่น <code>85</code> = test last 15%</td>
+            <td>ใช้เมื่อต้องการทดสอบ out-of-sample จากไฟล์เดียว</td>
+          </tr>
+          <tr>
+            <td>Risk %</td>
+            <td>ความเสี่ยงต่อ trade ใน mode live-realistic</td>
+            <td>เริ่ม <code>0.01</code> หรือ 1%</td>
+          </tr>
+          <tr>
+            <td>Max Positions</td>
+            <td>จำนวน position พร้อมกันสูงสุด</td>
+            <td>เริ่ม <code>3</code>; ถ้ามี skipped max positions เยอะให้ review strategy</td>
+          </tr>
+          <tr>
+            <td>ATR × SL / ATR × TP</td>
+            <td>ระดับ stop loss / take profit จาก ATR proxy</td>
+            <td>หน้า GUI ตั้งต้น <code>2.0</code> / <code>4.0</code> สำหรับ backtest live logic</td>
+          </tr>
+          <tr>
+            <td>Window Size</td>
+            <td>ขนาด state window</td>
+            <td>ปล่อย blank/auto เพราะ backtest auto-detect จาก observation space ของ model</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="metrics">
+      <h2>อ่าน Metrics อย่างไร</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>แปลว่าอะไร</th>
+            <th>สัญญาณที่ควรระวัง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Return / Total P&L</td>
+            <td>ผลตอบแทนรวมของ backtest</td>
+            <td>กำไรแต่ drawdown หนักมาก หรือกำไรจาก trade เดียว</td>
+          </tr>
+          <tr>
+            <td>Profit Factor (PF)</td>
+            <td>กำไรรวมจาก trade ชนะ / ขาดทุนรวมจาก trade แพ้</td>
+            <td><code>PF &lt; 1</code> คือยังไม่ผ่าน, PF สูงมากแต่ trades น้อยต้องสงสัย</td>
+          </tr>
+          <tr>
+            <td>Win Rate</td>
+            <td>สัดส่วน trade ที่ชนะ</td>
+            <td>Win rate สูงแต่ avg loss ใหญ่มาก อาจยังไม่ดี</td>
+          </tr>
+          <tr>
+            <td>Max Drawdown</td>
+            <td>การย่อตัวสูงสุดของ equity</td>
+            <td>ถ้าลึกเกินรับได้ ห้ามข้ามไป deploy</td>
+          </tr>
+          <tr>
+            <td>Total Trades</td>
+            <td>จำนวน trade ที่เกิดจริง</td>
+            <td>น้อยเกินไปทำให้ผลไม่น่าเชื่อถือ แม้ PF จะดูดี</td>
+          </tr>
+          <tr>
+            <td>Skipped low confidence</td>
+            <td>จำนวน Buy/Sell ที่ถูกกรองเพราะ confidence ต่ำ</td>
+            <td>ถ้าเยอะมาก อาจ threshold สูงเกิน หรือ policy ไม่มั่นใจจริง</td>
+          </tr>
+          <tr>
+            <td>Exit reasons</td>
+            <td>ปิดด้วย Close, SL, TP, max_hold, hard_stop หรือ end</td>
+            <td>SL/max_hold/hard_stop เยอะผิดปกติ ต้อง review mode/risk/model</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="decision">
+      <h2>Decision: ผ่าน Backtest แล้วทำอะไรต่อ</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>สถานะ</th>
+            <th>ความหมาย</th>
+            <th>ตัดสินใจ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status ok">Go</span></td>
+            <td>Return เป็นบวก, PF &gt; 1, drawdown รับได้, trades มากพอ, equity curve ไม่พัง</td>
+            <td>ไป Walk-Forward เพื่อตรวจ robustness หลายช่วงเวลา</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">Review</span></td>
+            <td>ผลใกล้ผ่าน แต่ trades น้อย, confidence skip เยอะ, หรือ mode หนึ่งผ่านอีก mode ไม่ผ่าน</td>
+            <td>ลองปรับ threshold/risk หรือกลับไป train อีก version แล้วเทียบ</td>
+          </tr>
+          <tr>
+            <td><span class="status no">Stop</span></td>
+            <td>PF ต่ำกว่า 1, DD หนัก, no trades, หรือผลดีเฉพาะช่วงเดียว</td>
+            <td>ห้าม export ใช้งานจริง ให้ย้อนกลับไป Quality Check/Train</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>ประโยคสอน user:</strong>
+        Backtest คือด่านสอบของโมเดลหลัง train ถ้าโมเดลสอบตก อย่าแก้ด้วยการ export ไปลองจริง
+        ให้กลับไปแก้ data, regime, feature หรือ training ก่อน
+      </div>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="04_train_page_detail.html">Train Page Detail</a> ·
+      <a href="06_walk_forward_detail.html">Walk-Forward Detail</a>
+    </p>
+  </main>
+</body>
+</html>
+

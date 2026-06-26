@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8">
@@ -333,6 +333,7 @@
       </p>
       <nav class="mini-nav">
         <a href="#quick-start">Quick Start</a>
+        <a href="#glossary">ศัพท์พื้นฐาน</a>
         <a href="#main-flow">Main Flow</a>
         <a href="#page-map">Page Map</a>
         <a href="#decision-gates">Decision Gates</a>
@@ -362,8 +363,126 @@
         </div>
       </div>
       <p class="callout">
-        จำง่าย ๆ: <strong>Data -> Train -> Backtest -> Walk-Forward -> Export</strong>.
+        จำง่าย ๆ: <strong>Data -> Quality/Regime Check -> Train -> Backtest -> Walk-Forward -> Export</strong>.
         ถ้าขั้นไหนไม่ผ่าน ให้ย้อนกลับไปแก้ข้อมูลหรือ hyperparameters ก่อน ไม่ข้ามไป deploy
+      </p>
+    </section>
+
+    <section id="glossary">
+      <h2>ศัพท์พื้นฐานที่ควรรู้ก่อนเริ่มใช้ Dashboard</h2>
+      <p>
+        คำเหล่านี้จะเจอบ่อยในหน้า Train, Backtest, Walk-Forward และเอกสารเจาะลึก
+        ถ้า user เป็น beginner ให้ปูความหมายตรงนี้ก่อน เพื่อให้เข้าใจว่าแต่ละขั้นกำลังพิสูจน์อะไร
+      </p>
+      <div class="grid two">
+        <div class="card">
+          <span class="tag green">Edge</span>
+          <h3>มี edge</h3>
+          <p>
+            แปลว่าโมเดลหรือระบบมีความได้เปรียบทางสถิติ ไม่ใช่แค่ชนะบางไม้เพราะโชค
+            ตัวอย่างเช่น ทดสอบหลายช่วงแล้วยังมี PF ดี, drawdown รับได้ และไม่ได้กำไรจาก trade เดียว
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag purple">Validation</span>
+          <h3>Backtest</h3>
+          <p>
+            การเอาโมเดลที่ train แล้วไปจำลองเทรดกับข้อมูลย้อนหลัง
+            เพื่อดู return, profit factor, drawdown, win rate และจำนวน trade ก่อนใช้งานจริง
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag purple">Robustness</span>
+          <h3>Walk-Forward</h3>
+          <p>
+            การแบ่งเวลาเป็นหลาย window แล้ว train/test ทีละช่วง
+            เพื่อเช็คว่าโมเดลหรือ recipe ไม่ได้ดีเฉพาะช่วงเดียวของตลาด
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag blue">Market</span>
+          <h3>Regime Check</h3>
+          <p>
+            การตรวจว่าตลาดมีช่วงนิสัยต่างกันหรือมีจุดเปลี่ยนใหญ่ไหม เช่น ก่อน/หลัง crisis หรือ event สำคัญ
+            ถ้าเจอ breakpoint อาจใช้เป็นจุดตัดข้อมูลก่อน train
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag blue">Feature</span>
+          <h3>Correlation</h3>
+          <p>
+            ค่าที่บอกว่า feature สองตัวเคลื่อนไหวคล้ายกันแค่ไหน
+            ถ้าสูงมาก เช่น 0.85 ขึ้นไป อาจแปลว่าข้อมูลซ้ำกันเยอะและทำให้โมเดลเรียนรู้หนักเกินจำเป็น
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag blue">Feature</span>
+          <h3>Redundant</h3>
+          <p>
+            feature ที่ให้ข้อมูลซ้ำกับ feature อื่นมากเกินไป
+            การ Clean Redundant Features คือการลด input ซ้ำ ๆ เพื่อลด noise และลดโอกาส overfit
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag blue">Training</span>
+          <h3>Window Size</h3>
+          <p>
+            จำนวนแท่งเทียนย้อนหลังที่โมเดลเห็นในหนึ่งครั้ง เช่น <code>10</code>
+            หมายถึงให้โมเดลดูบริบท 10 bars ล่าสุดก่อนตัดสินใจ Hold, Buy, Sell หรือ Close
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag blue">Training</span>
+          <h3>Training Steps</h3>
+          <p>
+            จำนวนครั้งที่ agent ได้ฝึกตัดสินใจใน environment
+            steps มากขึ้นไม่เท่ากับดีขึ้นเสมอ ต้องดู log, backtest และ walk-forward ประกอบ
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag purple">Filter</span>
+          <h3>Confidence Threshold</h3>
+          <p>
+            ระดับความมั่นใจขั้นต่ำก่อนอนุญาตให้เปิด Buy/Sell เช่น <code>0.85</code>
+            ถ้าต่ำกว่านี้ระบบจะ skip signal แต่ action Close ไม่ควรถูกกรอง
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag">Improve</span>
+          <h3>Fine-tune</h3>
+          <p>
+            การเอาโมเดลเดิมมาฝึกต่อด้วยข้อมูลใหม่ เหมาะเมื่อโมเดลเดิมยังพอมี edge
+            แต่ตลาดเปลี่ยนหรือมีข้อมูลล่าสุดเพิ่มเข้ามา
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag green">Gate</span>
+          <h3>โมเดลผ่าน gate</h3>
+          <p>
+            หมายถึงผ่านเงื่อนไขตรวจสอบในแต่ละด่าน เช่น data ใช้ได้, train healthy,
+            backtest รับได้, walk-forward ไม่พังหลาย window ยังไม่ใช่การรับประกันว่าจะกำไรจริง
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag">Library</span>
+          <h3>Models</h3>
+          <p>
+            หน้าเก็บและตรวจรายการโมเดลที่ train แล้ว รวมถึง artifact ที่เกี่ยวข้อง
+            เช่น model zip, normalization stats, params และผล backtest
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag green">Flow</span>
+          <h3>Pipeline</h3>
+          <p>
+            หน้าที่รันหลายขั้นต่อกันแบบรวดเดียว เช่น dataset -> train -> backtest -> chart/report
+            เหมาะกับ flow ที่ตั้งค่าพร้อมแล้ว ส่วนหน้า Train/Backtest แยกเหมาะกับการคุมรายละเอียดเอง
+          </p>
+        </div>
+      </div>
+      <p class="callout">
+        ประโยคสอน user แบบสั้น:
+        <strong>เรายังไม่เชื่อโมเดลจากการ train สำเร็จ แต่จะเชื่อมากขึ้นเมื่อผ่าน gate ด้วยหลักฐานจาก Backtest และ Walk-Forward</strong>
       </p>
     </section>
 
@@ -385,7 +504,7 @@
           </div>
           <aside class="deep">
             <strong>Deep dive ต่อ</strong>
-            <a href="15_data_prep_import_detail.html">15_data_prep_import_detail.html</a>
+            <a href="02_data_prep_import_detail.html">02_data_prep_import_detail.html</a>
             อธิบาย DataCollector_RL, Common Files, <code>.params.json</code>, และการเช็คว่า CSV มีข้อมูลจริง
           </aside>
         </article>
@@ -395,17 +514,20 @@
           <div>
             <span class="tag blue">Quality Check</span>
             <h3>เช็คคุณภาพข้อมูลและ Feature</h3>
-            <p>ถ้า dataset มี feature จำนวนมาก ให้ใช้ Feature Analysis & Cleanup เพื่อดู correlation และลด feature ซ้ำ</p>
+            <p>ก่อน train รอบจริง ให้เช็คทั้งคุณภาพไฟล์, feature ที่ซ้ำกัน และ regime ของตลาด เพื่อให้ dataset ที่เอาไปฝึกไม่ปนช่วงตลาดที่คนละนิสัยกันมากเกินไป</p>
             <ul>
               <li>ใช้ Show Correlation Matrix เพื่อดู feature ที่สัมพันธ์กันสูง</li>
               <li>ใช้ Clean Redundant Features เมื่ออยากลด input ที่ซ้ำกัน</li>
+              <li>ใช้ Regime Check ก่อน train ถ้า dataset ย้อนหลังยาว หรือสงสัยว่าตลาดมี structural break</li>
+              <li>ถ้า Regime Check เจอจุดเปลี่ยนสำคัญ ให้สร้าง cutoff dataset ก่อนนำไป train</li>
               <li>Split Train/Test by Date ใช้เมื่ออยากแยกไฟล์ train/test ชัดเจน</li>
               <li>สำหรับ RL basic flow สามารถใช้ Train % ในหน้า Train/Pipeline แทน split เป็นไฟล์ได้</li>
             </ul>
           </div>
           <aside class="deep">
             <strong>Deep dive ต่อ</strong>
-            อธิบาย Data Tools แต่ละโมดูล, correlation threshold, และ train/test discipline
+            <a href="03_quality_check_detail.html">03_quality_check_detail.html</a>
+            อธิบาย Data Tools, correlation threshold, Regime Check, breakpoint table, train cutoff, และ train/test discipline
           </aside>
         </article>
 
@@ -425,6 +547,7 @@
           </div>
           <aside class="deep">
             <strong>Deep dive ต่อ</strong>
+            <a href="04_train_page_detail.html">04_train_page_detail.html</a>
             อธิบาย PPO settings, reward, train pct, window size, max hold, และการอ่าน train log
           </aside>
         </article>
@@ -444,6 +567,7 @@
           </div>
           <aside class="deep">
             <strong>Deep dive ต่อ</strong>
+            <a href="05_backtest_page_detail.html">05_backtest_page_detail.html</a>
             อธิบาย confidence filter, backtest modes, metric interpretation, และ common failure patterns
           </aside>
         </article>
@@ -452,18 +576,18 @@
           <div class="num">5</div>
           <div>
             <span class="tag purple">Robustness</span>
-            <h3>Walk-Forward และ Regime Check</h3>
-            <p>ถ้า backtest ดูดี ให้ใช้ Walk-Forward เพื่อเช็คว่า edge ไม่ได้ดีแค่ช่วงเดียว และใช้ Regime Check เมื่อตลาดเปลี่ยน regime</p>
+            <h3>Walk-Forward</h3>
+            <p>ถ้า backtest ดูดี ให้ใช้ Walk-Forward เพื่อเช็คว่า edge ไม่ได้ดีแค่ช่วงเดียว และโมเดลยังพอรับมือกับหลายช่วงเวลาได้</p>
             <ul>
               <li>Walk-Forward เทรน/ทดสอบหลายช่วงเวลา</li>
-              <li>Regime Check ช่วยหาจุดเปลี่ยนโครงสร้างตลาด</li>
               <li>ถ้า window ส่วนใหญ่ไม่ผ่าน ให้ถือว่าโมเดลยังไม่ robust</li>
-              <li>ถ้าเจอ regime shift ให้ตัด dataset หรือ fine-tune ใหม่</li>
+              <li>ถ้าผลล้มหลาย window ให้ย้อนกลับไปดู data quality, Regime Check, หรือ fine-tune ใหม่</li>
             </ul>
           </div>
           <aside class="deep">
             <strong>Deep dive ต่อ</strong>
-            อธิบาย walk-forward custom logic, regime methods, breakpoint table, และ train cutoff
+            <a href="06_walk_forward_detail.html">06_walk_forward_detail.html</a>
+            อธิบาย walk-forward custom logic, window split, rolling vs anchored, และ robust verdict
           </aside>
         </article>
 
@@ -572,8 +696,8 @@
           </tr>
           <tr>
             <td>Regime Check</td>
-            <td>สงสัยว่าตลาดเปลี่ยน regime หรือ dataset เก่าเกินไป</td>
-            <td>breakpoints, event labels, และ cutoff dataset สำหรับ train ใหม่</td>
+            <td>ใช้ก่อน train เมื่อ dataset ย้อนหลังยาว หรือสงสัยว่าตลาดเปลี่ยน regime</td>
+            <td>breakpoints, event labels, และ cutoff dataset ที่เหมาะกว่าเพื่อใช้ train</td>
           </tr>
           <tr>
             <td>Models</td>
@@ -604,6 +728,11 @@
             <td>Data ready</td>
             <td><span class="status ok">Go</span> CSV มี rows, timestamp เรียงได้, feature ครบ, มี params ถ้าจะ deploy</td>
             <td><span class="status no">Fix</span> กลับไป DataCollector_RL หรือ Data Tools import ใหม่</td>
+          </tr>
+          <tr>
+            <td>Pre-train regime checked</td>
+            <td><span class="status ok">Go</span> dataset เหมาะกับช่วงตลาดที่จะ train หรือสร้าง cutoff dataset แล้ว</td>
+            <td><span class="status maybe">Review</span> ใช้ Regime Check ก่อน train ถ้าข้อมูลยาว/เก่า/มี event ใหญ่</td>
           </tr>
           <tr>
             <td>Train healthy</td>
@@ -647,12 +776,17 @@
           <tr>
             <td>Data prep import</td>
             <td>รัน DataCollector_RL, หาไฟล์ใน Common Files, import CSV + params, ตรวจว่า dataset พร้อมใช้</td>
-            <td><span class="status ok">มีแล้ว</span> <a href="15_data_prep_import_detail.html">15_data_prep_import_detail.html</a></td>
+            <td><span class="status ok">มีแล้ว</span> <a href="02_data_prep_import_detail.html">02_data_prep_import_detail.html</a></td>
           </tr>
           <tr>
             <td>Data Tools detail</td>
             <td>แต่ละปุ่มทำอะไร ใช้เมื่อไหร่ input/output คืออะไร</td>
             <td><span class="status ok">มีแล้ว</span> <a href="../explainers/04_data_tools_modules_explained.html">04_data_tools_modules_explained.html</a></td>
+          </tr>
+          <tr>
+            <td>Quality Check detail</td>
+            <td>feature correlation, clean redundant features, Regime Check, cutoff dataset ก่อน train</td>
+            <td><span class="status ok">มีแล้ว</span> <a href="03_quality_check_detail.html">03_quality_check_detail.html</a></td>
           </tr>
           <tr>
             <td>DataCollector & params</td>
@@ -667,27 +801,27 @@
           <tr>
             <td>Train page detail</td>
             <td>Training steps, Train %, window size, max hold, PPO settings อ่านอย่างไร</td>
-            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>16_train_page_detail.html</code></td>
+            <td><span class="status ok">มีแล้ว</span> <a href="04_train_page_detail.html">04_train_page_detail.html</a></td>
           </tr>
           <tr>
             <td>Backtest page detail</td>
             <td>PF, DD, confidence, mode, equity curve แปลว่าอะไร</td>
-            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>17_backtest_page_detail.html</code></td>
+            <td><span class="status ok">มีแล้ว</span> <a href="05_backtest_page_detail.html">05_backtest_page_detail.html</a></td>
           </tr>
           <tr>
             <td>Walk-forward detail</td>
             <td>window split, robust verdict, rolling vs anchored, อ่านผลยังไง</td>
-            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>18_walk_forward_detail.html</code></td>
-          </tr>
-          <tr>
-            <td>Regime Check detail</td>
-            <td>HMM/KMeans/PELT, breakpoints, Gemini labels, train cutoff ใช้อย่างไร</td>
-            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>19_regime_check_detail.html</code></td>
+            <td><span class="status ok">มีแล้ว</span> <a href="06_walk_forward_detail.html">06_walk_forward_detail.html</a></td>
           </tr>
           <tr>
             <td>Export to MT5 detail</td>
             <td>ONNX, EA, config, MT5 Strategy Tester checklist</td>
-            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>20_export_mt5_detail.html</code></td>
+            <td><span class="status maybe">รอทำ</span> แนะนำชื่อไฟล์: <code>07_export_mt5_detail.html</code></td>
+          </tr>
+          <tr>
+            <td>Project folder map</td>
+            <td>reference สำหรับ root folders, artifacts, MT5 packages, docs และ cleanup rule</td>
+            <td><span class="status ok">มีแล้ว</span> <a href="90_project_folder_map.html">90_project_folder_map.html</a></td>
           </tr>
         </tbody>
       </table>
@@ -715,3 +849,4 @@
   </main>
 </body>
 </html>
+

@@ -1,0 +1,813 @@
+﻿<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quality Check Detail</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 34px 22px 56px;
+    }
+
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #dbeafe;
+      color: var(--blue);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+
+    .lead {
+      max-width: 900px;
+      color: var(--muted);
+      font-size: 18px;
+      margin-top: 12px;
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .card {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+
+    .flow {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    th {
+      background: #eef3ec;
+      color: #233044;
+      font-size: 14px;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .callout {
+      border-left: 5px solid var(--green);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+
+    .callout.warn {
+      border-left-color: var(--yellow);
+      background: var(--soft-warn);
+    }
+
+    .example-figure {
+      margin: 16px 0 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfdf9;
+      padding: 12px;
+    }
+
+    .example-figure img {
+      display: block;
+      width: 100%;
+      max-height: 760px;
+      object-fit: contain;
+      border-radius: 6px;
+      background: white;
+    }
+
+    .example-figure figcaption {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+
+    .footer {
+      color: var(--muted);
+      font-size: 14px;
+      margin-top: 18px;
+      text-align: center;
+    }
+
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Flow Step 2 · Quality Check</span>
+      <h1>เช็คคุณภาพข้อมูลและ Feature ก่อน Train</h1>
+      <p class="lead">
+        บทนี้อธิบายขั้นก่อนเริ่ม train รอบจริง: ตรวจว่า CSV ใช้ได้,
+        feature ไม่ซ้ำจนทำให้โมเดลจำ noise, และ regime ของตลาดเหมาะกับช่วงที่จะนำโมเดลไปใช้
+      </p>
+      <nav>
+        <a href="#why">ทำไมต้องเช็ค</a>
+        <a href="#workflow">ขั้นตอนใช้งาน</a>
+        <a href="#checks">เช็คอะไรบ้าง</a>
+        <a href="#feature-analysis">Feature Analysis</a>
+        <a href="#regime-check">Regime Check</a>
+        <a href="#decision">ตัดสินใจไปต่อ</a>
+      </nav>
+    </header>
+
+    <section id="why">
+      <h2>ทำไม Quality Check ต้องมาก่อน Train</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">Data</span>
+          <h3>ข้อมูลผิด โมเดลก็ผิด</h3>
+          <p>
+            ถ้า timestamp เพี้ยน, rows น้อย, missing เยอะ หรือไฟล์ไม่มี <code>.params.json</code>
+            ผล train/backtest จะตีความยากตั้งแต่ต้น
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Feature</span>
+          <h3>Feature ซ้ำทำให้ overfit ง่าย</h3>
+          <p>
+            Indicator หลายตัวอาจเล่าเรื่องเดียวกัน ถ้าใส่ซ้ำมากเกินไป agent อาจจำ noise
+            และ neural network ใหญ่เกินจำเป็น
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Regime</span>
+          <h3>ตลาดคนละช่วงอาจคนละนิสัย</h3>
+          <p>
+            ข้อมูลย้อนหลังยาวมากอาจปนช่วง crisis, COVID, Brexit หรือ volatility shift
+            ควรดู regime ก่อนตัดสินใจใช้ full history
+          </p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>จำง่าย ๆ:</strong>
+        Quality Check คือด่านคัดข้อมูลก่อนให้โมเดลเรียน ไม่ใช่การทำให้ผลดูดีขึ้น
+        แต่เป็นการลดโอกาสที่โมเดลเรียนจากข้อมูลผิดช่วง ผิดกติกา หรือ feature ที่ซ้ำกันมากเกินไป
+      </div>
+    </section>
+
+    <section id="workflow">
+      <h2>ขั้นตอนใช้งานใน Dashboard</h2>
+      <p>
+        เวลาใช้สอน user ให้เริ่มจาก flow สั้น ๆ ตรงนี้ก่อน เพื่อให้เห็นว่าหน้า Quality Check
+        ต้องเดินจากไฟล์ข้อมูลไปสู่ไฟล์ที่พร้อม train อย่างไร หลังจากนั้นค่อยลงรายละเอียดว่า
+        Feature Analysis, Clean Redundant Features และ Regime Check แต่ละตัวทำหน้าที่อะไร
+      </p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag green">Start</span>
+            <h3>เลือก dataset ที่ import แล้ว</h3>
+            <p>
+              ใช้ไฟล์ที่มาจาก Step 1 เช่น <code>training_data_usdjpy_h4_dataset.csv</code>
+              และควรมี <code>.params.json</code> คู่กันถ้าตั้งใจจะ deploy ไป MT5
+            </p>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Feature</span>
+            <h3>ดู correlation ก่อน</h3>
+            <p>
+              ไปที่ <strong>Data Tools → Feature Analysis & Cleanup</strong>,
+              เลือก Source CSV, ใช้ threshold <code>0.85</code>,
+              แล้วกด <strong>Show Correlation Matrix</strong>
+            </p>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag blue">Clean</span>
+            <h3>Clean เฉพาะเมื่อมีเหตุผล</h3>
+            <p>
+              ถ้า log แสดงคู่ feature ซ้ำกันจำนวนมาก ให้กด
+              <strong>Clean Redundant Features</strong>
+              แล้วนำไฟล์ <code>_clean.csv</code> ไปใช้ต่อ
+            </p>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag warn">Regime</span>
+            <h3>เช็ค regime ก่อน train รอบจริง</h3>
+            <p>
+              ไปหน้า <strong>Regime Check</strong>, Browse CSV, เลือก HMM 3-state ก่อน,
+              กด Run Detection แล้วอ่าน breakpoint table
+            </p>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag green">Handoff</span>
+            <h3>เลือกไฟล์ที่จะส่งต่อไป Train</h3>
+            <p>
+              ถ้า dataset ผ่าน ให้ใช้ไฟล์เดิมหรือไฟล์ <code>_clean.csv</code>.
+              ถ้ามี breakpoint ที่ควรใช้ ให้กด <strong>Use Selected as Train Cutoff</strong>
+              เพื่อสร้างไฟล์ <code>_from_YYYY-MM-DD.csv</code> แล้วค่อยไปหน้า Train
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="checks">
+      <h2>เช็คอะไรบ้างก่อน Train</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>หัวข้อ</th>
+            <th>ควรเห็นอะไร</th>
+            <th>ถ้าไม่ผ่านควรทำอะไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ไฟล์และ sidecar</td>
+            <td>มี <code>.csv</code> และถ้าจะ deploy ควรมี <code>.params.json</code> คู่กัน</td>
+            <td>กลับไป import จาก DataCollector_RL ใหม่ หรือ attach params ให้ถูกไฟล์</td>
+          </tr>
+          <tr>
+            <td>เวลาและลำดับข้อมูล</td>
+            <td>มี column <code>timestamp</code>, เรียงตามเวลาได้, ไม่มีช่วงย้อนกลับผิดปกติ</td>
+            <td>แก้ไฟล์ต้นทางหรือ export ใหม่จาก MT5 ก่อน train</td>
+          </tr>
+          <tr>
+            <td>OHLCV และ feature หลัก</td>
+            <td>มี <code>open</code>, <code>high</code>, <code>low</code>, <code>close</code> และ feature ไม่ว่างทั้ง column</td>
+            <td>ตรวจ DataCollector_RL, indicator compile, symbol/timeframe และ warm-up bars</td>
+          </tr>
+          <tr>
+            <td>Feature correlation</td>
+            <td>รู้ว่าคู่ feature ไหน correlate สูงกว่า threshold เช่น <code>0.85</code></td>
+            <td>ใช้ Clean Redundant Features หรือเลือก feature set ที่เล็กลง</td>
+          </tr>
+          <tr>
+            <td>Regime shift</td>
+            <td>รู้ว่ามี breakpoint ใหญ่ไหม และควรใช้ full history หรือ cutoff dataset</td>
+            <td>ใช้ Regime Check แล้วเลือก cutoff dataset ก่อนไปหน้า Train</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="feature-analysis">
+      <h2>Feature Analysis & Cleanup ใช้ทำอะไร</h2>
+      <div class="grid two">
+        <div class="card blue">
+          <span class="tag blue">Show</span>
+          <h3>Show Correlation Matrix</h3>
+          <p>
+            ใช้ดูว่า feature คู่ไหนสัมพันธ์กันสูง ระบบจะอ่าน numeric feature,
+            ตัด column ที่ไม่ควรวิเคราะห์ เช่น <code>timestamp</code>, OHLCV,
+            และชื่อที่เสี่ยง look-ahead เช่น <code>future_</code>, <code>target</code>
+          </p>
+          <p>
+            Output หลักคือรูป <code>&lt;csv_stem&gt;_correlation.png</code>
+            และ log รายชื่อคู่ feature ที่เกิน threshold
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">Clean</span>
+          <h3>Clean Redundant Features</h3>
+          <p>
+            ใช้ลบ feature ที่ซ้ำกันมากโดยดู correlation แบบ greedy:
+            ถ้าคู่ใดเกิน threshold ระบบจะเก็บตัวที่สัมพันธ์กับ feature อื่นน้อยกว่า
+            และ drop ตัวที่ซ้ำกว่า
+          </p>
+          <p>
+            Output คือไฟล์ใหม่ <code>&lt;csv_stem&gt;_clean.csv</code>
+            โดยไฟล์เดิมยังอยู่ ไม่ถูกลบทิ้ง
+          </p>
+        </div>
+      </div>
+
+      <h3 style="margin-top: 20px;">วิธีอ่าน Correlation Matrix จากตัวอย่าง</h3>
+      <p>
+        ตัวอย่างจากไฟล์ <code>uj_h4_dataset_correlation.png</code> หลังจากกด
+        <strong>Show Correlation Matrix</strong> ของ <code>uj_h4_dataset.csv</code>:
+        รูปนี้มี <code>75</code> features และใช้ threshold <code>0.85</code>
+      </p>
+      <figure class="example-figure">
+        <img src="../../uj_h4_dataset_correlation.png" alt="Correlation matrix example for uj_h4_dataset" />
+        <figcaption>
+          สีแดง/ส้มคือ feature ที่สัมพันธ์กันสูง ส่วนตัวเลขในช่องคือคู่ที่ correlation เกิน threshold
+          เช่น <code>0.91</code>, <code>0.97</code>, <code>1.00</code>
+        </figcaption>
+      </figure>
+
+      <table>
+        <thead>
+          <tr>
+            <th>สิ่งที่เห็นในรูป</th>
+            <th>แปลว่าอะไร</th>
+            <th>ควรอธิบายกับ user อย่างไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>เส้นทแยงสีแดงเข้ม</td>
+            <td>feature เทียบกับตัวเอง จึงได้ correlation = <code>1.00</code></td>
+            <td>ให้ ignore เส้นทแยงหลัก เพราะไม่ได้บอกปัญหา feature ซ้ำ</td>
+          </tr>
+          <tr>
+            <td>ช่องสีน้ำเงินเข้มจำนวนมาก</td>
+            <td>feature คู่นั้นสัมพันธ์กันต่ำหรือแทบไม่ซ้ำกัน</td>
+            <td>บริเวณนี้ไม่ใช่ปัญหาหลัก ไม่ต้อง clean เพราะสีเข้มอย่างเดียว</td>
+          </tr>
+          <tr>
+            <td>กลุ่มสีส้ม/แดงเป็นบล็อก</td>
+            <td>feature หลายตัวในกลุ่มเดียวกันเล่าเรื่องใกล้กันมาก</td>
+            <td>ให้มองเป็น candidate redundant cluster เช่นกลุ่ม trend, oscillator, volatility</td>
+          </tr>
+          <tr>
+            <td>ตัวเลข <code>0.85+</code> บนช่อง</td>
+            <td>ระบบใส่ตัวเลขเฉพาะคู่ที่เกิน threshold</td>
+            <td>ให้ดูตัวเลขและ log <strong>Top correlated pairs</strong> คู่กัน ไม่อ่านจากสีอย่างเดียว</td>
+          </tr>
+          <tr>
+            <td>บล็อกของ <code>ema_20</code>, <code>ema_50</code>, <code>ema_100</code>, <code>ema_200</code>, <code>ema_long</code></td>
+            <td>moving averages หลายตัวสัมพันธ์กันสูงมาก บางคู่ใกล้ <code>1.00</code></td>
+            <td>อธิบายว่าเป็น feature trend ที่ซ้ำกันบางส่วน การ clean อาจเก็บบางตัวและตัดบางตัวออก</td>
+          </tr>
+          <tr>
+            <td>กลุ่ม <code>rsi_min</code>, <code>rsi_max</code>, <code>rsi_mean</code></td>
+            <td>สถิติ RSI หลายแบบเคลื่อนตามกันสูง เช่นในรูปมีหลายช่องราว <code>0.90+</code></td>
+            <td>ให้ user เข้าใจว่า indicator family เดียวกันมักซ้ำกัน ไม่จำเป็นต้องใส่ทุก variant เสมอ</td>
+          </tr>
+          <tr>
+            <td>กลุ่ม <code>atr_min</code>, <code>atr_max</code>, <code>atr_mean</code>, <code>atr_std</code></td>
+            <td>volatility features ในตระกูล ATR อาจซ้ำกันสูง</td>
+            <td>ถ้า clean แล้วลด feature กลุ่มนี้ ถือว่าเป็นการลด input ที่ซ้ำ ไม่ใช่ลบข้อมูลราคา</td>
+          </tr>
+          <tr>
+            <td>กลุ่ม candle pattern ส่วนใหญ่สีน้ำเงิน/กระจาย</td>
+            <td>pattern บางตัวไม่ได้สัมพันธ์สูงกับ indicator กลุ่มหลัก</td>
+            <td>ไม่ควรลบ candle features เพียงเพราะดูไม่เด่นในภาพ ต้องดู threshold/log เป็นหลัก</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>วิธีสอนแบบเร็ว:</strong>
+        ให้ user ดูสามอย่างตามลำดับ: 1) มีบล็อกสีแดง/ส้มใหญ่ไหม,
+        2) log บอกคู่ไหนเกิน threshold บ้าง, 3) feature ที่ซ้ำเป็น family เดียวกันหรือไม่
+        ถ้าใช่ค่อยพิจารณา Clean Redundant Features
+      </div>
+
+      <h3 style="margin-top: 20px;">Clean Redundant Features ทำงานยังไง</h3>
+      <p>
+        ปุ่มนี้ไม่ได้ลบ feature แบบสุ่ม และไม่ได้แก้ไฟล์เดิมโดยตรง
+        แต่จะสร้างไฟล์ใหม่ <code>&lt;csv_stem&gt;_clean.csv</code>
+        ที่ตัด feature ซ้ำตาม correlation threshold
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ขั้น</th>
+            <th>โปรแกรมทำอะไร</th>
+            <th>ความหมายสำหรับ user</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. เลือก feature ที่เอามาวิเคราะห์</td>
+            <td>ใช้เฉพาะ numeric feature และข้าม <code>timestamp</code>, <code>symbol</code>, OHLCV, <code>volume</code>, <code>future_</code>, <code>target</code></td>
+            <td>ระบบพยายามไม่เอา column ราคา/label/leaky column มาใช้ตัดสิน feature ซ้ำ</td>
+          </tr>
+          <tr>
+            <td>2. คำนวณ absolute correlation</td>
+            <td>คำนวณค่า correlation แบบค่าสัมบูรณ์ระหว่าง feature ทุกคู่</td>
+            <td>ทั้งสัมพันธ์ทางเดียวกันและสวนทางกันแรง ๆ ถือว่าอาจซ้ำกันได้</td>
+          </tr>
+          <tr>
+            <td>3. หา feature pair ที่ซ้ำที่สุด</td>
+            <td>ดูคู่ที่มี correlation สูงสุด และต้องสูงกว่า threshold เช่น <code>0.85</code></td>
+            <td>เริ่มแก้จากคู่ที่ซ้ำหนักที่สุดก่อน</td>
+          </tr>
+          <tr>
+            <td>4. เลือกว่าจะ drop ตัวไหน</td>
+            <td>ในคู่ที่ซ้ำกัน ระบบคำนวณว่า feature ไหนมี average correlation กับ feature อื่นสูงกว่า แล้ว drop ตัวนั้น</td>
+            <td>ตัวที่เชื่อมโยงกับคนอื่นเยอะกว่า มัก redundant กว่า จึงถูกตัดออก</td>
+          </tr>
+          <tr>
+            <td>5. ทำซ้ำจน clean</td>
+            <td>วนซ้ำจนไม่เหลือคู่ feature ที่ correlation สูงกว่า threshold</td>
+            <td>ผลลัพธ์คือชุด feature ที่เบาลงและซ้ำกันน้อยลง</td>
+          </tr>
+          <tr>
+            <td>6. บันทึกไฟล์ใหม่</td>
+            <td>เก็บ non-feature columns ไว้ แล้วต่อด้วย feature ที่ระบบเลือกเก็บ จากนั้น save เป็น <code>_clean.csv</code></td>
+            <td>ไฟล์เดิมยังอยู่ ให้ใช้ไฟล์ clean ไป train เปรียบเทียบได้</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <strong>ข้อควรระวัง:</strong>
+        ถ้าทำ strict train/test split แยกไฟล์ชัดเจน ควรเลือก feature จากฝั่ง train แล้วใช้ selection เดียวกันกับ test
+        เพื่อเลี่ยงการใช้ข้อมูล test มาช่วยตัดสิน feature selection
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ค่า / ปุ่ม</th>
+            <th>ความหมาย</th>
+            <th>คำแนะนำสำหรับสอน user</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Correlation threshold</code></td>
+            <td>ค่าที่ใช้บอกว่า feature สองตัวซ้ำกันมากแค่ไหน ค่า default คือ <code>0.85</code></td>
+            <td>เริ่มที่ <code>0.85</code> ก่อน ถ้าลบเยอะเกินให้เพิ่มเป็น <code>0.90</code></td>
+          </tr>
+          <tr>
+            <td><code>Show Correlation Matrix</code></td>
+            <td>ดูภาพรวมก่อนว่ามีปัญหาไหม</td>
+            <td>ใช้ก่อน clean เพื่อให้ user เห็นเหตุผล ไม่ใช่กดลบแบบไม่รู้ว่าเกิดอะไรขึ้น</td>
+          </tr>
+          <tr>
+            <td><code>Clean Redundant Features</code></td>
+            <td>สร้าง CSV ใหม่ที่ตัด feature ซ้ำออก</td>
+            <td>ใช้เมื่อ feature เยอะมากหรือ correlation สูงหลายคู่ แล้วค่อยนำไฟล์ <code>_clean.csv</code> ไป train</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="regime-check">
+      <h2>Regime Check ใช้ตอนไหน</h2>
+      <p>
+        Regime Check เป็นส่วนหนึ่งของ Quality Check เพราะมันช่วยตอบคำถามก่อน train ว่า
+        <strong>เราควรใช้ข้อมูลทั้งประวัติ หรือควรเริ่ม train จากช่วงตลาดใหม่</strong>
+      </p>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">ควรใช้</span>
+          <h3>Dataset ย้อนหลังยาว</h3>
+          <p>เช่นข้อมูลหลายปีหรือหลาย cycle ที่อาจผ่าน crisis, policy change หรือ volatility shift</p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">ควรใช้</span>
+          <h3>ผล train/backtest แปลก</h3>
+          <p>เช่น train ดูดีแต่ test แย่ หรือช่วงหลังตลาดดูนิสัยไม่เหมือนอดีต</p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">ระวัง</span>
+          <h3>ไม่ใช่สัญญาณซื้อขาย</h3>
+          <p>Regime Check ใช้เลือกช่วงข้อมูล ไม่ใช่ indicator สำหรับเปิด order โดยตรง</p>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>ใช้ดูอะไร</th>
+            <th>เหมาะกับการสอนแบบไหน</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>HMM 3-state</td>
+            <td>มองตลาดเป็น hidden states เช่น bull/bear/sideways จาก return และ volatility</td>
+            <td>ใช้เป็นค่าแนะนำเริ่มต้น เพราะ dashboard ตั้งเป็น method หลัก</td>
+          </tr>
+          <tr>
+            <td>K-Means rolling</td>
+            <td>จัดกลุ่ม rolling mean/std/slope เพื่อดูช่วงตลาดที่มีลักษณะคล้ายกัน</td>
+            <td>เหมาะกับการ demo เพราะเร็วและเข้าใจง่าย</td>
+          </tr>
+          <tr>
+            <td>PELT</td>
+            <td>หา changepoint ทางคณิตศาสตร์ โดยปรับ penalty เพื่อให้ตัดมาก/น้อย</td>
+            <td>ใช้เมื่อต้องการมอง structural break แบบจริงจัง แต่รันช้ากว่า</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 20px;">ค่าแนะนำสำหรับ Regime Check</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>ค่า</th>
+            <th>แนะนำให้ตั้ง</th>
+            <th>เหตุผล / ข้อควรระวัง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Method</td>
+            <td><code>HMM</code></td>
+            <td>
+              ใช้เป็นค่าเริ่มต้น เพราะเหมาะกับการหา hidden regime จากพฤติกรรมราคา
+              โดยดู return และ volatility ไม่ได้ดูข่าวโดยตรง
+            </td>
+          </tr>
+          <tr>
+            <td>Number of states</td>
+            <td><code>3</code> states</td>
+            <td>
+              ใช้ 3 ก่อน เพราะอธิบายง่ายและไม่แตก regime มากเกินไป:
+              มองเป็นตลาดนิ่ง/ผันผวน/อีกสภาพตลาดหนึ่ง เช่น trend หรือ distribution ที่ต่างออกไป
+            </td>
+          </tr>
+          <tr>
+            <td>Top-K shocks</td>
+            <td><code>15</code></td>
+            <td>
+              ใช้สำหรับ refresh known events ด้วย Gemini เพื่อเอา event มาเทียบกับ breakpoint.
+              ค่านี้ไม่ได้เปลี่ยนวิธีที่ HMM หา breakpoint โดยตรง
+            </td>
+          </tr>
+          <tr>
+            <td>เปลี่ยนเป็น 2 states เมื่อไหร่</td>
+            <td>เฉพาะกรณีอยาก demo ง่ายมาก</td>
+            <td>
+              2 states มักแปลเป็น low-vol/high-vol ได้ง่าย แต่หยาบเกินไปสำหรับการเลือกช่วง train จริง
+            </td>
+          </tr>
+          <tr>
+            <td>ใช้ 4-5 states เมื่อไหร่</td>
+            <td>ใช้เฉพาะตอน advanced review</td>
+            <td>
+              state เยอะขึ้นอาจจับรายละเอียดได้มากขึ้น แต่เสี่ยง overfit,
+              breakpoint เยอะเกิน และทำให้เลือก cutoff ยากขึ้น
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top: 20px;">เลือกช่วง Data จากผล Regime Check ยังไง</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>ขั้น</th>
+            <th>ให้ดูอะไร</th>
+            <th>ตัดสินใจยังไง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. ดู breakpoint</td>
+            <td>วันที่ที่ HMM บอกว่า hidden state เปลี่ยน และอยู่ต่อเนื่องพอสมควร</td>
+            <td>ถือเป็น candidate date ที่ตลาดอาจเปลี่ยนพฤติกรรม ไม่ใช่คำสั่งให้ตัดข้อมูลทันที</td>
+          </tr>
+          <tr>
+            <td>2. ดู event match</td>
+            <td>breakpoint ใกล้ event จริงไหม เช่น Brexit, COVID panic, CPI shock</td>
+            <td>ถ้า match กับ event ใหญ่ในช่วงไม่กี่วัน/ไม่กี่สัปดาห์ น้ำหนักของ breakpoint นั้นสูงขึ้น</td>
+          </tr>
+          <tr>
+            <td>3. ดูจำนวนข้อมูลหลัง cutoff</td>
+            <td>ถ้าเลือก breakpoint ล่าสุดมากเกินไป อาจเหลือข้อมูล train น้อย</td>
+            <td>อย่าเลือก cutoff ที่ทำให้ dataset สั้นจน train/backtest ไม่น่าเชื่อถือ</td>
+          </tr>
+          <tr>
+            <td>4. สร้าง cutoff dataset</td>
+            <td>เลือก breakpoint ที่สมเหตุสมผล แล้วกด <strong>Use Selected as Train Cutoff</strong></td>
+            <td>ระบบจะสร้างไฟล์ <code>_from_YYYY-MM-DD.csv</code> เพื่อนำไป train เทียบกับ full-history</td>
+          </tr>
+          <tr>
+            <td>5. เทียบผล</td>
+            <td>train/backtest ทั้ง full-history และ cutoff dataset ถ้าจำเป็น</td>
+            <td>เลือกชุดข้อมูลที่ทำให้ out-of-sample/backtest/walk-forward เสถียรกว่า ไม่ใช่เลือกจาก chart อย่างเดียว</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <strong>หลักคิด:</strong>
+        ถ้า Regime Check เจอ breakpoint ใหญ่และมีเหตุการณ์รองรับ เช่น crisis หรือ event สำคัญ
+        ให้ลองสร้าง cutoff dataset ด้วย <code>Use Selected as Train Cutoff</code>
+        แล้วนำไฟล์ใหม่ไป train/backtest เทียบกับ full-history
+      </div>
+    </section>
+
+    <section id="decision">
+      <h2>Decision: แบบไหนถึงไป Train ได้</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>สถานะ</th>
+            <th>ความหมาย</th>
+            <th>ตัดสินใจ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status ok">Go</span></td>
+            <td>CSV มี rows พอ, timestamp ใช้ได้, feature ไม่เสีย, correlation ไม่หนัก, regime ไม่ขัดกับช่วงที่จะใช้งาน</td>
+            <td>ไปหน้า Train ได้</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">Review</span></td>
+            <td>feature ซ้ำเยอะ หรือ Regime Check เจอ breakpoint ใหญ่</td>
+            <td>ลอง <code>_clean.csv</code> หรือ cutoff dataset แล้ว train เปรียบเทียบ</td>
+          </tr>
+          <tr>
+            <td><span class="status no">Stop</span></td>
+            <td>timestamp พัง, OHLCV ขาด, feature ว่างทั้ง column, ไฟล์ผิด format หรือข้อมูลน้อยเกิน</td>
+            <td>กลับไป Step 1: Data Prep / DataCollector_RL ก่อน</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>ประโยคสอน user:</strong>
+        อย่าเพิ่งถามว่า train กี่ steps จนกว่าจะตอบได้ว่า data ที่จะ train
+        เป็นช่วงตลาดที่เหมาะ มี feature ที่ไม่ซ้ำเกินไป และไม่มีปัญหาไฟล์พื้นฐาน
+      </div>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="02_data_prep_import_detail.html">Data Prep Import Detail</a> ·
+      <a href="../explainers/04_data_tools_modules_explained.html">Data Tools Modules</a>
+    </p>
+  </main>
+</body>
+</html>
+

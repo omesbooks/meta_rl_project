@@ -15,7 +15,7 @@ Usage:
     # With limited bars (for huge datasets)
     python backtest_chart.py rl_v3 training_data_v3.csv --limit 5000
 
-Output: <model>_backtest_chart.html
+Output: artifacts/models/<model>/backtests/<model>_backtest_chart.html
 """
 import sys, io, argparse
 from pathlib import Path
@@ -23,6 +23,8 @@ import pandas as pd
 import numpy as np
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+from artifact_paths import chart_path as artifact_chart_path, find_trades_path
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -270,7 +272,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("model", help="model name (without .zip)")
     ap.add_argument("csv", help="price CSV file")
-    ap.add_argument("--trades", help="trades CSV (default: <model>_live_bt_trades.csv)")
+    ap.add_argument("--trades", help="trades CSV (default: organized artifact, then legacy root)")
     ap.add_argument("--limit", type=int, default=5000,
                     help="limit bars (default 5000) — set 0 for all")
     ap.add_argument("--output", help="output HTML path")
@@ -286,7 +288,9 @@ def main():
     print(f"  rows: {len(price_df):,}")
 
     # Load trades
-    trades_path = args.trades or f"{args.model}_live_bt_trades.csv"
+    trades_path = Path(args.trades) if args.trades else find_trades_path(args.model)
+    if trades_path is None:
+        trades_path = Path(f"{args.model}_live_bt_trades.csv")
     if not Path(trades_path).exists():
         print(f"\n⚠️  Trades file not found: {trades_path}")
         print(f"   Run backtest first: python backtest_live.py {args.model} {args.csv}")
@@ -311,7 +315,8 @@ def main():
     fig = build_chart(price_df, trades_df, args.model, limit=limit)
 
     # Save
-    output = args.output or f"{args.model}_backtest_chart.html"
+    output = Path(args.output) if args.output else artifact_chart_path(args.model)
+    output.parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(output, include_plotlyjs='cdn')
 
     print(f"\n[save] -> {output}")

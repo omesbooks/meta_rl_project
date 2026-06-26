@@ -1,0 +1,645 @@
+﻿<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Walk-Forward Robustness Detail</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --soft-purple: #f4f0ff;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+      --purple: #6d28d9;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ede9fe;
+      color: var(--purple);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+
+    .lead { max-width: 920px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .card {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .card.purple { background: var(--soft-purple); border-color: #d9d0ff; }
+
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .tag.purple { background: #ede9fe; color: var(--purple); }
+
+    .flow { display: grid; gap: 12px; margin-top: 16px; }
+
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+
+    .callout {
+      border-left: 5px solid var(--purple);
+      background: var(--soft-purple);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .callout.stop { border-left-color: var(--red); background: #fff0ee; }
+
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+
+    .formula {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 12px;
+      font-family: Consolas, "Courier New", monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Flow Step 5 · Robustness</span>
+      <h1>Walk-Forward ตรวจว่า edge ทนหลายช่วงตลาดไหม</h1>
+      <p class="lead">
+        บทนี้อธิบายหน้า Walk-Forward Validation: ทำไมหน้านี้ถึง retrain ใหม่ทุก window,
+        ทำไมมันอยู่หลัง Train/Backtest, วิธีอ่าน ROBUST/UNSTABLE/NOT ROBUST,
+        และควรตัดสินใจอย่างไรเมื่อผลออกมาไม่ผ่าน
+      </p>
+      <nav>
+        <a href="#goal">เป้าหมาย</a>
+        <a href="#not-model-file">ไม่ใช่ทดสอบ model file</a>
+        <a href="#why-after-train">ทำไมอยู่หลัง Train</a>
+        <a href="#mechanics">วิธีแบ่ง Window</a>
+        <a href="#settings">ค่าบนหน้า Dashboard</a>
+        <a href="#workflow">ขั้นตอนใช้งาน</a>
+        <a href="#metrics">อ่านผล</a>
+        <a href="#decision">ตัดสินใจ</a>
+      </nav>
+    </header>
+
+    <section id="goal">
+      <h2>Walk-Forward คืออะไรใน flow นี้</h2>
+      <div class="grid">
+        <div class="card purple">
+          <span class="tag purple">Robustness</span>
+          <h3>ตรวจหลายช่วงเวลา</h3>
+          <p>
+            แทนที่จะดูแค่ backtest รอบเดียว ระบบจะหั่นข้อมูลเป็นหลาย window
+            แล้วดูว่าผลยังพอผ่านในหลายช่วงตลาดหรือไม่
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">OOS</span>
+          <h3>Train แล้ว test ช่วงถัดไป</h3>
+          <p>
+            แต่ละ window จะ train ด้วยช่วงอดีต แล้ว test กับข้อมูลถัดไปที่ model ยังไม่เคยเห็น
+            เพื่อลดการหลอกตัวเองจากผล in-sample
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">Gate</span>
+          <h3>ใช้ก่อน Export</h3>
+          <p>
+            ถ้า Walk-Forward fail หลาย window แปลว่า edge ยังไม่น่าไว้ใจ
+            แม้ backtest รอบเดียวอาจดูดี
+          </p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>จำง่าย ๆ:</strong>
+        Backtest ตอบว่า model รอบนี้พอมีหวังไหม ส่วน Walk-Forward ตอบว่า
+        วิธี train ชุดนี้ยังพอทำงานได้ไหมเมื่อเลื่อนเวลาไปหลายช่วง
+      </div>
+    </section>
+
+    <section id="not-model-file">
+      <h2>จุดที่ต้องเข้าใจก่อน: หน้านี้ไม่ได้ทดสอบ model file ที่ train ไว้แล้ว</h2>
+      <p>
+        หน้า Walk-Forward ของโปรแกรมนี้ไม่มีช่องเลือก model เพราะมันไม่ได้เอาไฟล์
+        <code>.zip</code> ที่ train จากหน้า Train มา validate โดยตรง
+        แต่จะใช้ dataset และค่าตั้งต้น แล้วสร้าง model ชั่วคราวใหม่ในแต่ละ window
+      </p>
+      <div class="grid two">
+        <div class="card warn">
+          <span class="tag warn">เข้าใจผิดง่าย</span>
+          <h3>ไม่ใช่ saved model validation</h3>
+          <p>
+            ถ้าต้องการทดสอบ model ที่ train ไว้แล้วจริง ๆ ให้ใช้หน้า
+            <strong>Backtest</strong> โดยเลือก model, CSV และช่วงทดสอบ
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">ความหมายจริง</span>
+          <h3>เป็น training recipe validation</h3>
+          <p>
+            Walk-Forward ใช้พิสูจน์ว่า recipe นี้น่าเชื่อถือไหม:
+            dataset, feature set, window size, steps per window, reward logic และวิธี train
+          </p>
+        </div>
+      </div>
+      <div class="formula">
+        Walk-Forward ในโปรแกรมนี้ = validate training recipe / strategy process, not the saved model file
+      </div>
+      <div class="callout warn">
+        <strong>ประโยคสอน user:</strong>
+        ทำหลัง Train ไม่ได้แปลว่าเอา model file ที่ train แล้วไปใช้ต่อ
+        แต่แปลว่าเรามี setup ที่ดูมีหวังแล้ว จึงนำ setup นั้นไปทดสอบซ้ำหลายช่วงเวลา
+      </div>
+    </section>
+
+    <section id="why-after-train">
+      <h2>ทำไม Walk-Forward ถึงอยู่หลัง Train/Backtest</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ลำดับ</th>
+            <th>หน้าที่</th>
+            <th>เหตุผล</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Train</td>
+            <td>หา candidate setup</td>
+            <td>ใช้เลือกชุดข้อมูล, reward mode, window size, steps, max hold และ hyperparameter ตั้งต้น</td>
+          </tr>
+          <tr>
+            <td>Backtest</td>
+            <td>คัดกรองเร็ว</td>
+            <td>ถ้า backtest รอบเดียวพังหนัก ไม่คุ้มรัน Walk-Forward เพราะเสียเวลาหลายรอบ</td>
+          </tr>
+          <tr>
+            <td>Walk-Forward</td>
+            <td>พิสูจน์ robustness</td>
+            <td>ถ้า setup ที่ดูดีในรอบเดียว ยังพอผ่านหลาย window แปลว่า edge มีน้ำหนักมากขึ้น</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>หลักคิด:</strong>
+        Walk-Forward เป็นด่านหนักและใช้เวลานาน จึงควรทำหลังจากมี setup ที่พอมีหวังแล้ว
+        ไม่ใช่ใช้เป็นเครื่องมือทดลองสุ่มทุก dataset ตั้งแต่ต้น
+      </div>
+    </section>
+
+    <section id="mechanics">
+      <h2>ระบบแบ่ง Window ยังไง</h2>
+      <p>
+        ค่าเริ่มต้นคือ <code>5</code> windows และใช้ mode แบบ <code>rolling</code>.
+        ในแต่ละ window ระบบจะ normalize ด้วยข้อมูล train ของ window นั้น
+        แล้วนำ mean/std เดียวกันไปใช้กับ test slice เพื่อเลี่ยง look-ahead
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Window</th>
+            <th>Train</th>
+            <th>Test OOS</th>
+            <th>ความหมาย</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td><code>0%-50%</code></td>
+            <td><code>50%-60%</code></td>
+            <td>train ครึ่งแรก แล้ว test ช่วงถัดไป</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td><code>10%-60%</code></td>
+            <td><code>60%-70%</code></td>
+            <td>เลื่อนทั้ง train และ test ไปข้างหน้า</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td><code>20%-70%</code></td>
+            <td><code>70%-80%</code></td>
+            <td>ทดสอบว่าช่วงกลางถึงปลายยังไหวไหม</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td><code>30%-80%</code></td>
+            <td><code>80%-90%</code></td>
+            <td>ทดสอบช่วงใหม่กว่าเดิม</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td><code>40%-90%</code></td>
+            <td><code>90%-100%</code></td>
+            <td>ทดสอบช่วงท้ายสุด คล้ายตลาดล่าสุดที่สุด</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>หมายเหตุ:</strong>
+        CLI รองรับ <code>anchored</code> ด้วย แต่หน้า Dashboard ปัจจุบันใช้ค่าเริ่มต้นแบบ rolling
+        คือ train window เลื่อนไปข้างหน้าพร้อมกับ test window
+      </div>
+    </section>
+
+    <section id="settings">
+      <h2>ค่าหลักในหน้า Walk-Forward</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ช่อง</th>
+            <th>ทำหน้าที่อะไร</th>
+            <th>คำแนะนำ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Dataset</td>
+            <td>CSV ที่จะใช้ retrain/test หลาย window</td>
+            <td>ควรเป็นไฟล์ที่ผ่าน Quality Check และ Regime Check แล้ว</td>
+          </tr>
+          <tr>
+            <td>Windows</td>
+            <td>จำนวนช่วงที่จะรัน walk-forward ค่าเริ่มต้น <code>5</code></td>
+            <td>ยิ่งเยอะยิ่งละเอียด แต่ใช้เวลานานขึ้นและ test slice อาจบางลง</td>
+          </tr>
+          <tr>
+            <td>Steps/window</td>
+            <td>จำนวน training steps ต่อ window ค่าเริ่มต้น <code>50000</code></td>
+            <td>ควรสัมพันธ์กับขนาดข้อมูล ถ้าน้อยเกิน model อาจยังเรียนไม่ทัน</td>
+          </tr>
+          <tr>
+            <td>Window size</td>
+            <td>จำนวน bars ย้อนหลังที่ agent เห็นเป็น state</td>
+            <td>ควรสอดคล้องกับ setup ที่ใช้ในหน้า Train เพื่อทดสอบ recipe เดียวกัน</td>
+          </tr>
+          <tr>
+            <td>Output Name</td>
+            <td>prefix สำหรับไฟล์ผลลัพธ์ เช่น <code>wf_prod</code></td>
+            <td>จะได้ <code>wf_prod_results.csv</code> และ <code>wf_prod_chart.png</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="workflow">
+      <h2>ขั้นตอนใช้งานใน Dashboard</h2>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag green">Prepare</span>
+            <h3>เลือก dataset ที่ผ่านขั้นก่อนหน้าแล้ว</h3>
+            <p>
+              ใช้ไฟล์ที่ผ่าน Data Prep, Quality Check และ Regime Check แล้ว
+              ถ้าเพิ่งสร้าง cutoff dataset ให้เลือกไฟล์ <code>_from_YYYY-MM-DD.csv</code>
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Match Recipe</span>
+            <h3>ตั้งค่าให้ใกล้กับ setup ที่จะใช้จริง</h3>
+            <p>
+              ตั้ง <code>Windows</code>, <code>Steps/window</code>, <code>Window size</code>
+              ให้สะท้อนสูตร train ที่ต้องการพิสูจน์ ไม่ใช่ตั้งแบบสุ่ม
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag purple">Run</span>
+            <h3>กด Start Walk-Forward Retrain</h3>
+            <p>
+              ระบบจะ train model ชั่วคราวใหม่ในแต่ละ window แล้ว test OOS ช่วงถัดไป
+              กระบวนการนี้อาจใช้เวลานานกว่าการ backtest ปกติมาก
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag warn">Read</span>
+            <h3>อ่าน verdict และผลราย window</h3>
+            <p>
+              ดูว่ากี่ window ผ่าน, PF เฉลี่ยเท่าไร, return เฉลี่ยเป็นบวกไหม,
+              drawdown แย่สุดรับได้หรือไม่ และมี window ไหนพังหนักเป็นพิเศษ
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag green">Decide</span>
+            <h3>ตัดสินใจว่าจะ export หรือย้อนกลับ</h3>
+            <p>
+              ถ้า robust ให้กลับไปยืนยัน final model/backtest ก่อน export.
+              ถ้า not robust ให้ย้อนกลับไป Regime Check, feature, steps หรือ training setup
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="metrics">
+      <h2>อ่านผล Walk-Forward อย่างไร</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric / Verdict</th>
+            <th>ความหมาย</th>
+            <th>อ่านแบบเร็ว</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>WR</td>
+            <td>Win rate ของแต่ละ window</td>
+            <td>โค้ดใช้ <code>WR &gt; 50%</code> เป็นส่วนหนึ่งของเกณฑ์ ROBUST เต็มรูปแบบ</td>
+          </tr>
+          <tr>
+            <td>PF</td>
+            <td>Profit Factor: กำไรรวม / ขาดทุนรวม</td>
+            <td><code>PF &gt; 1</code> แปลว่าช่วงนั้นกำไรมากกว่าขาดทุน</td>
+          </tr>
+          <tr>
+            <td>Return</td>
+            <td>ผลตอบแทนของ test slice นั้น</td>
+            <td>ควรดูทั้งค่าเฉลี่ยและ window ที่แย่สุด ไม่ใช่ดูแค่ max</td>
+          </tr>
+          <tr>
+            <td>DD</td>
+            <td>Max drawdown ของแต่ละ window</td>
+            <td>ถ้า worst DD หนักเกินรับได้ ต่อให้ PF เฉลี่ยดี ก็ยังต้อง review</td>
+          </tr>
+          <tr>
+            <td><span class="status ok">ROBUST</span></td>
+            <td>ทุก window ผ่านเกณฑ์ <code>PF &gt; 1</code> และ <code>WR &gt; 50%</code></td>
+            <td>ไปขั้น final confirmation/backtest/MT5 tester ได้</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">MOSTLY ROBUST</span></td>
+            <td>window ส่วนใหญ่มี <code>PF &gt; 1</code> แต่ยังไม่ครบทุกเงื่อนไข</td>
+            <td>ใช้ระวัง ต้องดู window ที่ fail ว่าเกิดจาก regime หรือ sample น้อย</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">UNSTABLE</span></td>
+            <td>ประมาณครึ่งหนึ่งของ window ผ่าน</td>
+            <td>ยังไม่ควร deploy ให้กลับไปปรับ data/recipe แล้วรันใหม่</td>
+          </tr>
+          <tr>
+            <td><span class="status no">NOT ROBUST</span></td>
+            <td>window ส่วนใหญ่ fail</td>
+            <td>ถือว่ายังไม่ผ่าน ห้าม export ไปใช้งานจริงจากผลชุดนี้</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="decision">
+      <h2>Decision: ถ้าผลออกมาแบบต่าง ๆ ต้องทำอะไร</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ผลลัพธ์</th>
+            <th>ตีความ</th>
+            <th>ทางไปต่อ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status ok">ROBUST</span></td>
+            <td>recipe มีหลักฐานว่าทนได้หลายช่วงเวลา</td>
+            <td>ยืนยัน final model ด้วย Backtest/MT5 Strategy Tester แล้วค่อย Export/Deploy</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">MOSTLY ROBUST</span></td>
+            <td>พอมี edge แต่ยังมีช่วงที่ fail</td>
+            <td>ดูว่า fail window อยู่ช่วง event/regime ไหน แล้วอาจแยก dataset หรือปรับ risk</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">UNSTABLE</span></td>
+            <td>ผลยังแกว่งมาก อาจ overfit หรือ data ปนหลาย regime</td>
+            <td>กลับไป Regime Check, Feature Analysis, steps/window หรือ reward setup</td>
+          </tr>
+          <tr>
+            <td><span class="status no">NOT ROBUST</span></td>
+            <td>edge ไม่อยู่หลายช่วง ผลอาจขึ้นกับ luck</td>
+            <td>หยุด flow deploy และเริ่มปรับ data/train recipe ใหม่</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout stop">
+        <strong>ข้อห้ามสำคัญ:</strong>
+        ถ้า Walk-Forward เป็น <code>NOT ROBUST</code> อย่าแก้ด้วยการ export ไปลองจริง
+        เพราะปัญหาคือ recipe ยังไม่ทนหลายช่วงเวลา ไม่ใช่แค่ยังไม่ได้ deploy
+      </div>
+    </section>
+
+    <section id="common-confusion">
+      <h2>คำถามที่ user มักงง</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>คำถาม</th>
+            <th>คำตอบสั้น</th>
+            <th>อธิบายเพิ่ม</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ทำไมไม่มีช่องเลือก model?</td>
+            <td>เพราะหน้านี้ไม่ได้ test model เดิม</td>
+            <td>มัน train temporary model ใหม่ในแต่ละ window เพื่อ validate recipe</td>
+          </tr>
+          <tr>
+            <td>แล้ว model ที่ train ไว้ใช้ทดสอบที่ไหน?</td>
+            <td>ใช้หน้า Backtest</td>
+            <td>Backtest คือหน้าที่เลือก saved model แล้วทดสอบกับ CSV/ช่วงข้อมูลที่ต้องการ</td>
+          </tr>
+          <tr>
+            <td>ถ้า Walk-Forward ผ่าน ต้อง train ใหม่ไหม?</td>
+            <td>ถ้าเปลี่ยน recipe ให้ train final model ใหม่</td>
+            <td>โมเดลที่จะ deploy ควรสร้างจาก recipe เดียวกับที่ผ่าน Walk-Forward และต้อง backtest ยืนยันอีกครั้ง</td>
+          </tr>
+          <tr>
+            <td>ถ้า fail ควรกลับไปจุดไหน?</td>
+            <td>กลับไป Quality/Regime/Train</td>
+            <td>ดูว่า fail เพราะ data ปน regime, feature ซ้ำ, steps น้อย หรือ setup ไม่เหมาะกับตลาดล่าสุด</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="03_quality_check_detail.html">Quality Check Detail</a> ·
+      <a href="04_train_page_detail.html">Train Page Detail</a> ·
+      <a href="05_backtest_page_detail.html">Backtest Page Detail</a>
+    </p>
+  </main>
+</body>
+</html>
+

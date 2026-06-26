@@ -1,0 +1,521 @@
+﻿<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project Folder Map</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    pre {
+      margin: 12px 0 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid #dfe8dd;
+      background: var(--code);
+      overflow-x: auto;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #dbeafe;
+      color: var(--blue);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 940px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--green);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Appendix · Project Map</span>
+      <h1>แผนที่โฟลเดอร์ของโปรเจกต์ Meta RL Trading</h1>
+      <p class="lead">
+        บทนี้อธิบายโฟลเดอร์ที่เห็นใน root ของโปรเจกต์ ว่าแต่ละที่เก็บอะไร ใช้ตอนไหน
+        และโฟลเดอร์ไหนควรปล่อยให้ระบบจัดการเอง เพื่อไม่ให้ไฟล์โมเดล, backtest, MT5 package,
+        docs และ source code ปนกันจนติดตั้งผิดหรือ debug ยาก
+      </p>
+      <nav>
+        <a href="#quick-rule">กฎจำง่าย</a>
+        <a href="#folder-table">ตารางโฟลเดอร์</a>
+        <a href="#generated">ไฟล์ที่ระบบสร้าง</a>
+        <a href="#root-files">ไฟล์ที่ยังอยู่ root</a>
+        <a href="#where-to-look">หาไฟล์จากตรงไหน</a>
+        <a href="#cleanup">ลบ/ย้ายอะไรได้บ้าง</a>
+      </nav>
+    </header>
+
+    <section id="quick-rule">
+      <h2>กฎจำง่ายก่อนดูรายละเอียด</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">Code</span>
+          <h3>root เก็บ source หลัก</h3>
+          <p>
+            ไฟล์อย่าง <code>rl_app.py</code>, <code>rl_train.py</code>,
+            <code>backtest_live.py</code>, <code>export_to_onnx.py</code>
+            คือแกนของระบบ RL ใช้แก้ logic ของโปรแกรม ไม่ใช่ที่เก็บผลลัพธ์โมเดลระยะยาว
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Artifacts</span>
+          <h3><code>artifacts/</code> คือบ้านของโมเดล</h3>
+          <p>
+            หลัง train/backtest ให้มองหาไฟล์โมเดล, norm, logs, best model,
+            trades CSV, equity chart และ metadata ใน <code>artifacts/models/&lt;model&gt;/</code>
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">MT5</span>
+          <h3><code>mt5_files/</code> คือบ้านของ MT5</h3>
+          <p>
+            template และ helper MQL5 อยู่ใน <code>mt5_files/MQL5/</code>
+            ส่วน package ที่ export เป็นชุดติดตั้งต่อโมเดลอยู่ใน
+            <code>mt5_files/packages/&lt;deploy_name&gt;/MQL5/</code>
+          </p>
+        </div>
+      </div>
+      <p class="callout">
+        จำสั้น ๆ: <strong>เขียนโค้ดที่ root, อ่านคู่มือใน docs, ดูผล train/backtest ใน artifacts,
+        เอาไฟล์ไป MT5 จาก mt5_files/packages</strong>.
+      </p>
+    </section>
+
+    <section id="folder-table">
+      <h2>โฟลเดอร์ใน root ใช้ทำอะไร</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 18%;">โฟลเดอร์</th>
+            <th>หน้าที่</th>
+            <th style="width: 22%;">ควรแตะไหม</th>
+            <th>ตัวอย่าง/ข้อควรระวัง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>.agents/</code></td>
+            <td>พื้นที่ local ของ agent/tooling บางตัว ใช้เก็บ config หรือ state เฉพาะเครื่อง</td>
+            <td><span class="status no">ไม่ควรแก้มือ</span></td>
+            <td>ในโปรเจกต์นี้ตอนตรวจมีโฟลเดอร์อยู่ แต่ไม่มีไฟล์ข้างใน ปล่อยไว้ได้</td>
+          </tr>
+          <tr>
+            <td><code>.codex/</code></td>
+            <td>พื้นที่ local สำหรับ Codex/session/tool metadata ใน workspace นี้</td>
+            <td><span class="status no">ไม่ควรแก้มือ</span></td>
+            <td>ใช้โดยเครื่องมือ ไม่ใช่ส่วน runtime ของ RL app</td>
+          </tr>
+          <tr>
+            <td><code>.git/</code></td>
+            <td>ฐานข้อมูล Git: history, branches, refs, hooks และ config ของ repo</td>
+            <td><span class="status no">ห้ามแก้ตรง ๆ</span></td>
+            <td>ถ้าพัง repo อาจเสีย ใช้คำสั่ง Git เท่านั้น</td>
+          </tr>
+          <tr>
+            <td><code>.venv/</code></td>
+            <td>Python virtual environment ของโปรเจกต์ เก็บ interpreter และ packages ที่ติดตั้ง</td>
+            <td><span class="status maybe">ลบได้เมื่อจะสร้างใหม่</span></td>
+            <td>รันโปรเจกต์ควรใช้ <code>.venv/Scripts/python.exe</code> ไม่ใช้ Python ตัวอื่น</td>
+          </tr>
+          <tr>
+            <td><code>__pycache__/</code></td>
+            <td>Python bytecode cache ที่สร้างอัตโนมัติจากการ import ไฟล์ <code>.py</code></td>
+            <td><span class="status maybe">ลบได้</span></td>
+            <td>ถ้าจะลบ ปิดโปรแกรมก่อน ระบบจะสร้างใหม่เองเมื่อรัน Python</td>
+          </tr>
+          <tr>
+            <td><code>artifacts/</code></td>
+            <td>พื้นที่รวม output ที่ระบบสร้างหลัง train/backtest/chart ต่อโมเดล</td>
+            <td><span class="status ok">ดูผลที่นี่</span></td>
+            <td>ใช้โครงสร้าง <code>artifacts/models/&lt;model&gt;/</code> เพื่อไม่ให้ไฟล์โมเดลไปกองใน root</td>
+          </tr>
+          <tr>
+            <td><code>assets/</code></td>
+            <td>ไฟล์ภาพและทรัพยากรประกอบ UI เช่น logo/branding ของ GUI</td>
+            <td><span class="status maybe">แก้ได้ถ้าปรับ UI</span></td>
+            <td>ตัวอย่างตอนตรวจ: <code>metafx.png</code>, <code>README.md</code></td>
+          </tr>
+          <tr>
+            <td><code>docs/</code></td>
+            <td>เอกสาร HTML/Markdown ของโปรเจกต์ รวมคู่มือ dashboard และ explainer ต่าง ๆ</td>
+            <td><span class="status ok">เขียนคู่มือที่นี่</span></td>
+            <td>ชุดคู่มือหลักอยู่ที่ <code>docs/metafxclub studio guide/</code></td>
+          </tr>
+          <tr>
+            <td><code>examples/</code></td>
+            <td>ตัวอย่างการใช้งานหรือสคริปต์ตัวอย่างสำหรับอ้างอิง</td>
+            <td><span class="status maybe">อ่าน/ทดลองได้</span></td>
+            <td>ตัวอย่างตอนตรวจ: <code>rl_example.py</code> ไม่ใช่ flow production หลัก</td>
+          </tr>
+          <tr>
+            <td><code>legacy/</code></td>
+            <td>โค้ดหรือไฟล์แนวทางเก่าที่เก็บไว้เทียบย้อนหลัง เช่น PyCaret/MQL รุ่นเก่า</td>
+            <td><span class="status maybe">อ่านเพื่ออ้างอิง</span></td>
+            <td>งาน RL ปัจจุบันไม่ควรเริ่มจาก folder นี้ ยกเว้นตั้งใจเทียบกับระบบเก่า</td>
+          </tr>
+          <tr>
+            <td><code>mt5_files/</code></td>
+            <td>พื้นที่สำหรับ MQL5, template, indicators, include และ package ที่ export ไปติดตั้งใน MT5</td>
+            <td><span class="status ok">ใช้ตอน deploy/tester</span></td>
+            <td>template อยู่ใน <code>mt5_files/MQL5/</code>; output ต่อโมเดลอยู่ใน <code>mt5_files/packages/</code></td>
+          </tr>
+          <tr>
+            <td><code>reference/</code></td>
+            <td>คลังความรู้และเอกสาร research เช่น ML4T, quant reference, theory ที่ใช้ประกอบการออกแบบ</td>
+            <td><span class="status ok">อ่านประกอบ</span></td>
+            <td>ไม่ใช่ runtime ของ app แต่ช่วยอธิบายหลักการ RL/backtest/feature engineering</td>
+          </tr>
+          <tr>
+            <td><code>tools/</code></td>
+            <td>สคริปต์ช่วยงาน maintenance, analysis, automation, data และ MT5 utilities</td>
+            <td><span class="status maybe">ใช้เมื่อรู้เป้าหมาย</span></td>
+            <td>ไม่ใช่ปุ่มหลักใน GUI ทุกตัว บางสคริปต์ไว้ช่วย debug หรือจัดระเบียบไฟล์</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="generated">
+      <h2>โครงสร้างไฟล์ที่ระบบสร้างหลัง train/backtest/export</h2>
+      <div class="grid two">
+        <div class="card green">
+          <span class="tag green">Model artifacts</span>
+          <h3>หลัง train/backtest</h3>
+          <pre>artifacts/
+  models/
+    &lt;model_name&gt;/
+      &lt;model_name&gt;.zip
+      &lt;model_name&gt;_norm.csv
+      &lt;model_name&gt;.params.json
+      best/
+        best_model.zip
+      logs/
+        PPO_*
+        evaluations.npz
+      backtests/
+        &lt;model_name&gt;_live_bt_trades.csv
+        &lt;model_name&gt;_live_bt_equity.png
+        &lt;model_name&gt;_backtest_chart.html</pre>
+          <p>
+            ชุดนี้คือหลักฐานว่าโมเดลถูก train และ backtest กับข้อมูลอะไรบ้าง
+            ถ้าจะเทียบ performance หรือเปิด chart ให้เริ่มจาก folder นี้
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">MT5 package</span>
+          <h3>หลัง export ONNX</h3>
+          <pre>mt5_files/
+  packages/
+    &lt;deploy_name&gt;/
+      MQL5/
+        Experts/
+          &lt;deploy_name&gt;_EA.mq5
+        Include/
+          &lt;deploy_name&gt;_config.mqh
+          RL_Indicators.mqh
+        Indicators/
+          CandlePatterns.mq5
+        Files/
+          &lt;deploy_name&gt;.onnx</pre>
+          <p>
+            เวลาติดตั้งใน MT5 ให้ copy จาก <code>mt5_files/packages/&lt;deploy_name&gt;/MQL5/</code>
+            เข้า data folder ของ MT5 จะได้ไม่หยิบไฟล์ template หรือไฟล์ของโมเดลอื่นปนกัน
+          </p>
+        </div>
+      </div>
+      <p class="callout warn">
+        ไฟล์ generated เช่น <code>*.zip</code>, <code>*_norm.csv</code>, <code>logs/</code>,
+        <code>*_live_bt_trades.csv</code>, <code>*.onnx</code>, <code>*_EA.mq5</code>
+        และ <code>*_config.mqh</code> ควร regenerate ผ่าน GUI/CLI แทนการแก้มือ
+      </p>
+    </section>
+
+    <section id="root-files">
+      <h2>ไฟล์อะไรที่ยังอยู่ root ได้</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 28%;">ประเภทไฟล์</th>
+            <th>ควรอยู่ตรงไหน</th>
+            <th>เหตุผล</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Source script หลัก</td>
+            <td><code>root</code></td>
+            <td>
+              เช่น <code>rl_app.py</code>, <code>rl_train.py</code>,
+              <code>backtest_live.py</code>, <code>backtest_chart.py</code>,
+              <code>export_to_onnx.py</code> เป็น entry point ของระบบ
+            </td>
+          </tr>
+          <tr>
+            <td>Dataset CSV สำหรับ train/test</td>
+            <td><code>root</code> ตอนนี้ยังใช้ได้</td>
+            <td>
+              GUI และ CLI เดิมค้นไฟล์ CSV จาก root เป็นหลัก ดังนั้นไฟล์อย่าง
+              <code>uj_h4_dataset.csv</code> และ <code>uj_h4_dataset.params.json</code>
+              ยังอยู่ root ได้ เพื่อให้เลือกจาก dropdown ได้ง่าย
+            </td>
+          </tr>
+          <tr>
+            <td>Model/backtest output ใหม่</td>
+            <td><code>artifacts/models/&lt;model&gt;/</code></td>
+            <td>
+              ไม่ควรให้ <code>.zip</code>, norm, logs, trade CSV และ chart ไปกอง root
+              เพราะแยกไม่ออกว่าเป็นของโมเดลไหน
+            </td>
+          </tr>
+          <tr>
+            <td>MT5 deployment output ใหม่</td>
+            <td><code>mt5_files/packages/&lt;deploy&gt;/MQL5/</code></td>
+            <td>
+              ทำให้ copy ไป MT5 ได้เป็นชุดเดียว และลดความเสี่ยงหยิบ EA/config/ONNX ผิดโมเดล
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="where-to-look">
+      <h2>ถ้าต้องหาไฟล์ ให้เริ่มจากตรงไหน</h2>
+      <div class="grid">
+        <div class="card">
+          <span class="tag green">โมเดลที่ train แล้ว</span>
+          <h3><code>artifacts/models/&lt;model&gt;/</code></h3>
+          <p>
+            ดู <code>&lt;model&gt;.zip</code>, <code>&lt;model&gt;_norm.csv</code>,
+            <code>&lt;model&gt;.params.json</code>, <code>best/</code> และ <code>logs/</code>
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag blue">ผล Backtest</span>
+          <h3><code>artifacts/models/&lt;model&gt;/backtests/</code></h3>
+          <p>
+            ดู trade list, equity image, chart HTML และไฟล์ metadata ของรอบ backtest
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag warn">ไฟล์ติดตั้ง MT5</span>
+          <h3><code>mt5_files/packages/&lt;deploy&gt;/MQL5/</code></h3>
+          <p>
+            Copy folder <code>MQL5</code> ชุดนี้เข้า MT5 data folder เพื่อใช้ EA, include,
+            indicator และ ONNX ที่ตรงกัน
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag">Dataset</span>
+          <h3><code>root/*.csv</code></h3>
+          <p>
+            ตอนนี้ dataset train/test ยังอยู่ root เป็นหลัก และควรมี
+            <code>.params.json</code> ชื่อเดียวกันถ้าจะ export ไป MT5
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag">คู่มือ</span>
+          <h3><code>docs/metafxclub studio guide/</code></h3>
+          <p>
+            คู่มือใช้งาน dashboard แบบเป็นบท เช่น Data Prep, Quality Check, Train,
+            Backtest และแผนที่โฟลเดอร์หน้านี้
+          </p>
+        </div>
+        <div class="card">
+          <span class="tag red">ของระบบ</span>
+          <h3><code>.git/</code>, <code>.venv/</code>, <code>__pycache__/</code></h3>
+          <p>
+            ไม่ใช่ที่หา output โมเดล ถ้าไม่ได้แก้ environment หรือ Git ไม่ต้องเปิดดู
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="cleanup">
+      <h2>ลบหรือย้ายอะไรได้บ้าง</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 28%;">รายการ</th>
+            <th style="width: 18%;">คำแนะนำ</th>
+            <th>เหตุผล</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>__pycache__/</code></td>
+            <td><span class="status ok">ลบได้</span></td>
+            <td>เป็น cache อัตโนมัติ ปิดโปรแกรมก่อนแล้วลบได้ ระบบสร้างใหม่เอง</td>
+          </tr>
+          <tr>
+            <td><code>.venv/</code></td>
+            <td><span class="status maybe">ลบได้เมื่อจะ rebuild</span></td>
+            <td>ลบแล้วต้องติดตั้ง requirements ใหม่ ไม่ควรลบระหว่างกำลังใช้งาน GUI</td>
+          </tr>
+          <tr>
+            <td><code>artifacts/models/&lt;model&gt;/</code></td>
+            <td><span class="status maybe">ลบได้ถ้าไม่ใช้โมเดลนั้นแล้ว</span></td>
+            <td>ลบแล้วผล train/backtest ของโมเดลนั้นจะหาย ควร backup ถ้ายังต้องเทียบผล</td>
+          </tr>
+          <tr>
+            <td><code>mt5_files/packages/&lt;deploy&gt;/</code></td>
+            <td><span class="status maybe">ลบได้ถ้า package เก่า</span></td>
+            <td>เป็น output จาก export สร้างใหม่ได้ แต่ถ้าติดตั้งใน MT5 อยู่ให้เช็คก่อน</td>
+          </tr>
+          <tr>
+            <td><code>.git/</code></td>
+            <td><span class="status no">ห้ามลบ</span></td>
+            <td>คือประวัติ repo ทั้งหมด ถ้าลบจะไม่ใช่ Git repo เดิม</td>
+          </tr>
+          <tr>
+            <td><code>mt5_files/MQL5/Experts/*_template.mq5</code></td>
+            <td><span class="status no">ไม่แก้เฉพาะโมเดล</span></td>
+            <td>เป็น template กลางสำหรับ export ถ้าจะเปลี่ยน behavior ทุกโมเดลค่อยแก้ด้วยความตั้งใจ</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="callout">
+        แนวคิดหลักคือ “ลบ cache ได้, ลบ output ได้เมื่อไม่ใช้แล้ว, อย่าลบ history/tooling/source/templates โดยไม่ตั้งใจ”
+        เพื่อให้โปรเจกต์ยัง regenerate ผลลัพธ์เดิมได้จาก source code และ dataset
+      </p>
+    </section>
+
+    <p class="footer">
+      Last checked from project root on 2026-06-25. This page documents the current organized artifact/package layout.
+    </p>
+  </main>
+</body>
+</html>
+

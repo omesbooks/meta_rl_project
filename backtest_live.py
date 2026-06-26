@@ -26,7 +26,7 @@ Usage:
     # แสดงรายละเอียดทุก trade
     python backtest_live.py rl_prod_v1 test.csv --verbose
 """
-import sys, io, argparse, sqlite3
+import sys, io, argparse, sqlite3, json
 from pathlib import Path
 from datetime import datetime
 import numpy as np
@@ -34,11 +34,48 @@ import pandas as pd
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+from artifact_paths import (
+    backtest_meta_path,
+    backtests_dir,
+    equity_path as artifact_equity_path,
+    find_model_path,
+    find_norm_path,
+    trades_path as artifact_trades_path,
+)
+
 TRADE_COLUMNS = [
     "side", "entry", "sl", "tp", "lots", "open_idx", "open_time",
     "exit", "exit_time", "close_idx", "bars_held", "pnl_pct",
     "pnl_dollars", "reason",
 ]
+
+
+def _period(df):
+    if "timestamp" not in df.columns or len(df) == 0:
+        return None
+    ts = pd.to_datetime(df["timestamp"], errors="coerce").dropna()
+    if ts.empty:
+        return None
+    return {"start": ts.iloc[0].isoformat(), "end": ts.iloc[-1].isoformat()}
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.ndarray,)):
+        return value.tolist()
+    return value
+
+
+def _write_json(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_jsonable(payload), indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 # =============================================================
@@ -203,6 +240,8 @@ def run_backtest_live(args):
     if 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
         df = df.sort_values('timestamp').reset_index(drop=True)
+    data_rows_before_start = len(df)
+    data_period_before_start = _period(df)
 
     skip = {"timestamp", "symbol", "ticker", "open", "high", "low", "close", "volume"}
     feature_cols = [c for c in df.columns
@@ -210,26 +249,74 @@ def run_backtest_live(args):
     print(f"[data] rows: {len(df):,} | features: {len(feature_cols)}")
 
     # Apply normalization
-    norm_path = Path(f"{args.model}_norm.csv")
-    if norm_path.exists():
+    norm_path = find_norm_path(args.model)
+    if norm_path and norm_path.exists():
         norm = pd.read_csv(norm_path, index_col=0)
         for c in feature_cols:
             if c in norm.index:
                 df[c] = (df[c] - norm.at[c, 'mean']) / (norm.at[c, 'std'] + 1e-8)
         print(f"[norm] applied from {norm_path}")
+    else:
+        print(f"[norm] not found for {args.model}; using raw feature scale")
     df = df.fillna(0).reset_index(drop=True)
 
     # Apply start fraction (use last X% as test)
+    start_idx = 0
     if args.start > 0:
         start_idx = int(len(df) * args.start)
         df = df.iloc[start_idx:].reset_index(drop=True)
         print(f"[split] using rows {start_idx}.. ({len(df):,} rows)")
+    backtest_period = _period(df)
+
+    out_dir = backtests_dir(args.model)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    meta_path = backtest_meta_path(args.model)
+    meta = {
+        "model": args.model,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "data_csv": args.csv,
+        "data_rows_before_start": data_rows_before_start,
+        "data_period_before_start": data_period_before_start,
+        "start_fraction": args.start,
+        "start_index": start_idx,
+        "backtest_rows": len(df),
+        "backtest_period": backtest_period,
+        "feature_count": len(feature_cols),
+        "model_path": None,
+        "norm_path": str(norm_path) if norm_path else "",
+        "artifacts_dir": str(out_dir),
+        "artifacts": {
+            "trades": str(artifact_trades_path(args.model)),
+            "equity": str(artifact_equity_path(args.model)),
+            "backtest_meta": str(meta_path),
+        },
+        "settings": {
+            "conf": args.conf,
+            "risk": args.risk,
+            "max_positions": args.max_positions,
+            "max_hold": args.max_hold,
+            "hard_dd": args.hard_dd,
+            "atr_sl": args.atr_sl,
+            "atr_tp": args.atr_tp,
+            "mode": args.mode,
+            "balance": args.balance,
+            "spread": args.spread,
+            "commission": args.commission,
+            "window": args.window,
+        },
+    }
 
     # Load model
     from stable_baselines3 import PPO
     import torch
-    print(f"\n[load] {args.model}.zip")
-    model = PPO.load(f"{args.model}.zip")
+    model_path = find_model_path(args.model, "final")
+    if model_path is None:
+        print(f"\nERROR: model not found: {args.model}")
+        _write_json(meta_path, {**meta, "status": "failed", "error": "model not found"})
+        return 1
+    meta["model_path"] = str(model_path)
+    print(f"\n[load] {model_path}")
+    model = PPO.load(str(model_path))
 
     # Setup account
     account = SimAccount(initial_balance=args.balance,
@@ -402,10 +489,19 @@ def run_backtest_live(args):
     trades = account.trade_history
     if not trades:
         print("\n⚠️  No trades executed!")
+        meta["status"] = "complete"
+        meta["result"] = {
+            "total_trades": 0,
+            "final_balance": account.balance,
+            "return_pct": account.balance / args.balance - 1,
+        }
         if args.save:
-            out_csv = f"{args.model}_live_bt_trades.csv"
+            out_csv = artifact_trades_path(args.model)
+            out_csv.parent.mkdir(parents=True, exist_ok=True)
             pd.DataFrame(columns=TRADE_COLUMNS).to_csv(out_csv, index=False)
             print(f"[save] empty trades -> {out_csv}")
+            _write_json(meta_path, meta)
+            print(f"[meta] -> {meta_path}")
         return 0
 
     print("\n" + "=" * 60)
@@ -473,8 +569,31 @@ def run_backtest_live(args):
     print("=" * 60)
 
     # Save trades + equity curve
+    meta["status"] = "complete"
+    meta["result"] = {
+        "total_trades": len(trades),
+        "long_trades": sum(1 for t in trades if t['side'] == 'long'),
+        "short_trades": sum(1 for t in trades if t['side'] == 'short'),
+        "win_rate": win_rate,
+        "profit_factor": pf,
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "total_pnl": total_pnl,
+        "final_balance": account.balance,
+        "return_pct": account.balance / args.balance - 1,
+        "max_drawdown": max_dd,
+        "sharpe": sharpe,
+        "exit_reasons": dict(reasons),
+        "signals": n_signals,
+        "executed": n_executed,
+        "skipped_low_confidence": n_skipped_conf,
+        "skipped_max_positions": n_skipped_pos,
+        "force_closed_max_hold": n_force_close,
+        "hard_stops": n_hard_stop,
+    }
     if args.save:
-        out_csv = f"{args.model}_live_bt_trades.csv"
+        out_csv = artifact_trades_path(args.model)
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(trades).to_csv(out_csv, index=False)
         print(f"\n[save] -> {out_csv}")
 
@@ -498,12 +617,15 @@ def run_backtest_live(args):
             axes[1].set_xlabel("Bar")
             axes[1].grid(True, alpha=0.3)
 
-            chart_path = f"{args.model}_live_bt_equity.png"
+            chart_path = artifact_equity_path(args.model)
             plt.tight_layout()
             plt.savefig(chart_path, dpi=110, bbox_inches='tight')
             print(f"[save] -> {chart_path}")
         except Exception as e:
             print(f"[chart] skipped: {e}")
+            meta["chart_error"] = str(e)
+        _write_json(meta_path, meta)
+        print(f"[meta] -> {meta_path}")
 
     return 0
 

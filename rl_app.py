@@ -17,6 +17,17 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox, ttk, colorchooser
 import tkinter as tk
 
+from artifact_paths import (
+    MODELS_DIR,
+    find_chart_path,
+    find_equity_path,
+    find_model_path,
+    find_params_path,
+    find_trades_path,
+    legacy_final_model_path,
+    model_names_from_artifacts,
+)
+
 # Force UTF-8 stdout
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
@@ -837,6 +848,12 @@ class RLTradingStudio(ctk.CTk):
                     sig.append((path.name, stat.st_mtime_ns, stat.st_size))
                 except OSError:
                     continue
+            for best in MODELS_DIR.glob("*/best/best_model.zip"):
+                try:
+                    stat = best.stat()
+                    sig.append((str(best.relative_to(WORK_DIR)), stat.st_mtime_ns, stat.st_size))
+                except OSError:
+                    continue
         except Exception:
             return ()
         return tuple(sorted(sig))
@@ -850,13 +867,11 @@ class RLTradingStudio(ctk.CTk):
 
     def _list_model_names(self):
         zip_sig = self._path_signature("*.zip")
+        artifact_zip_sig = self._path_signature("artifacts/models/*/*.zip")
         best_sig = self._best_model_signature()
-        sig = (zip_sig, best_sig)
+        sig = (zip_sig, artifact_zip_sig, best_sig)
         if self._file_cache.get("model_sig") != sig:
-            models = {name[:-4] for name, _, _ in zip_sig if name.lower().endswith(".zip")}
-            for name, _, _ in best_sig:
-                if name.endswith("_best"):
-                    models.add(name[:-5])
+            models = set(model_names_from_artifacts())
             self._file_cache["model_sig"] = sig
             self._file_cache["models"] = sorted(models) or ["(none)"]
         return self._file_cache["models"]
@@ -937,6 +952,11 @@ class RLTradingStudio(ctk.CTk):
             self._path_signature("*_equity.png"),
             self._path_signature("*_filtered_equity.png"),
             self._path_signature("*_backtest_chart.html"),
+            self._path_signature("artifacts/models/*/*.zip"),
+            self._path_signature("artifacts/models/*/backtests/*_live_bt_trades.csv"),
+            self._path_signature("artifacts/models/*/backtests/*_trades.csv"),
+            self._path_signature("artifacts/models/*/backtests/*_live_bt_equity.png"),
+            self._path_signature("artifacts/models/*/backtests/*_backtest_chart.html"),
         )
 
     # --------------------------------------------------------
@@ -1117,8 +1137,11 @@ class RLTradingStudio(ctk.CTk):
         elif key == "pipeline":
             self._refresh_dropdowns()
             self._refresh_model_comparison()
+            self._on_pipeline_train_csv_change()
         elif key in ("backtest", "walkfwd", "finetune", "analyze"):
             self._refresh_dropdowns()
+            if key == "backtest":
+                self._schedule_backtest_skip_hint_update(0)
 
     def _bind_entry_focus_fix(self, root):
         """Keep CTkEntry responsive inside scrollable pages and custom popups."""
@@ -1250,10 +1273,31 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(setup, text="Train pct", text_color=COLOR_DIM).grid(
             row=2, column=2, sticky="w", padx=18, pady=6)
-        self.pipe_train_pct = ctk.CTkEntry(setup, width=120, placeholder_text="85")
+        pipe_pct_box = ctk.CTkFrame(setup, fg_color="transparent")
+        pipe_pct_box.grid(row=2, column=3, sticky="ew", padx=(8, 18), pady=6)
+        pipe_pct_box.grid_columnconfigure(0, weight=1)
+        self.pipe_train_pct = ctk.CTkEntry(pipe_pct_box, width=120, placeholder_text="85")
         self.pipe_train_pct.insert(0, "85")
-        self.pipe_train_pct.grid(row=2, column=3, sticky="w", padx=(8, 18), pady=6)
-        self.pipe_train_pct.bind("<KeyRelease>", lambda _e: self._update_pipeline_data_hint())
+        self.pipe_train_pct.grid(row=0, column=0, sticky="w")
+        self.pipe_split_hint = ctk.CTkLabel(
+            pipe_pct_box,
+            text="Select Train CSV to preview split",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+            justify="left",
+            wraplength=340,
+        )
+        self.pipe_split_hint.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.pipe_train_pct.bind(
+            "<KeyRelease>",
+            lambda _e: (
+                self._update_pipeline_data_hint(),
+                self._schedule_pipeline_split_hint_update(),
+            ))
+        self.pipe_train_pct.bind(
+            "<FocusOut>",
+            lambda _e: self._schedule_pipeline_split_hint_update(0))
 
         ctk.CTkLabel(setup, text="Train steps", text_color=COLOR_DIM).grid(
             row=3, column=0, sticky="w", padx=18, pady=6)
@@ -1485,6 +1529,52 @@ class RLTradingStudio(ctk.CTk):
         self.pipeline_log = self._make_log_widget(log_frame, height=12)
         self._on_pipeline_train_csv_change()
 
+    def _schedule_pipeline_split_hint_update(self, delay_ms=250):
+        if not hasattr(self, "pipe_split_hint"):
+            return
+        existing = getattr(self, "_pipeline_split_hint_after_id", None)
+        if existing:
+            try:
+                self.after_cancel(existing)
+            except Exception:
+                pass
+        self._pipeline_split_hint_after_id = self.after(
+            delay_ms, self._update_pipeline_split_hint)
+
+    def _update_pipeline_split_hint(self):
+        if hasattr(self, "_pipeline_split_hint_after_id"):
+            self._pipeline_split_hint_after_id = None
+        if not hasattr(self, "pipe_split_hint"):
+            return
+        train_csv = self.pipe_csv.get().strip() if hasattr(self, "pipe_csv") else ""
+        if not train_csv or train_csv == "(none)":
+            self.pipe_split_hint.configure(
+                text="Select Train CSV to preview split",
+                text_color=COLOR_DIM)
+            return
+
+        ts, error = self._read_train_timestamps(train_csv)
+        if error:
+            self.pipe_split_hint.configure(text=error, text_color=COLOR_YELLOW)
+            return
+        if ts is None or len(ts) == 0:
+            self.pipe_split_hint.configure(
+                text="No valid timestamp rows",
+                text_color=COLOR_YELLOW)
+            return
+
+        requested_pct = self._parse_train_pct(self.pipe_train_pct.get(), 0.85)
+        train_pct = min(max(requested_pct, 0.01), 1.0)
+        split = max(0, min(int(len(ts) * train_pct), len(ts)))
+        train_line = self._format_timestamp_range_line("Train", ts, 0, split - 1)
+        tail_line = self._format_timestamp_range_line("Tail", ts, split, len(ts) - 1)
+        pct_note = ""
+        if abs(train_pct - requested_pct) > 1e-9:
+            pct_note = f"\nTrain pct adjusted to {train_pct * 100:.1f}%"
+        self.pipe_split_hint.configure(
+            text=f"{train_line}\n{tail_line}{pct_note}",
+            text_color=COLOR_DIM)
+
     def _on_pipeline_train_csv_change(self):
         if not hasattr(self, "pipe_bt_csv"):
             return
@@ -1496,9 +1586,14 @@ class RLTradingStudio(ctk.CTk):
                 self.pipe_data_hint.configure(text="Rows: - | Suggested steps: -", text_color=COLOR_DIM)
             if hasattr(self, "pipe_use_steps_btn"):
                 self.pipe_use_steps_btn.configure(state="disabled")
+            if hasattr(self, "pipe_split_hint"):
+                self.pipe_split_hint.configure(
+                    text="Select Train CSV to preview split",
+                    text_color=COLOR_DIM)
             return
 
         self._start_pipeline_row_count(train_csv)
+        self._schedule_pipeline_split_hint_update(0)
 
         train_path = Path(train_csv)
         candidates = []
@@ -1784,10 +1879,12 @@ class RLTradingStudio(ctk.CTk):
         if hparams is None:
             return
 
-        if (WORK_DIR / f"{model_name}.zip").exists():
+        existing_model = find_model_path(model_name, "auto")
+        if existing_model:
             ok = messagebox.askyesno(
                 "Overwrite model?",
-                f"{model_name}.zip already exists. Continue and overwrite it?")
+                f"{model_name} already exists at:\n{existing_model}\n\n"
+                f"Continue and overwrite generated artifacts for this model?")
             if not ok:
                 return
 
@@ -2322,7 +2419,12 @@ class RLTradingStudio(ctk.CTk):
 
         rows = []
         seen = set()
-        trade_files = list(WORK_DIR.glob("*_live_bt_trades.csv")) + list(WORK_DIR.glob("*_trades.csv"))
+        trade_files = (
+            list(WORK_DIR.glob("*_live_bt_trades.csv"))
+            + list(WORK_DIR.glob("*_trades.csv"))
+            + list(MODELS_DIR.glob("*/backtests/*_live_bt_trades.csv"))
+            + list(MODELS_DIR.glob("*/backtests/*_trades.csv"))
+        )
 
         for trades_path in sorted(trade_files, key=lambda p: p.stat().st_mtime, reverse=True):
             if trades_path in seen:
@@ -2339,23 +2441,23 @@ class RLTradingStudio(ctk.CTk):
                 continue
 
             metrics = self._metrics_from_trades(trades_path)
-            chart_path = WORK_DIR / f"{model}_backtest_chart.html"
+            chart_path = find_chart_path(model)
             equity_path = self._equity_path_for_model(model)
             rows.append({
                 "iid": str(trades_path),
                 "model": model,
                 "source": source,
                 "trades_path": trades_path,
-                "chart_path": chart_path if chart_path.exists() else None,
+                "chart_path": chart_path,
                 "equity_path": equity_path,
                 **metrics,
             })
 
         model_names = {r["model"] for r in rows}
-        for zip_path in sorted(WORK_DIR.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True):
-            model = zip_path.stem
+        for model in model_names_from_artifacts():
             if model in model_names:
                 continue
+            zip_path = find_model_path(model, "final") or legacy_final_model_path(model)
             rows.append({
                 "iid": str(zip_path),
                 "model": model,
@@ -2469,10 +2571,13 @@ class RLTradingStudio(ctk.CTk):
         self._model_tree_sig = sig
         for row in rows:
             # Determine params status: sidecar JSON OR embedded helper in config.mqh
-            params_sidecar = WORK_DIR / f"{row['model']}.params.json"
-            config_mqh = (WORK_DIR / "mt5_files" / "MQL5" / "Include"
-                          / f"{row['model']}_config.mqh")
-            if params_sidecar.exists():
+            params_sidecar = find_params_path(row["model"])
+            config_candidates = [
+                WORK_DIR / "mt5_files" / "packages" / row["model"] / "MQL5" / "Include" / f"{row['model']}_config.mqh",
+                WORK_DIR / "mt5_files" / "MQL5" / "Include" / f"{row['model']}_config.mqh",
+            ]
+            config_mqh = next((p for p in config_candidates if p.exists()), config_candidates[0])
+            if params_sidecar and params_sidecar.exists():
                 params_label = "✓ sidecar"
             elif config_mqh.exists():
                 try:
@@ -2518,12 +2623,13 @@ class RLTradingStudio(ctk.CTk):
         return getattr(self, "pipeline_rows", {}).get(iid)
 
     def _equity_path_for_model(self, model):
-        candidates = [
-            WORK_DIR / f"{model}_live_bt_equity.png",
+        organized = find_equity_path(model)
+        if organized:
+            return organized
+        for path in [
             WORK_DIR / f"{model}_equity.png",
             WORK_DIR / f"{model}_filtered_equity.png",
-        ]
-        for path in candidates:
+        ]:
             if path.exists():
                 return path
         return None
@@ -2930,15 +3036,30 @@ class RLTradingStudio(ctk.CTk):
             font=ctk.CTkFont(family="Consolas", size=12))
         self.tool_export_name.grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
+        ctk.CTkLabel(ex_grid, text="Model file",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12)).grid(row=2, column=0, sticky="w", pady=(10, 4))
+        self.tool_export_source = ctk.CTkOptionMenu(ex_grid,
+            values=[
+                "Final .zip (matches Backtest)",
+                "Best checkpoint (_best/best_model.zip)",
+                "Auto (final, then best)",
+            ],
+            fg_color=COLOR_BG_INPUT,
+            button_color=COLOR_BG_INPUT,
+            button_hover_color=COLOR_BG_INPUT,
+            dropdown_fg_color=COLOR_BG_CARD,
+            dropdown_hover_color=COLOR_BG_INPUT)
+        self.tool_export_source.grid(row=3, column=0, columnspan=2, sticky="ew")
+
         # Output dir
         ctk.CTkLabel(c5, text="Output folder",
             text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
             ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
 
         self.tool_export_outdir = ctk.CTkEntry(c5,
+            placeholder_text="auto: mt5_files\\packages\\<deploy_name>\\MQL5",
             font=ctk.CTkFont(family="Consolas", size=11))
-        default_outdir = str(WORK_DIR / "mt5_files" / "MQL5")
-        self.tool_export_outdir.insert(0, default_outdir)
         self.tool_export_outdir.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 8))
 
         ctk.CTkLabel(c5,
@@ -3535,36 +3656,55 @@ class RLTradingStudio(ctk.CTk):
 
             deploy_name = self.tool_export_name.get().strip() or model_name
             outdir = self.tool_export_outdir.get().strip()
-            if not outdir:
-                outdir = str(WORK_DIR / "mt5_files" / "MQL5")
+            source_widget = getattr(self, "tool_export_source", None)
+            source_text = source_widget.get() if source_widget else "Final .zip (matches Backtest)"
+            if source_text.startswith("Best"):
+                source_key = "best"
+            elif source_text.startswith("Auto"):
+                source_key = "auto"
+            else:
+                source_key = "final"
+            legacy_outdir = str(WORK_DIR / "mt5_files" / "MQL5")
+            use_auto_package = not outdir
+            if outdir:
+                try:
+                    use_auto_package = Path(outdir).resolve() == Path(legacy_outdir).resolve()
+                except Exception:
+                    use_auto_package = outdir.rstrip("\\/") == legacy_outdir.rstrip("\\/")
+            if use_auto_package:
+                outdir = ""
 
             self._log(self.tools_log,
                 f"\n=== Exporting {model_name} -> {deploy_name} ===", "info")
-            self._log(self.tools_log, f"Output: {outdir}", "info")
+            self._log(self.tools_log, f"Model file: {source_text}", "info")
+            if outdir:
+                display_outdir = Path(outdir)
+                self._log(self.tools_log, f"Output: {outdir}", "info")
+            else:
+                display_outdir = WORK_DIR / "mt5_files" / "packages" / deploy_name / "MQL5"
+                self._log(self.tools_log, f"Output: {display_outdir} (auto package)", "info")
 
             # Verify model exists
-            zip_paths = [
-                WORK_DIR / f"{model_name}_best" / "best_model.zip",
-                WORK_DIR / f"{model_name}.zip",
-            ]
-            model_path = None
-            for p in zip_paths:
-                if p.exists():
-                    model_path = p
-                    break
+            model_path = find_model_path(model_name, source_key)
             if model_path is None:
                 self._log(self.tools_log,
-                    f"❌ Model not found: {model_name}", "error")
+                    f"Model not found for {source_text}: {model_name}", "error")
                 return
-            self._log(self.tools_log, f"Found model: {model_path.name}", "info")
+            try:
+                shown_model_path = model_path.relative_to(WORK_DIR)
+            except Exception:
+                shown_model_path = model_path
+            self._log(self.tools_log, f"Found model: {shown_model_path}", "info")
 
             # Run export script as subprocess (so it inherits clean python env)
             cmd = [
                 sys.executable, "export_to_onnx.py",
                 model_name,
                 "--name", deploy_name,
-                "--output_dir", outdir,
+                "--source", source_key,
             ]
+            if outdir:
+                cmd += ["--output_dir", outdir]
             self._log(self.tools_log, f"$ {' '.join(cmd)}", "info")
 
             import subprocess
@@ -3586,7 +3726,7 @@ class RLTradingStudio(ctk.CTk):
 
             if proc.returncode == 0:
                 # Show files generated
-                out_path = Path(outdir)
+                out_path = display_outdir
                 self._log(self.tools_log,
                     f"\n✅ Export complete! Files in {out_path}", "success")
                 self._log(self.tools_log,
@@ -3595,6 +3735,8 @@ class RLTradingStudio(ctk.CTk):
                     f"  Include/{deploy_name}_config.mqh", "metric")
                 self._log(self.tools_log,
                     f"  Include/RL_Indicators.mqh", "metric")
+                self._log(self.tools_log,
+                    f"  Indicators/CandlePatterns.mq5", "metric")
                 self._log(self.tools_log,
                     f"  Experts/{deploy_name}_EA.mq5", "metric")
                 self._log(self.tools_log,
@@ -3982,6 +4124,18 @@ class RLTradingStudio(ctk.CTk):
         self.train_pct = ctk.CTkEntry(wm, placeholder_text="85")
         self.train_pct.insert(0, "85")
         self.train_pct.grid(row=1, column=2, sticky="ew", padx=(8, 0), pady=(2, 0))
+        self.train_split_hint = ctk.CTkLabel(
+            wm,
+            text="Select CSV to preview date range",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+            justify="left",
+            wraplength=280,
+        )
+        self.train_split_hint.grid(row=2, column=2, sticky="ew", padx=(8, 0), pady=(4, 0))
+        self.train_pct.bind("<KeyRelease>", lambda _e: self._schedule_train_split_hint_update())
+        self.train_pct.bind("<FocusOut>", lambda _e: self._schedule_train_split_hint_update(0))
 
         ctk.CTkLabel(c3, text="Model Name", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
@@ -4642,6 +4796,122 @@ class RLTradingStudio(ctk.CTk):
             return
         self._set_train_csv(path)
 
+    def _schedule_train_split_hint_update(self, delay_ms=250):
+        if not hasattr(self, "train_split_hint"):
+            return
+        existing = getattr(self, "_train_split_hint_after_id", None)
+        if existing:
+            try:
+                self.after_cancel(existing)
+            except Exception:
+                pass
+        self._train_split_hint_after_id = self.after(
+            delay_ms, self._update_train_split_hint)
+
+    def _format_split_timestamp(self, value):
+        try:
+            if hasattr(value, "to_pydatetime"):
+                value = value.to_pydatetime()
+            if isinstance(value, datetime):
+                if value.hour or value.minute or value.second:
+                    return value.strftime("%Y-%m-%d %H:%M")
+                return value.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+        text = str(value)
+        return text[:16] if len(text) > 16 else text
+
+    def _format_timestamp_range_line(self, label, ts, start_idx, end_idx):
+        if ts is None or len(ts) == 0:
+            return f"{label}: - (0 rows)"
+        start_idx = max(0, int(start_idx))
+        end_idx = min(len(ts) - 1, int(end_idx))
+        if start_idx > end_idx or start_idx >= len(ts) or end_idx < 0:
+            return f"{label}: - (0 rows)"
+        rows = end_idx - start_idx + 1
+        return (
+            f"{label}: {self._format_split_timestamp(ts.iloc[start_idx])} -> "
+            f"{self._format_split_timestamp(ts.iloc[end_idx])} "
+            f"({rows:,} rows)"
+        )
+
+    def _read_train_timestamps(self, path):
+        import pandas as pd
+
+        path = Path(path)
+        if not path.is_absolute():
+            path = WORK_DIR / path
+        try:
+            stat = path.stat()
+            sig = (stat.st_mtime_ns, stat.st_size)
+        except OSError:
+            return None, f"CSV not found: {path.name}"
+        cache = self.__dict__.get("_file_cache")
+        cache_bucket = cache.setdefault("timestamp_cols", {}) if isinstance(cache, dict) else None
+        cache_key = str(path.resolve())
+        if cache_bucket is not None:
+            cached = cache_bucket.get(cache_key)
+            if cached and cached.get("sig") == sig:
+                return cached.get("ts"), None
+        attempts = [{}, {"encoding": "utf-8-sig"}, {"encoding": "utf-16"},
+                    {"encoding": "utf-16-le"}, {"encoding": "cp1252"}]
+        last_error = None
+        for kwargs in attempts:
+            try:
+                df = pd.read_csv(path, usecols=["timestamp"], **kwargs)
+                ts = pd.to_datetime(df["timestamp"], errors="coerce").dropna()
+                ts = ts.sort_values().reset_index(drop=True)
+                if cache_bucket is not None:
+                    cache_bucket[cache_key] = {"sig": sig, "ts": ts}
+                return ts, None
+            except ValueError as e:
+                if "Usecols do not match" in str(e) or "columns expected" in str(e):
+                    return None, "No timestamp column for date range"
+                last_error = e
+            except UnicodeError as e:
+                last_error = e
+            except Exception as e:
+                last_error = e
+                break
+        return None, f"Could not read timestamp: {last_error}"
+
+    def _update_train_split_hint(self):
+        if hasattr(self, "_train_split_hint_after_id"):
+            self._train_split_hint_after_id = None
+        if not hasattr(self, "train_split_hint"):
+            return
+        path = getattr(self, "train_csv_path", None)
+        if not path:
+            self.train_split_hint.configure(
+                text="Select CSV to preview date range",
+                text_color=COLOR_DIM)
+            return
+
+        ts, error = self._read_train_timestamps(path)
+        if error:
+            self.train_split_hint.configure(text=error, text_color=COLOR_YELLOW)
+            return
+        if ts is None or len(ts) == 0:
+            self.train_split_hint.configure(
+                text="No valid timestamp rows",
+                text_color=COLOR_YELLOW)
+            return
+
+        requested_pct = self._parse_train_pct(self.train_pct.get(), 0.85)
+        train_pct = min(max(requested_pct, 0.01), 1.0)
+        split = int(len(ts) * train_pct)
+        split = max(0, min(split, len(ts)))
+
+        train_line = self._format_timestamp_range_line("Train", ts, 0, split - 1)
+        eval_line = self._format_timestamp_range_line("Eval", ts, split, len(ts) - 1)
+
+        pct_note = ""
+        if abs(train_pct - requested_pct) > 1e-9:
+            pct_note = f"\nTrain pct adjusted to {train_pct * 100:.1f}%"
+        self.train_split_hint.configure(
+            text=f"{train_line}\n{eval_line}{pct_note}",
+            text_color=COLOR_DIM)
+
     def _set_train_csv(self, path):
         self.train_csv_path = path
         name = Path(path).name
@@ -4670,6 +4940,7 @@ class RLTradingStudio(ctk.CTk):
         self.train_csv_label.configure(text=name)
         self.train_csv_meta.configure(text=meta + params_status,
                                        text_color=params_color)
+        self._update_train_split_hint()
 
     def _attach_train_params(self):
         """Let user attach a .params.json from anywhere; copy it next to the CSV
@@ -4734,19 +5005,14 @@ class RLTradingStudio(ctk.CTk):
         name = (self.train_name.get() or "rl_prod_v1").strip()
         reward = self.train_reward.get().split()[0]
 
-        # Guard against silent overwrite — a duplicate name would clobber
-        # the existing .zip / _norm.csv / .params.json / _best/ folder
-        # without warning. Ask once; if the user confirms, proceed and the
-        # overwrite will happen as before.
-        if (WORK_DIR / f"{name}.zip").exists():
+        # Guard against silent overwrite: organized artifacts and legacy root
+        # artifacts are both considered the same model name.
+        existing_model = find_model_path(name, "auto")
+        if existing_model:
             ok = messagebox.askyesno(
                 "Overwrite model?",
-                f"{name}.zip already exists.\n\n"
-                f"Training will overwrite:\n"
-                f"  • {name}.zip\n"
-                f"  • {name}_norm.csv\n"
-                f"  • {name}.params.json (if any)\n"
-                f"  • {name}_best/ folder\n\n"
+                f"{name} already exists at:\n{existing_model}\n\n"
+                f"Training will overwrite generated artifacts for this model.\n\n"
                 f"Continue and overwrite?")
             if not ok:
                 return
@@ -4843,7 +5109,8 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(setup, text="Test Dataset", text_color=COLOR_DIM
                       ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_csv = ScrollableOptionMenu(setup, values=["(none)"],
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            command=lambda _: self._schedule_backtest_skip_hint_update(0))
         self.bt_csv.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
 
         ctk.CTkLabel(setup, text="Confidence Threshold", text_color=COLOR_DIM
@@ -4859,23 +5126,35 @@ class RLTradingStudio(ctk.CTk):
             ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_start = ctk.CTkEntry(setup, placeholder_text="0 (= test on all data)")
         self.bt_start.insert(0, "0")
-        self.bt_start.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 12))
+        self.bt_start.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 4))
+        self.bt_start_hint = ctk.CTkLabel(
+            setup,
+            text="Select dataset to preview backtest range",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+            justify="left",
+            wraplength=620,
+        )
+        self.bt_start_hint.grid(row=9, column=0, sticky="ew", padx=18, pady=(0, 12))
+        self.bt_start.bind("<KeyRelease>", lambda _e: self._schedule_backtest_skip_hint_update())
+        self.bt_start.bind("<FocusOut>", lambda _e: self._schedule_backtest_skip_hint_update(0))
 
         # Backtest mode toggle
         ctk.CTkLabel(setup, text="Backtest Mode", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
-                      ).grid(row=9, column=0, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=10, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_mode = ctk.CTkOptionMenu(setup,
             values=[
                 "Pure Agent (matches training) ⭐",
                 "Agent + SL/TP (live-realistic)",
             ],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.bt_mode.grid(row=10, column=0, sticky="ew", padx=18, pady=(0, 4))
+        self.bt_mode.grid(row=11, column=0, sticky="ew", padx=18, pady=(0, 4))
         ctk.CTkLabel(setup,
             text="Pure = ตรงกับ env ตอน train · SL/TP = สำหรับ live broker",
             font=ctk.CTkFont(size=10), text_color=COLOR_DIM
-            ).grid(row=11, column=0, sticky="w", padx=18, pady=(0, 16))
+            ).grid(row=12, column=0, sticky="w", padx=18, pady=(0, 16))
 
         # Risk card
         risk = Card(live_tab, title="🛡️ Risk Management")
@@ -4961,6 +5240,50 @@ class RLTradingStudio(ctk.CTk):
 
         self.bt_log = self._make_log_widget(log_frame, height=12)
 
+    def _schedule_backtest_skip_hint_update(self, delay_ms=250):
+        if not hasattr(self, "bt_start_hint"):
+            return
+        existing = getattr(self, "_backtest_skip_hint_after_id", None)
+        if existing:
+            try:
+                self.after_cancel(existing)
+            except Exception:
+                pass
+        self._backtest_skip_hint_after_id = self.after(
+            delay_ms, self._update_backtest_skip_hint)
+
+    def _update_backtest_skip_hint(self):
+        if hasattr(self, "_backtest_skip_hint_after_id"):
+            self._backtest_skip_hint_after_id = None
+        if not hasattr(self, "bt_start_hint"):
+            return
+        csv = self.bt_csv.get().strip() if hasattr(self, "bt_csv") else ""
+        if not csv or csv == "(none)":
+            self.bt_start_hint.configure(
+                text="Select dataset to preview backtest range",
+                text_color=COLOR_DIM)
+            return
+
+        ts, error = self._read_train_timestamps(csv)
+        if error:
+            self.bt_start_hint.configure(text=error, text_color=COLOR_YELLOW)
+            return
+        if ts is None or len(ts) == 0:
+            self.bt_start_hint.configure(
+                text="No valid timestamp rows",
+                text_color=COLOR_YELLOW)
+            return
+
+        skip_pct = self._parse_train_pct(self.bt_start.get(), 0.0)
+        skip_pct = min(max(skip_pct, 0.0), 1.0)
+        start_idx = max(0, min(int(len(ts) * skip_pct), len(ts)))
+        skipped_line = self._format_timestamp_range_line("Skipped", ts, 0, start_idx - 1)
+        backtest_line = self._format_timestamp_range_line("Backtest", ts, start_idx, len(ts) - 1)
+        color = COLOR_YELLOW if start_idx >= len(ts) else COLOR_DIM
+        self.bt_start_hint.configure(
+            text=f"{skipped_line}\n{backtest_line}",
+            text_color=color)
+
     def _generate_chart(self):
         """Generate backtest chart"""
         if self._is_process_busy():
@@ -4974,10 +5297,10 @@ class RLTradingStudio(ctk.CTk):
             return
 
         # Check trades file exists
-        trades_path = WORK_DIR / f"{model}_live_bt_trades.csv"
-        if not trades_path.exists():
+        trades_path = find_trades_path(model)
+        if not trades_path:
             messagebox.showwarning("No Trades",
-                f"ไม่พบไฟล์ {trades_path.name}\n\n"
+                f"ไม่พบไฟล์ {model}_live_bt_trades.csv\n\n"
                 f"กรุณา Run Backtest ก่อน เพื่อสร้างไฟล์ trades")
             return
 
@@ -5001,10 +5324,10 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showwarning("Setup", "Please select model")
             return
 
-        chart_path = WORK_DIR / f"{model}_backtest_chart.html"
-        if not chart_path.exists():
+        chart_path = find_chart_path(model)
+        if not chart_path:
             messagebox.showwarning("No Chart",
-                f"ไม่พบไฟล์ {chart_path.name}\n\n"
+                f"ไม่พบไฟล์ {model}_backtest_chart.html\n\n"
                 f"กรุณา 'Generate Chart' ก่อน")
             return
 
@@ -5054,7 +5377,7 @@ class RLTradingStudio(ctk.CTk):
         self.pages["walkfwd"] = page
 
         info = ctk.CTkLabel(page,
-            text="🔬 Walk-Forward Validation — เทรน + เทสต์ หลายช่วงเวลาเพื่อพิสูจน์ว่า model robust",
+            text="🔬 Walk-Forward Validation — retrain ใหม่ในแต่ละ window แล้ว test OOS หลายช่วงเวลา",
             text_color=COLOR_ACCENT, font=ctk.CTkFont(size=13),
             wraplength=900)
         info.grid(row=0, column=0, sticky="w", padx=8, pady=(0, 12))
@@ -5064,15 +5387,21 @@ class RLTradingStudio(ctk.CTk):
         c1.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         c1.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(c1, text="Test Dataset", text_color=COLOR_DIM
+        ctk.CTkLabel(c1, text="Dataset (retrain per window)", text_color=COLOR_DIM
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
         self.wf_csv = ScrollableOptionMenu(c1, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.wf_csv.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
+        self.wf_csv.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 4))
+
+        ctk.CTkLabel(c1,
+            text="No model dropdown here: this page trains fresh temporary models for each window. Use Backtest + Skip % to test an existing saved model.",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12),
+            wraplength=1100, justify="left"
+        ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 12))
 
         # Sub frame
         sub = ctk.CTkFrame(c1, fg_color="transparent")
-        sub.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
+        sub.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
         sub.grid_columnconfigure(0, weight=1)
         sub.grid_columnconfigure(1, weight=1)
         sub.grid_columnconfigure(2, weight=1)
@@ -5092,11 +5421,11 @@ class RLTradingStudio(ctk.CTk):
         self.wf_window.grid(row=1, column=2, sticky="ew", padx=8, pady=(2, 0))
 
         ctk.CTkLabel(c1, text="Output Name", text_color=COLOR_DIM
-                      ).grid(row=4, column=0, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
         self.wf_name = ctk.CTkEntry(c1); self.wf_name.insert(0, "wf_prod")
-        self.wf_name.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.wf_name.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 16))
 
-        self.wf_run_btn = ctk.CTkButton(page, text="▶ Start Walk-Forward (~50 min)",
+        self.wf_run_btn = ctk.CTkButton(page, text="▶ Start Walk-Forward Retrain (~50 min)",
             command=self._run_walkforward,
             fg_color=COLOR_ACCENT, hover_color="#4493f8",
             height=42, font=ctk.CTkFont(size=14, weight="bold"))
@@ -5986,9 +6315,9 @@ class RLTradingStudio(ctk.CTk):
         for w in self.models_container.winfo_children():
             w.destroy()
 
-        # Find .zip files
-        zips = sorted(WORK_DIR.glob("*.zip"))
-        if not zips:
+        # Find model artifacts (organized first, legacy root still supported)
+        models = model_names_from_artifacts()
+        if not models:
             ctk.CTkLabel(self.models_container,
                 text="No models found. Train one first!",
                 text_color=COLOR_DIM, font=ctk.CTkFont(size=13)
@@ -6009,16 +6338,22 @@ class RLTradingStudio(ctk.CTk):
                 ).grid(row=0, column=i, sticky="w", padx=14, pady=8)
 
         # Rows
-        for i, zp in enumerate(zips):
+        for i, model_name in enumerate(models):
+            zp = find_model_path(model_name, "final") or find_model_path(model_name, "best")
+            if zp is None:
+                continue
             stat = zp.stat()
             size_kb = stat.st_size / 1024
             modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
 
             # Params status: sidecar JSON or embedded in config.mqh
-            params_sidecar = WORK_DIR / f"{zp.stem}.params.json"
-            config_mqh = (WORK_DIR / "mt5_files" / "MQL5" / "Include"
-                          / f"{zp.stem}_config.mqh")
-            if params_sidecar.exists():
+            params_sidecar = find_params_path(model_name)
+            config_candidates = [
+                WORK_DIR / "mt5_files" / "packages" / model_name / "MQL5" / "Include" / f"{model_name}_config.mqh",
+                WORK_DIR / "mt5_files" / "MQL5" / "Include" / f"{model_name}_config.mqh",
+            ]
+            config_mqh = next((p for p in config_candidates if p.exists()), config_candidates[0])
+            if params_sidecar and params_sidecar.exists():
                 params_label, params_color = "✓ sidecar", COLOR_GREEN
             elif config_mqh.exists() and "RL_ApplyDataCollectorConfig" in \
                     config_mqh.read_text(encoding="utf-8", errors="ignore"):
@@ -6033,7 +6368,7 @@ class RLTradingStudio(ctk.CTk):
             row.grid_columnconfigure(2, weight=1)
             row.grid_columnconfigure(3, weight=1)
 
-            ctk.CTkLabel(row, text=f"🤖  {zp.stem}",
+            ctk.CTkLabel(row, text=f"🤖  {model_name}",
                 font=ctk.CTkFont(size=13, family="Consolas")
                 ).grid(row=0, column=0, sticky="w", padx=14, pady=6)
             ctk.CTkLabel(row, text=f"{size_kb:,.0f} KB",

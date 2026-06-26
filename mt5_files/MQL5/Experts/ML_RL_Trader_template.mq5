@@ -61,6 +61,11 @@ input int      InpManualEarliestHour = 0;         // Manual fallback: earliest h
 input int      InpManualLatestHour   = 24;        // Manual fallback: latest hour
 input ENUM_TIMEFRAMES InpSessionCheckTF = PERIOD_CURRENT;  // TF for session-time check (set M1 = per-minute boundary)
 
+input group "=== Debug (state parity) ==="
+input bool     InpDebugState        = true;       // Print first inference state snapshots
+input int      InpDebugBars         = 8;          // Number of inference bars to log
+input int      InpDebugSampleN      = 10;         // Number of feature/state values per sample
+
 //=== Globals ===
 long           g_onnx_handle = INVALID_HANDLE;
 CTrade         g_trade;
@@ -74,6 +79,9 @@ datetime       g_last_bar_time   = 0;
 // Account state tracking
 double         g_account_peak    = 0;
 bool           g_paused          = false;
+
+// Debug counters
+int            g_debug_infer_count = 0;
 
 //+------------------------------------------------------------------+
 //| OnInit                                                            |
@@ -142,6 +150,10 @@ int OnInit()
    g_trade.SetDeviationInPoints(20);
 
    Print("✅ Initialized. Waiting for ", RL_WINDOW_SIZE, " bars before first trade.");
+   if(InpDebugState) {
+      Print("[RL_DEBUG] enabled: first ", InpDebugBars,
+            " inference bar(s), sample_n=", InpDebugSampleN);
+   }
    return INIT_SUCCEEDED;
 }
 
@@ -214,6 +226,146 @@ bool RunInference(const float &state[], double &probs[])
    }
    for(int i = 0; i < RL_OUTPUT_DIM; i++) probs[i] = output[i];
    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Debug helpers for Python/MT5 state parity checks                 |
+//+------------------------------------------------------------------+
+bool DebugShouldLog()
+{
+   if(!InpDebugState) return false;
+   if(InpDebugBars <= 0) return true;
+   return (g_debug_infer_count < InpDebugBars);
+}
+
+int DebugSampleCount()
+{
+   int n = InpDebugSampleN;
+   if(n < 1) n = 1;
+   if(n > RL_FEATURE_COUNT) n = RL_FEATURE_COUNT;
+   return n;
+}
+
+string DebugFeatureNames(const int count)
+{
+   int n = count;
+   if(n > RL_FEATURE_COUNT) n = RL_FEATURE_COUNT;
+   string s = "";
+   for(int i = 0; i < n; i++) {
+      if(i > 0) s += ",";
+      s += RL_FEATURE_NAMES[i];
+   }
+   return s;
+}
+
+string DebugDoubleSample(const double &values[], int start, int count, const int digits)
+{
+   int size = ArraySize(values);
+   if(start < 0) start = 0;
+   if(start >= size) return "";
+   int n = count;
+   if(start + n > size) n = size - start;
+
+   string s = "";
+   for(int i = 0; i < n; i++) {
+      if(i > 0) s += ",";
+      s += DoubleToString(values[start + i], digits);
+   }
+   return s;
+}
+
+string DebugFloatSample(const float &values[], int start, int count, const int digits)
+{
+   int size = ArraySize(values);
+   if(start < 0) start = 0;
+   if(start >= size) return "";
+   int n = count;
+   if(start + n > size) n = size - start;
+
+   string s = "";
+   for(int i = 0; i < n; i++) {
+      if(i > 0) s += ",";
+      s += DoubleToString((double)values[start + i], digits);
+   }
+   return s;
+}
+
+void DebugFloatStats(const float &values[],
+                     double &sum, double &mean, double &min_v,
+                     double &max_v, double &abs_sum, double &l2,
+                     double &checksum)
+{
+   int n = ArraySize(values);
+   sum = 0.0;
+   mean = 0.0;
+   abs_sum = 0.0;
+   l2 = 0.0;
+   checksum = 0.0;
+   if(n <= 0) {
+      min_v = 0.0;
+      max_v = 0.0;
+      return;
+   }
+
+   min_v = (double)values[0];
+   max_v = (double)values[0];
+   double sq_sum = 0.0;
+   for(int i = 0; i < n; i++) {
+      double v = (double)values[i];
+      sum += v;
+      abs_sum += MathAbs(v);
+      sq_sum += v * v;
+      checksum += v * (double)(i + 1);
+      if(v < min_v) min_v = v;
+      if(v > max_v) max_v = v;
+   }
+   mean = sum / (double)n;
+   l2 = MathSqrt(sq_sum);
+}
+
+void DebugLogInference(const datetime current_bar_time,
+                       const datetime feature_bar_time,
+                       const double feature_close,
+                       const double &raw_features[],
+                       const double &norm_features[],
+                       const float &state[],
+                       const double &probs[],
+                       const int action,
+                       const double confidence,
+                       const int pos_side,
+                       const double unrealized,
+                       const int bars_in_pos)
+{
+   int sample_n = DebugSampleCount();
+   int state_newest_start = (RL_WINDOW_SIZE - 1) * RL_FEATURE_COUNT;
+   int state_extra_start = RL_WINDOW_SIZE * RL_FEATURE_COUNT;
+
+   double sum, mean, min_v, max_v, abs_sum, l2, checksum;
+   DebugFloatStats(state, sum, mean, min_v, max_v, abs_sum, l2, checksum);
+
+   PrintFormat("[RL_DEBUG] #%d current_bar=%s feature_bar=%s close=%.5f buffer=%d/%d pos=%d unrealized=%.8f bars=%d action=%d conf=%.6f",
+               g_debug_infer_count + 1,
+               TimeToString(current_bar_time, TIME_DATE | TIME_MINUTES),
+               TimeToString(feature_bar_time, TIME_DATE | TIME_MINUTES),
+               feature_close,
+               g_bars_filled, RL_WINDOW_SIZE,
+               pos_side, unrealized, bars_in_pos,
+               action, confidence);
+   PrintFormat("[RL_DEBUG] feature_names[0:%d]=%s",
+               sample_n, DebugFeatureNames(sample_n));
+   PrintFormat("[RL_DEBUG] raw[0:%d]=%s",
+               sample_n, DebugDoubleSample(raw_features, 0, sample_n, 6));
+   PrintFormat("[RL_DEBUG] norm_newest[0:%d]=%s",
+               sample_n, DebugDoubleSample(norm_features, 0, sample_n, 6));
+   PrintFormat("[RL_DEBUG] state_oldest[0:%d]=%s",
+               sample_n, DebugFloatSample(state, 0, sample_n, 6));
+   PrintFormat("[RL_DEBUG] state_newest[0:%d]=%s",
+               sample_n, DebugFloatSample(state, state_newest_start, sample_n, 6));
+   PrintFormat("[RL_DEBUG] state_extra=%s probs=%s",
+               DebugFloatSample(state, state_extra_start, 3, 8),
+               DebugDoubleSample(probs, 0, RL_OUTPUT_DIM, 6));
+   PrintFormat("[RL_DEBUG] state_stats n=%d sum=%.8f mean=%.8f min=%.8f max=%.8f abs_sum=%.8f l2=%.8f checksum=%.8f",
+               ArraySize(state), sum, mean, min_v, max_v, abs_sum, l2, checksum);
 }
 
 //+------------------------------------------------------------------+
@@ -541,6 +693,8 @@ void OnTick()
       Print("Failed to build features");
       return;
    }
+   double raw_features[];
+   ArrayCopy(raw_features, features);
 
    // 4) Normalize
    RL_NormalizeFeatures(features, RL_FEAT_MEAN, RL_FEAT_STD);
@@ -571,6 +725,17 @@ void OnTick()
    // 9) Get action
    int    action     = ArgMax(probs);
    double confidence = probs[action];
+
+   bool debug_now = DebugShouldLog();
+   if(debug_now) {
+      datetime current_bar_time = iTime(_Symbol, _Period, 0);
+      datetime feature_bar_time = iTime(_Symbol, _Period, 1);
+      double feature_close = iClose(_Symbol, _Period, 1);
+      DebugLogInference(current_bar_time, feature_bar_time, feature_close,
+                        raw_features, features, state, probs,
+                        action, confidence, pos_side, unrealized, bars_in_pos);
+      g_debug_infer_count++;
+   }
 
    // 10) Apply confidence filter (Buy/Sell only)
    if((action == 1 || action == 2) && confidence < InpConfidence) {

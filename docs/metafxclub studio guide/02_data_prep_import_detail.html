@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8" />
@@ -179,6 +179,8 @@
 
     table {
       width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       margin-top: 14px;
       overflow: hidden;
@@ -191,7 +193,20 @@
       padding: 12px;
       text-align: left;
       vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
+
+    th code, td code {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    #process-files th:nth-child(1) { width: 12%; }
+    #process-files th:nth-child(2) { width: 20%; }
+    #process-files th:nth-child(3) { width: 32%; }
+    #process-files th:nth-child(4) { width: 36%; }
 
     th {
       background: #eef3ec;
@@ -255,8 +270,9 @@
       </p>
       <nav>
         <a href="#big-picture">ภาพรวม</a>
-        <a href="#what-files">ไฟล์ที่ต้องมี</a>
         <a href="#dashboard-steps">ขั้นตอนใน Dashboard</a>
+        <a href="#process-files">ไฟล์ตาม Process</a>
+        <a href="#what-files">ไฟล์ที่ต้องมี</a>
         <a href="#verify">เช็คว่า Data ใช้ได้</a>
         <a href="#common-issues">ปัญหาที่พบบ่อย</a>
         <a href="#handoff">ส่งต่อขั้นถัดไป</a>
@@ -271,7 +287,7 @@
           <h3>MT5 เป็นคนสร้างข้อมูล</h3>
           <p>
             เปิด DataCollector_RL ใน MT5 เพื่อ export bars และ feature ที่ EA ฝั่ง MT5 ใช้จริง
-            ผลลัพธ์หลักคือไฟล์ <code>.csv</code>
+            ผลลัพธ์หลักคือไฟล์ <code>.csv</code> พร้อม <code>.params.json</code> ที่ชื่อคู่กัน
           </p>
         </div>
         <div class="card blue">
@@ -279,7 +295,8 @@
           <h3>Dashboard คัดลอกเข้าโปรเจกต์</h3>
           <p>
             หน้า Data Tools จะอ่านไฟล์จาก <code>Common\Files</code>
-            แล้วคัดลอกมาไว้ที่ root ของโปรเจกต์ เช่น <code>uj_h4_dataset.csv</code>
+            แล้วคัดลอกมาไว้ที่ root ของโปรเจกต์ เช่น <code>training_data_usdjpy_h4_dataset.csv</code>
+            และ <code>training_data_usdjpy_h4_dataset.params.json</code>
           </p>
         </div>
         <div class="card warn">
@@ -297,64 +314,65 @@
         ขั้นนี้ยังไม่ใช่การ train และไม่ใช่การสร้าง target UP/DOWN/FLAT
         สำหรับ RL เราต้องการ market state ที่สะอาดและ replay ได้เหมือนฝั่ง MT5 มากที่สุด
       </div>
-    </section>
-
-    <section id="what-files">
-      <h2>ไฟล์ที่ต้องเข้าใจ</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>ไฟล์ / โฟลเดอร์</th>
-            <th>ทำหน้าที่อะไร</th>
-            <th>สำคัญกับ RL อย่างไร</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>Common\Files</code></td>
-            <td>
-              โฟลเดอร์กลางของ MetaTrader ที่ EA/Script สามารถเขียนไฟล์ออกมาได้
-              ปกติอยู่ที่
-              <div class="path"><code>C:\Users\&lt;user&gt;\AppData\Roaming\MetaQuotes\Terminal\Common\Files</code></div>
-            </td>
-            <td>เป็นจุดรับไฟล์จาก DataCollector_RL ก่อน dashboard จะ import เข้ามา</td>
-          </tr>
-          <tr>
-            <td><code>uj_h4_dataset.csv</code></td>
-            <td>ไฟล์ข้อมูลแท่งราคาและ feature เช่น timestamp, OHLCV, indicators, candle features</td>
-            <td>เป็น dataset หลักที่ <code>rl_train.py</code> ใช้สร้าง environment ให้ agent ฝึก</td>
-          </tr>
-          <tr>
-            <td><code>uj_h4_dataset.params.json</code></td>
-            <td>sidecar config ที่บอกค่า parameter ของ collector เช่น indicator periods และ setting ที่ใช้ตอนเก็บข้อมูล</td>
-            <td>ช่วยให้ตอน export/deploy ฝั่ง EA คำนวณ feature ให้ตรงกับตอน train ลดความเสี่ยง train อย่างหนึ่งแต่ live อีกอย่างหนึ่ง</td>
-          </tr>
-          <tr>
-            <td><code>training_data_*.csv</code></td>
-            <td>ชื่อไฟล์ปลายทางใน project folder หลัง import</td>
-            <td>เป็นไฟล์ที่ user เลือกต่อในหน้า Train, Pipeline, Backtest หรือ Data Tools module อื่น</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="callout warn">
+        <strong>อย่าสับสน path:</strong>
+        ไฟล์ source ของ collector ต้อง copy เข้า <code>MT5 Data Folder\MQL5\...</code>
+        เพื่อ compile/run ใน MT5 แต่ไฟล์ output ที่ collector สร้างจะอยู่ใน
+        <code>MetaQuotes\Terminal\Common\Files</code> ซึ่งเป็นโฟลเดอร์กลางคนละที่กับ
+        <code>MQL5\Files</code>
+      </div>
     </section>
 
     <section id="dashboard-steps">
       <h2>ขั้นตอนใช้งานใน Dashboard</h2>
+      <p>
+        เวลาใช้สอน user ให้เริ่มจาก flow ตรงนี้ก่อน เพื่อให้เห็นภาพว่า
+        ข้อมูลเดินจาก MT5 เข้ามาเป็น CSV ในโปรเจกต์ได้อย่างไร
+        หลังจากนั้นค่อยลงรายละเอียดว่าแต่ละไฟล์คืออะไร อยู่ที่ไหน และสำคัญกับ RL อย่างไร
+      </p>
       <div class="flow">
         <article class="step">
           <div class="num">1</div>
           <div>
             <span class="tag green">MT5</span>
-            <h3>รัน DataCollector_RL ใน MT5</h3>
+            <h3>ติดตั้งไฟล์ collector ใน MT5</h3>
             <p>
-              ให้เปิด chart symbol/timeframe ที่ต้องการ แล้วรัน collector เพื่อให้สร้าง CSV
-              ลงใน <code>Common\Files</code> ตัวอย่างชื่อไฟล์เช่น <code>uj_h4_dataset.csv</code>
+              เปิด MT5 → <span class="kbd">File</span> → <span class="kbd">Open Data Folder</span>
+              แล้ว copy ไฟล์จาก repo เข้าโฟลเดอร์ปลายทางตามนี้
+            </p>
+            <ul>
+              <li><code>mt5_files/MQL5/Experts/DataCollector_RL.mq5</code> → <code>MQL5/Experts/</code></li>
+              <li><code>mt5_files/MQL5/Include/RL_Indicators.mqh</code> → <code>MQL5/Include/</code></li>
+              <li><code>mt5_files/MQL5/Indicators/CandlePatterns.mq5</code> → <code>MQL5/Indicators/</code></li>
+            </ul>
+            <p>
+              จากนั้นเปิด MetaEditor แล้ว compile <code>CandlePatterns.mq5</code>
+              และ <code>DataCollector_RL.mq5</code> ให้ผ่านก่อนเริ่มเก็บข้อมูล
             </p>
           </div>
         </article>
 
         <article class="step">
           <div class="num">2</div>
+          <div>
+            <span class="tag green">Collect</span>
+            <h3>รัน DataCollector_RL เพื่อสร้างไฟล์ข้อมูล</h3>
+            <p>
+              เปิด Strategy Tester หรือ chart ของ symbol/timeframe ที่ต้องการ แล้วรัน
+              <code>DataCollector_RL</code> โดยตั้ง input <code>InpOutFile</code>
+              เป็นชื่อไฟล์ output เช่น <code>usdjpy_h4_dataset.csv</code>
+              ซึ่งหมายถึงชุดข้อมูล <code>USDJPY</code> timeframe <code>H4</code>
+            </p>
+            <p>
+              เมื่อรันสำเร็จ MT5 จะสร้างไฟล์ไว้ใน <code>Common\Files</code>
+              เป็นคู่: <code>usdjpy_h4_dataset.csv</code> และ
+              <code>usdjpy_h4_dataset.params.json</code>
+            </p>
+          </div>
+        </article>
+
+        <article class="step">
+          <div class="num">3</div>
           <div>
             <span class="tag blue">Data Tools</span>
             <h3>เปิดหน้า Import from DataCollector_RL</h3>
@@ -371,23 +389,26 @@
         </article>
 
         <article class="step">
-          <div class="num">3</div>
+          <div class="num">4</div>
           <div>
             <span class="tag blue">Name</span>
             <h3>ตั้ง Output basename</h3>
             <p>
               ตั้งชื่อไฟล์ปลายทางให้อ่านแล้วรู้ทันทีว่าเป็น symbol/timeframe/ชุดข้อมูลอะไร
-              เช่น <code>training_data_uj_h4_dataset.csv</code>
+              เช่น <code>training_data_usdjpy_h4_dataset.csv</code>
             </p>
             <ul>
-              <li>ใช้ชื่อสั้นแต่สื่อความหมาย เช่น <code>training_data_xau_h1_2026.csv</code></li>
+              <li>ไฟล์ที่ import แล้วจะถูกวางไว้ที่ <strong>root ของโฟลเดอร์โปรเจกต์</strong> เช่น <code>C:\Users\omesb\Documents\claude code\pycaret_trainer\</code></li>
+              <li>ช่องนี้เป็นชื่อไฟล์ ไม่ใช่ path สำหรับเลือกโฟลเดอร์ ถ้าใส่ <code>data\training_data_usdjpy_h4_dataset.csv</code> ระบบจะใช้แค่ชื่อไฟล์ปลายทาง</li>
+              <li>ตอนนี้ยังไม่แนะนำให้แยกไป subfolder เอง เพราะ dropdown ของ Train / Pipeline / Data Tools ถูกออกแบบให้หาไฟล์ CSV จาก project root เป็นหลัก</li>
+              <li>ใช้ชื่อสั้นแต่สื่อความหมาย เช่น <code>training_data_xauusd_h1_2026.csv</code></li>
               <li>หลีกเลี่ยงชื่อซ้ำกับไฟล์ที่สำคัญ เพราะ import จะเขียนทับไฟล์ปลายทางได้</li>
             </ul>
           </div>
         </article>
 
         <article class="step">
-          <div class="num">4</div>
+          <div class="num">5</div>
           <div>
             <span class="tag green">Import</span>
             <h3>กด Import CSV + params</h3>
@@ -396,11 +417,209 @@
               <code>.params.json</code> ชื่อเดียวกัน ก็จะคัดลอกมาคู่กันด้วย
             </p>
             <p>
+              ตำแหน่งปลายทางของ flow ปัจจุบันคือ root ของโปรเจกต์ ไม่ใช่โฟลเดอร์ย่อย
+              เพื่อให้หน้า Train, Pipeline, Backtest และ Data Tools module อื่นเห็นไฟล์ได้ทันที
+            </p>
+            <p>
               หลัง import สำเร็จ dropdown ของหน้า Data Tools ควรเห็นไฟล์ใหม่ทันที
               ถ้าเป็นหน้าที่เปิดค้างไว้ ให้ใช้ปุ่ม Refresh ของ module นั้นได้
             </p>
           </div>
         </article>
+      </div>
+    </section>
+
+    <section id="process-files">
+      <h2>Process → ใช้ไฟล์อะไร / ไปเอาจากไหน</h2>
+      <p>
+        ขั้น Data Prep มีหลายไฟล์ที่ชื่อคล้ายกัน จุดสำคัญคือแยกให้ชัดว่าไฟล์ไหนเป็น
+        <strong>ตัว collector ที่ต้องเอาไปใส่ MT5</strong>, ไฟล์ไหนเป็น
+        <strong>output ที่ MT5 สร้างออกมา</strong>, และไฟล์ไหนเป็น
+        <strong>artifact ที่ dashboard ใช้ต่อ</strong>
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Process</th>
+            <th>ไฟล์ที่ต้องใช้</th>
+            <th>ไปเอาจากไหน</th>
+            <th>เอาไปไว้ที่ไหน / ได้ output อะไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ติดตั้ง collector ใน MT5</td>
+            <td>
+              <code>DataCollector_RL.mq5</code><br>
+              <code>RL_Indicators.mqh</code><br>
+              <code>CandlePatterns.mq5</code>
+            </td>
+            <td>
+              จาก repo นี้:<br>
+              <code>mt5_files/MQL5/Experts/DataCollector_RL.mq5</code><br>
+              <code>mt5_files/MQL5/Include/RL_Indicators.mqh</code><br>
+              <code>mt5_files/MQL5/Indicators/CandlePatterns.mq5</code>
+            </td>
+            <td>
+              copy เข้า MT5 Data Folder ตามโครงเดิม:<br>
+              <code>MQL5/Experts/</code>, <code>MQL5/Include/</code>,
+              <code>MQL5/Indicators/</code><br>
+              แล้วเปิด MetaEditor compile <code>CandlePatterns.mq5</code>
+              และ <code>DataCollector_RL.mq5</code>
+            </td>
+          </tr>
+          <tr>
+            <td>รัน DataCollector_RL</td>
+            <td>
+              Expert Advisor: <code>DataCollector_RL</code><br>
+              Input สำคัญ: <code>InpOutFile</code>
+            </td>
+            <td>
+              ใน MT5 Strategy Tester หรือ chart ที่ต้องการเก็บข้อมูล<br>
+              แนะนำตั้ง symbol/timeframe/date range ให้ตรงกับชุดข้อมูลที่จะ train
+            </td>
+            <td>
+              สร้างไฟล์ใน <code>Common\Files</code>:<br>
+              <code>&lt;InpOutFile&gt;.csv</code> เช่น <code>usdjpy_h4_dataset.csv</code><br>
+              และ sidecar <code>&lt;InpOutFile&gt;.params.json</code>
+            </td>
+          </tr>
+          <tr>
+            <td>Import เข้า Dashboard</td>
+            <td>
+              <code>*.csv</code><br>
+              <code>*.params.json</code> ที่ชื่อ stem เดียวกัน
+            </td>
+            <td>
+              <code>C:\Users\&lt;user&gt;\AppData\Roaming\MetaQuotes\Terminal\Common\Files</code>
+            </td>
+            <td>
+              หน้า <strong>Data Tools → Import from DataCollector_RL</strong>
+              จะคัดลอกมาไว้ที่ project root เป็นไฟล์ใช้งาน เช่น
+              <code>training_data_usdjpy_h4_dataset.csv</code> และ
+              <code>training_data_usdjpy_h4_dataset.params.json</code><br>
+              ถ้า dropdown ไม่เห็นไฟล์ ให้กด <strong>Refresh</strong> ใน card นี้
+            </td>
+          </tr>
+          <tr>
+            <td>Train RL</td>
+            <td>
+              CSV ใน project root<br>
+              optional: <code>&lt;csv_stem&gt;.params.json</code>
+            </td>
+            <td>
+              จากขั้น Import หรือเลือก CSV เองในหน้า Train
+            </td>
+            <td>
+              <code>rl_train.py</code> สร้าง <code>&lt;model&gt;.zip</code>,
+              <code>&lt;model&gt;_norm.csv</code>, logs/best model และ forward params เป็น
+              <code>&lt;model&gt;.params.json</code> เพื่อใช้ตอน export
+            </td>
+          </tr>
+          <tr>
+            <td>Export / Deploy ภายหลัง</td>
+            <td>
+              <code>&lt;model&gt;.zip</code><br>
+              <code>&lt;model&gt;_norm.csv</code><br>
+              <code>&lt;model&gt;.params.json</code><br>
+              template: <code>ML_RL_Trader_template.mq5</code>, <code>RL_Indicators.mqh</code>
+            </td>
+            <td>
+              model artifacts จากขั้น Train และ template จาก <code>mt5_files/MQL5/</code>
+            </td>
+            <td>
+              ได้ชุด deploy ใน <code>mt5_files/MQL5/</code>:<br>
+              <code>Files/&lt;deploy&gt;.onnx</code>,
+              <code>Include/&lt;deploy&gt;_config.mqh</code>,
+              <code>Experts/&lt;deploy&gt;_EA.mq5</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <strong>สำหรับ Step 1 นี้:</strong>
+        ยังไม่ต้องใช้ไฟล์ model, ONNX, EA deploy หรือ <code>build_training_from_collector.py</code>
+        ใน flow ปัจจุบัน dashboard import แค่ CSV + params ก่อน แล้วค่อย train/backtest ในขั้นถัดไป
+      </div>
+    </section>
+
+    <section id="what-files">
+      <h2>ไฟล์ที่ต้องเข้าใจ</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ไฟล์ / โฟลเดอร์</th>
+            <th>ทำหน้าที่อะไร</th>
+            <th>สำคัญกับ RL อย่างไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>DataCollector_RL.mq5</code></td>
+            <td>
+              Expert Advisor สำหรับเก็บข้อมูล RL จาก MT5 อยู่ใน repo ที่
+              <code>mt5_files/MQL5/Experts/DataCollector_RL.mq5</code>
+            </td>
+            <td>
+              ต้อง copy ไปไว้ใน MT5 Data Folder ที่ <code>MQL5/Experts/</code>
+              แล้ว compile/run เพื่อสร้าง CSV + params sidecar
+            </td>
+          </tr>
+          <tr>
+            <td><code>RL_Indicators.mqh</code></td>
+            <td>
+              include file ที่ DataCollector_RL และ EA ใช้คำนวณ feature ให้ตรงกัน
+              อยู่ที่ <code>mt5_files/MQL5/Include/RL_Indicators.mqh</code>
+            </td>
+            <td>
+              ต้อง copy ไป <code>MQL5/Include/</code> คู่กับ collector ไม่งั้น compile หรือ feature parity อาจไม่ครบ
+            </td>
+          </tr>
+          <tr>
+            <td><code>CandlePatterns.mq5</code></td>
+            <td>
+              indicator สำหรับ candle pattern features อยู่ที่
+              <code>mt5_files/MQL5/Indicators/CandlePatterns.mq5</code>
+            </td>
+            <td>
+              ต้อง copy ไป <code>MQL5/Indicators/</code> และ compile ถ้าชุด feature ใช้ candle pattern
+            </td>
+          </tr>
+          <tr>
+            <td><code>Common\Files</code></td>
+            <td>
+              โฟลเดอร์กลางของ MetaTrader ที่ EA/Script สามารถเขียนไฟล์ออกมาได้
+              ปกติอยู่ที่
+              <div class="path"><code>C:\Users\&lt;user&gt;\AppData\Roaming\MetaQuotes\Terminal\Common\Files</code></div>
+            </td>
+            <td>เป็นจุดรับไฟล์จาก DataCollector_RL ก่อน dashboard จะ import เข้ามา</td>
+          </tr>
+          <tr>
+            <td><code>usdjpy_h4_dataset.csv</code></td>
+            <td>ไฟล์ข้อมูลแท่งราคาและ feature เช่น timestamp, OHLCV, indicators, candle features</td>
+            <td>เป็น dataset หลักที่ <code>rl_train.py</code> ใช้สร้าง environment ให้ agent ฝึก</td>
+          </tr>
+          <tr>
+            <td><code>usdjpy_h4_dataset.params.json</code></td>
+            <td>sidecar config ที่บอกค่า parameter ของ collector เช่น indicator periods และ setting ที่ใช้ตอนเก็บข้อมูล</td>
+            <td>ช่วยให้ตอน export/deploy ฝั่ง EA คำนวณ feature ให้ตรงกับตอน train ลดความเสี่ยง train อย่างหนึ่งแต่ live อีกอย่างหนึ่ง</td>
+          </tr>
+          <tr>
+            <td><code>training_data_*.csv</code></td>
+            <td>ชื่อไฟล์ปลายทางใน project folder หลัง import</td>
+            <td>เป็นไฟล์ที่ user เลือกต่อในหน้า Train, Pipeline, Backtest หรือ Data Tools module อื่น</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>อธิบายแบบง่าย:</strong>
+        <code>CSV</code> คือข้อมูลสำหรับเรียน ส่วน <code>.params.json</code>
+        คือคู่มือกำกับข้อมูลชุดนั้น ว่าถูกสร้างด้วย setting อะไร
+        ถ้าจะเอาโมเดลไปใช้จริงใน MT5 ควรเก็บ <code>.params.json</code>
+        คู่กับ CSV เสมอ เพื่อให้ train กับ live ใช้กติกาเดียวกัน
       </div>
     </section>
 
@@ -487,7 +706,7 @@
           <h3>ไม่รู้ว่าไฟล์ไหนล่าสุด</h3>
           <p>
             ตั้งชื่อ output ให้มี symbol/timeframe/date หรือเวอร์ชัน เช่น
-            <code>training_data_uj_h4_2026_06.csv</code>
+            <code>training_data_usdjpy_h4_2026_06.csv</code>
           </p>
         </div>
         <div class="card warn">
@@ -530,17 +749,18 @@
             ถ้าเป็นไฟล์ที่เชื่อถือได้และมีข้อมูลครบ สามารถเลือก CSV ในหน้า Train
             แล้วเริ่ม train model ได้ แต่ยังต้อง backtest/walk-forward ก่อน export
           </p>
-          <p><a href="03_dashboard_user_flow_guide.html#flow-train">กลับไปดู flow หลัก</a></p>
+          <p><a href="01_dashboard_user_flow_guide.html#flow-train">กลับไปดู flow หลัก</a></p>
         </div>
       </div>
     </section>
 
     <p class="footer">
       Related:
-      <a href="03_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
       <a href="../explainers/05_data_collector_v4_explained.html">DataCollector v4 Explained</a> ·
       <a href="../explainers/06_parity_config_explained.html">Parity Config Explained</a>
     </p>
   </main>
 </body>
 </html>
+

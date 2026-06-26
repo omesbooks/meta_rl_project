@@ -1,0 +1,541 @@
+﻿<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Train Page Detail</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #dbeafe;
+      color: var(--blue);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .flow { display: grid; gap: 12px; margin-top: 16px; }
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--green);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Flow Step 3 · Training</span>
+      <h1>Train โมเดล RL อย่างมีวินัย</h1>
+      <p class="lead">
+        บทนี้อธิบายหน้า Train: เลือก dataset, ตั้งค่าหลักของ PPO,
+        อ่าน log ระหว่าง train และรู้ว่าไฟล์ output แต่ละตัวเอาไปใช้ทำอะไรต่อ
+      </p>
+      <nav>
+        <a href="#goal">เป้าหมาย</a>
+        <a href="#workflow">ขั้นตอนใช้งาน</a>
+        <a href="#inputs">ไฟล์ที่ต้องใช้</a>
+        <a href="#settings">ค่าหลัก</a>
+        <a href="#advanced">Advanced PPO</a>
+        <a href="#logs">อ่าน Log</a>
+        <a href="#handoff">ส่งต่อ Validation</a>
+      </nav>
+    </header>
+
+    <section id="goal">
+      <h2>Training คืออะไรใน flow นี้</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">Input</span>
+          <h3>ใช้ dataset ที่ผ่าน Quality Check</h3>
+          <p>
+            ควรใช้ CSV ที่ timestamp ใช้ได้, feature ไม่เสีย, correlation ไม่หนักเกิน,
+            และถ้าจะ deploy ควรมี <code>.params.json</code> คู่กัน
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Learn</span>
+          <h3>ให้ agent ฝึกจาก state → action → reward</h3>
+          <p>
+            agent เห็น feature window และสถานะ position แล้วเลือก action:
+            Hold, Buy, Sell หรือ Close
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Not Done</span>
+          <h3>Train สำเร็จยังไม่แปลว่าใช้ได้</h3>
+          <p>
+            หลัง train ต้องผ่าน Backtest และ Walk-Forward ก่อนคิดเรื่อง export/deploy
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow">
+      <h2>ขั้นตอน Train ใน Dashboard</h2>
+      <p>
+        เวลาใช้สอน user ให้เริ่มจาก flow ตรงนี้ก่อน เพื่อให้เห็นว่าหน้า Train
+        ต้องเดินจาก dataset ที่ผ่าน Quality Check ไปเป็น model artifact อย่างไร
+        หลังจากนั้นค่อยลงรายละเอียดว่าไฟล์ output, Train %, window size, max hold และ PPO settings แต่ละตัวคืออะไร
+      </p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag green">Dataset</span>
+            <h3>เลือก CSV ที่ผ่าน Step 2 แล้ว</h3>
+            <p>
+              เลือกไฟล์จากหน้า Train หรือใช้ไฟล์ที่ Regime Check ส่งมาให้ เช่น
+              <code>training_data_usdjpy_h4_dataset_from_2020-03-01.csv</code>
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Params</span>
+            <h3>เช็ค .params.json</h3>
+            <p>
+              ถ้า dataset ไม่มี sidecar ให้กด <strong>Attach .params</strong>
+              เฉพาะเมื่อมั่นใจว่าเป็น params ของ dataset ชุดเดียวกัน
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag blue">Settings</span>
+            <h3>ตั้งค่าหลักก่อน</h3>
+            <p>
+              ใช้ PPO, reward <code>realized</code>, train pct <code>85</code>,
+              window <code>10</code>, max hold <code>30</code>, และตั้งชื่อโมเดลให้ชัด
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag green">Run</span>
+            <h3>กด Start Training</h3>
+            <p>
+              ระบบจะรัน <code>rl_train.py</code>, split แบบ time-based,
+              normalize จาก train stats เท่านั้น, train, save model และ quick test บน eval/test
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag warn">Review</span>
+            <h3>อ่านผลก่อน Validation</h3>
+            <p>
+              Train log ที่ไม่มี error ไม่พอ ต้องดู reward trend, PPO health metrics,
+              quick test และ artifact ที่สร้างครบหรือไม่
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="inputs">
+      <h2>ไฟล์ที่ Train ใช้และสร้างออกมา</h2>
+      <p>
+        ในหน้า Train ค่า <strong>Model Name</strong> จะกลายเป็นชื่อโฟลเดอร์และชื่อไฟล์ของโมเดล
+        เช่นตั้งชื่อ <code>rl_usdjpy_h4_v1</code> แล้วกด Start Training สำเร็จ
+        ระบบจะสร้างไฟล์หลักไว้ใต้ project root ที่
+        <code>artifacts/models/rl_usdjpy_h4_v1/</code>
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>กลุ่มไฟล์</th>
+            <th>Path / ชื่อไฟล์ที่ได้</th>
+            <th>ใช้ทำอะไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Dataset input</td>
+            <td><code>training_data_usdjpy_h4_dataset.csv</code> ใน project root</td>
+            <td>เป็นข้อมูลหลักที่ <code>rl_train.py</code> ใช้ train/eval แบบ time-based split</td>
+          </tr>
+          <tr>
+            <td>Dataset sidecar</td>
+            <td><code>training_data_usdjpy_h4_dataset.params.json</code> ใน project root</td>
+            <td>ถูก forward เป็น <code>&lt;model&gt;.params.json</code> เพื่อใช้ตอน export/deploy</td>
+          </tr>
+          <tr>
+            <td>Final model</td>
+            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.zip</code></td>
+            <td>ไฟล์โมเดล PPO หลัก ใช้เลือกในหน้า Backtest, Fine-tune และ Export</td>
+          </tr>
+          <tr>
+            <td>Normalization stats</td>
+            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;_norm.csv</code></td>
+            <td>ช่วยให้ inference/backtest/export ใช้ scale เดียวกับตอน train</td>
+          </tr>
+          <tr>
+            <td>Params parity</td>
+            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.params.json</code></td>
+            <td>copy จาก dataset sidecar เพื่อให้ export/deploy ใช้ indicator setting ตรงกับ DataCollector_RL</td>
+          </tr>
+          <tr>
+            <td>Train metadata</td>
+            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.train.json</code></td>
+            <td>บันทึก setting ตอน train, path ของ artifact และข้อมูลช่วยตรวจย้อนหลังเมื่อผลลัพธ์ผิดปกติ</td>
+          </tr>
+          <tr>
+            <td>Best checkpoint</td>
+            <td><code>artifacts/models/&lt;model&gt;/best/best_model.zip</code></td>
+            <td>checkpoint ที่ EvalCallback มองว่าดีที่สุดระหว่าง train ใช้เทียบกับ final model ได้</td>
+          </tr>
+          <tr>
+            <td>Training logs</td>
+            <td><code>artifacts/models/&lt;model&gt;/logs/</code></td>
+            <td>เก็บ log/eval output จาก Stable-Baselines3 สำหรับดูประวัติ training</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>อธิบายแบบง่าย:</strong>
+        CSV คือบทเรียน, <code>.params.json</code> คือคู่มือบทเรียน,
+        <code>.zip</code> คือสมองที่ train แล้ว, และ <code>_norm.csv</code>
+        คือสูตรปรับสเกล input ให้สมองอ่านข้อมูลแบบเดิมทุกครั้ง
+      </div>
+      <div class="callout warn">
+        <strong>จำ path แบบสั้น:</strong>
+        งาน train ใหม่จะอยู่ใน <code>artifacts/models/&lt;model&gt;/</code>
+        ส่วนไฟล์โมเดลเก่าที่เคยอยู่หน้า root เช่น <code>&lt;model&gt;.zip</code>,
+        <code>&lt;model&gt;_norm.csv</code> หรือ <code>&lt;model&gt;_best/best_model.zip</code>
+        ระบบยังพยายามค้นหาให้เพื่อรองรับงานเก่า แต่เวลาสอน user ให้ยึดโครงสร้างใหม่เป็นหลัก
+      </div>
+    </section>
+
+    <section id="settings">
+      <h2>ค่าหลักในหน้า Train</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ค่า</th>
+            <th>ความหมาย</th>
+            <th>คำแนะนำเริ่มต้น</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Algorithm</td>
+            <td>ชนิด RL algorithm ที่ใช้ train</td>
+            <td>ใช้ <code>PPO (recommended)</code> ก่อน เพราะเป็นค่าหลักของระบบนี้</td>
+          </tr>
+          <tr>
+            <td>Reward Mode</td>
+            <td>วิธีให้คะแนน agent</td>
+            <td>ใช้ <code>realized</code> เพราะเน้น reward จากการปิด trade และ net P/L จริง</td>
+          </tr>
+          <tr>
+            <td>Training Steps</td>
+            <td>จำนวน step ที่ agent ได้ฝึก</td>
+            <td>เริ่ม <code>200000</code>; ชุดข้อมูลใหญ่ค่อยเพิ่มตามผล log/backtest</td>
+          </tr>
+          <tr>
+            <td>Window Size</td>
+            <td>จำนวน bars ย้อนหลังที่ agent เห็นใน state</td>
+            <td>เริ่ม <code>10</code>; window ใหญ่ขึ้นทำให้ observation ใหญ่ขึ้นและ train หนักขึ้น</td>
+          </tr>
+          <tr>
+            <td>Max Hold</td>
+            <td>จำนวน bars สูงสุดที่ถือ position ก่อน force close</td>
+            <td>เริ่ม <code>30</code>; ควรสัมพันธ์กับ timeframe และ style ของระบบ</td>
+          </tr>
+          <tr>
+            <td>Train %</td>
+            <td>แบ่งข้อมูลแบบ time-based: ต้นไฟล์เป็น train, ท้ายไฟล์เป็น eval/test</td>
+            <td>ใช้ <code>85</code> ได้สำหรับเริ่มต้น และห้ามคิดว่าเป็น random split</td>
+          </tr>
+          <tr>
+            <td>Model Name</td>
+            <td>ชื่อ artifact ที่จะถูกสร้าง เช่น <code>rl_usdjpy_h4_v1</code></td>
+            <td>ใส่ symbol/timeframe/version ให้ชัด และระวังชื่อซ้ำเพราะจะ overwrite</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="advanced">
+      <h2>Advanced PPO Settings ควรแตะเมื่อไหร่</h2>
+      <p>
+        สำหรับ user ใหม่ ให้ใช้ค่า default ก่อน แล้วค่อยกลับมาแก้เมื่ออ่าน log/backtest แล้วมีเหตุผล
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ค่า</th>
+            <th>ใช้แก้อาการอะไร</th>
+            <th>แนวทาง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>learning_rate</code></td>
+            <td>policy แกว่ง, KL/clip สูง, reward พังเร็ว</td>
+            <td>ลดจาก <code>3e-4</code> เป็น <code>1e-4</code></td>
+          </tr>
+          <tr>
+            <td><code>clip_range</code></td>
+            <td>ควบคุมไม่ให้ PPO เปลี่ยน policy แรงเกินในแต่ละ update</td>
+            <td>เริ่ม <code>0.2</code>; ไม่ควรปรับถ้ายังไม่อ่าน PPO metrics เป็น</td>
+          </tr>
+          <tr>
+            <td><code>ent_coef</code></td>
+            <td>agent ไม่ explore หรือ action ซ้ำเกินไป</td>
+            <td>เพิ่มเล็กน้อยเมื่อ exploration หาย แต่ต้อง backtest ยืนยัน</td>
+          </tr>
+          <tr>
+            <td><code>n_steps</code>, <code>batch_size</code>, <code>n_epochs</code></td>
+            <td>ควบคุม rollout และ optimization</td>
+            <td><code>batch_size</code> ต้องไม่เกิน <code>n_steps</code></td>
+          </tr>
+          <tr>
+            <td><code>gamma</code>, <code>gae_lambda</code>, <code>vf_coef</code></td>
+            <td>discount, advantage smoothing และ critic/value loss</td>
+            <td>ใช้ default ก่อน เว้นแต่มีเหตุผลจาก metric หรือ experiment</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>สอน user แบบง่าย:</strong>
+        Advanced PPO ไม่ใช่ที่สำหรับเดาสุ่ม ถ้า train ไม่ดีให้กลับไปดู data,
+        regime, feature และ reward trend ก่อน แล้วค่อยปรับ hyperparameters
+      </div>
+    </section>
+
+    <section id="logs">
+      <h2>อ่าน Log ระหว่าง Train</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>สิ่งที่เห็น</th>
+            <th>แปลว่าอะไร</th>
+            <th>ควรทำอะไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ep_rew_mean</code> ค่อย ๆ ดีขึ้น</td>
+            <td>agent เริ่มได้ reward จาก environment</td>
+            <td><span class="status ok">Go</span> ปล่อยจนจบ แล้วไป Backtest</td>
+          </tr>
+          <tr>
+            <td>reward collapse หรือแกว่งแรง</td>
+            <td>อาจ learning rate สูง, data noisy, หรือ reward ถูก exploit</td>
+            <td><span class="status maybe">Review</span> ลด LR หรือกลับไปดู data/feature</td>
+          </tr>
+          <tr>
+            <td><code>approx_kl</code> หรือ <code>clip_fraction</code> สูงผิดปกติ</td>
+            <td>policy เปลี่ยนแรงเกินไป</td>
+            <td><span class="status maybe">Tune</span> ลด learning rate หรือใช้ Stable preset</td>
+          </tr>
+          <tr>
+            <td>มี NaN/error หรือ train data too small</td>
+            <td>ข้อมูลหรือ setting ไม่พร้อม</td>
+            <td><span class="status no">Stop</span> กลับไป Quality Check</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="handoff">
+      <h2>ส่งต่อไป Validation</h2>
+      <p>
+        เมื่อ train จบและ artifact สร้างครบ ให้ไปหน้า Backtest เพื่อพิสูจน์ด้วยผลลัพธ์เทรดจริงใน simulation
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ก่อนออกจากหน้า Train</th>
+            <th>ควรมี</th>
+            <th>ถ้าไม่มี</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Model artifact</td>
+            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.zip</code></td>
+            <td>train ยังไม่จบหรือ error</td>
+          </tr>
+          <tr>
+            <td>Normalization stats</td>
+            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;_norm.csv</code></td>
+            <td>อย่า backtest/export เพราะ input scale อาจไม่ตรง</td>
+          </tr>
+          <tr>
+            <td>Params parity</td>
+            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.params.json</code> ถ้ามี sidecar ต้นทาง</td>
+            <td>ยัง backtest ได้ แต่ก่อน deploy ควรแก้ parity ให้ครบ</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>ประโยคสอน user:</strong>
+        การ train คือการสร้างผู้สมัครโมเดล ยังไม่ใช่การอนุมัติให้ใช้งานจริง
+        ผู้สมัครต้องผ่าน Backtest และ Walk-Forward ก่อน
+      </div>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="03_quality_check_detail.html">Quality Check Detail</a> ·
+      <a href="../explainers/07_rl_reward_explained.html">RL Reward Explained</a>
+    </p>
+  </main>
+</body>
+</html>
+

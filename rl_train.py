@@ -10,20 +10,60 @@ RL Trainer — PPO + TradingEnv
     python rl_train.py EURUSD_H1.csv --steps 200000 --name rl_v1
 
 output:
-    rl_v1.zip          (PPO model)
-    rl_v1_logs/        (tensorboard logs - optional)
+    artifacts/models/rl_v1/rl_v1.zip
+    artifacts/models/rl_v1/rl_v1_norm.csv
+    artifacts/models/rl_v1/rl_v1.train.json
+    artifacts/models/rl_v1/best/best_model.zip
+    artifacts/models/rl_v1/logs/        (tensorboard logs)
 """
 import sys
 import io
 import argparse
+import json
 from pathlib import Path
+from datetime import datetime
 import numpy as np
 import pandas as pd
 
 # Windows console UTF-8
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+from artifact_paths import (
+    best_dir,
+    ensure_model_dirs,
+    final_model_path,
+    logs_dir,
+    norm_path as artifact_norm_path,
+    params_path as artifact_params_path,
+    train_meta_path,
+)
 from trading_env import TradingEnv
+
+
+def _period(df):
+    if "timestamp" not in df.columns or len(df) == 0:
+        return None
+    ts = pd.to_datetime(df["timestamp"], errors="coerce").dropna()
+    if ts.empty:
+        return None
+    return {
+        "start": ts.iloc[0].isoformat(),
+        "end": ts.iloc[-1].isoformat(),
+    }
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.ndarray,)):
+        return value.tolist()
+    return value
 
 
 def main():
@@ -65,6 +105,7 @@ def main():
     ap.add_argument("--vf_coef", type=float, default=0.5,
                     help="value function loss coefficient (default 0.5)")
     args = ap.parse_args()
+    model_root = ensure_model_dirs(args.name)
 
     # Auto-scale NN by window size
     if args.net_arch == "auto":
@@ -86,6 +127,7 @@ def main():
     print(f"\n[load] {args.csv}")
     df = pd.read_csv(args.csv)
     print(f"  rows: {len(df):,}")
+    source_rows = len(df)
 
     # drop leaky columns + non-feature columns
     leaky = [c for c in df.columns
@@ -122,7 +164,7 @@ def main():
     df = df.fillna(0).reset_index(drop=True)
 
     # save normalization stats so inference (EA) uses identical scaling
-    norm_path = Path(f"{args.name}_norm.csv")
+    norm_path = artifact_norm_path(args.name)
     pd.DataFrame({"mean": feat_mean, "std": feat_std}).to_csv(norm_path)
     print(f"  saved norm stats -> {norm_path}")
 
@@ -132,7 +174,7 @@ def main():
     if not src_params.exists():
         src_params = Path(args.csv).parent / (Path(args.csv).stem + ".params.json")
     if src_params.exists():
-        dst_params = Path(f"{args.name}.params.json")
+        dst_params = artifact_params_path(args.name)
         _shutil.copy(src_params, dst_params)
         print(f"  forwarded params -> {dst_params}")
 
@@ -179,6 +221,52 @@ def main():
             f"ERROR: eval/test data too small ({len(test_df)} rows). Need > window+2 rows.")
 
     print(f"\n[split] train: {len(train_df):,} | eval: {len(test_df):,} ({eval_source})")
+    meta_path = train_meta_path(args.name)
+    meta = {
+        "model": args.name,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "train_csv": args.csv,
+        "eval_csv": args.eval_csv or "",
+        "eval_source": eval_source,
+        "train_pct": train_pct,
+        "split_index": split,
+        "source_rows": source_rows,
+        "train_rows": len(train_df),
+        "eval_rows": len(test_df),
+        "train_period": _period(train_df),
+        "eval_period": _period(test_df),
+        "feature_count": len(feature_cols),
+        "features": feature_cols,
+        "artifacts_dir": str(model_root),
+        "artifacts": {
+            "model": str(final_model_path(args.name)),
+            "best_model": str(best_dir(args.name) / "best_model.zip"),
+            "norm": str(norm_path),
+            "params": str(artifact_params_path(args.name)),
+            "logs": str(logs_dir(args.name)),
+            "train_meta": str(meta_path),
+        },
+        "hyperparameters": {
+            "steps": args.steps,
+            "window": args.window,
+            "ep_len": args.ep_len,
+            "algo": args.algo,
+            "reward_mode": args.reward_mode,
+            "max_hold": args.max_hold,
+            "net_arch": net_arch,
+            "learning_rate": args.learning_rate,
+            "clip_range": args.clip_range,
+            "ent_coef": args.ent_coef,
+            "n_steps": args.n_steps,
+            "n_epochs": args.n_epochs,
+            "batch_size": args.batch_size,
+            "gamma": args.gamma,
+            "gae_lambda": args.gae_lambda,
+            "vf_coef": args.vf_coef,
+        },
+    }
+    meta_path.write_text(json.dumps(_jsonable(meta), indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"[meta] -> {meta_path}")
 
     # ---------- create environments ----------
     from stable_baselines3 import PPO, DQN, A2C
@@ -208,7 +296,7 @@ def main():
 
     # ---------- create model ----------
     print(f"\n[model] {args.algo.upper()}")
-    log_dir = f"./{args.name}_logs/"
+    log_dir = str(logs_dir(args.name))
 
     if args.algo == "ppo":
         # Sanity: batch_size must be <= n_steps and n_steps % batch_size == 0
@@ -254,12 +342,12 @@ def main():
 
     # ---------- train ----------
     print(f"\n[train] {args.steps:,} steps ...")
-    print("(progress bar will appear; tensorboard --logdir ./{}_logs to monitor)".format(args.name))
+    print(f"(progress bar will appear; tensorboard --logdir {log_dir} to monitor)")
 
     from stable_baselines3.common.callbacks import EvalCallback
     eval_cb = EvalCallback(
         eval_env,
-        best_model_save_path=f"./{args.name}_best/",
+        best_model_save_path=str(best_dir(args.name)),
         log_path=log_dir,
         eval_freq=10_000,
         n_eval_episodes=3,
@@ -271,7 +359,7 @@ def main():
     model.learn(total_timesteps=args.steps, callback=eval_cb, progress_bar=True)
 
     # ---------- save ----------
-    save_path = f"{args.name}.zip"
+    save_path = final_model_path(args.name)
     model.save(save_path)
     print(f"\n[save] -> {save_path}")
 
@@ -289,6 +377,10 @@ def main():
         done = terminated or truncated
 
     stats = test_env_raw.get_stats()
+    meta["quick_eval_stats"] = stats
+    meta["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    meta_path.write_text(json.dumps(_jsonable(meta), indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"[meta] updated -> {meta_path}")
     print("\n" + "=" * 50)
     print("  Quick test on out-of-sample")
     print("=" * 50)

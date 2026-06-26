@@ -10,25 +10,31 @@ Pipeline:
   5. Generate MQL5 config header (norm stats)
   6. Generate customized EA from template (with model name baked in)
 
-Output structure (in --output_dir):
+Package structure (inside mt5_files/packages/<deploy_name>/ by default):
     MQL5/
     ├── Files/
     │   └── <deploy_name>.onnx
     ├── Include/
     │   ├── <deploy_name>_config.mqh
     │   └── RL_Indicators.mqh   (copied from template)
+    ├── Indicators/
+    │   └── CandlePatterns.mq5   (custom indicator dependency)
     └── Experts/
         └── <deploy_name>_EA.mq5
 
 Usage:
-    python export_to_onnx.py <model_name> [--name <deploy_name>] [--output_dir <path>]
+    python export_to_onnx.py <model_name> [--name <deploy_name>] [--source final|best|auto] [--output_dir <path>]
 
 Examples:
-    # Default: deploy_name = model_name, output to mt5_files/MQL5/
+    # Default: export <model_name>.zip, deploy_name = model_name,
+    # output to mt5_files/packages/<model_name>/MQL5/
     python export_to_onnx.py rl_prod_v10_enriched
 
+    # Export the EvalCallback checkpoint instead
+    python export_to_onnx.py rl_prod_v10_enriched --source best
+
     # Custom deploy name and output dir
-    python export_to_onnx.py rl_prod_v10_enriched --name rl_v10 --output_dir mt5_files/MQL5
+    python export_to_onnx.py rl_prod_v10_enriched --name rl_v10
 """
 import sys, io, argparse, shutil
 from pathlib import Path
@@ -36,6 +42,15 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+
+from artifact_paths import (
+    best_model_path,
+    final_model_path,
+    find_norm_path,
+    find_params_path,
+    legacy_best_model_path,
+    legacy_final_model_path,
+)
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
@@ -57,11 +72,13 @@ class PolicyWrapper(nn.Module):
 
 # Path to template files (relative to this script)
 SCRIPT_DIR = Path(__file__).parent.resolve()
-TEMPLATE_EA  = SCRIPT_DIR / "mt5_files" / "MQL5" / "Experts" / "ML_RL_Trader_template.mq5"
-TEMPLATE_INC = SCRIPT_DIR / "mt5_files" / "MQL5" / "Include"  / "RL_Indicators.mqh"
+TEMPLATE_EA     = SCRIPT_DIR / "mt5_files" / "MQL5" / "Experts" / "ML_RL_Trader_template.mq5"
+TEMPLATE_INC    = SCRIPT_DIR / "mt5_files" / "MQL5" / "Include"  / "RL_Indicators.mqh"
+TEMPLATE_CANDLE = SCRIPT_DIR / "mt5_files" / "MQL5" / "Indicators" / "CandlePatterns.mq5"
 
 
-def export_model(model_name: str, deploy_name: str = None, output_dir: str = None):
+def export_model(model_name: str, deploy_name: str = None, output_dir: str = None,
+                 source: str = "final"):
     print("=" * 70)
     print(f"  Exporting {model_name} → MT5 deployment package")
     print("=" * 70)
@@ -70,14 +87,23 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
         deploy_name = model_name
 
     if output_dir is None:
-        output_dir = SCRIPT_DIR / "mt5_files" / "MQL5"
+        package_dir = SCRIPT_DIR / "mt5_files" / "packages" / deploy_name
+        output_dir = package_dir / "MQL5"
     else:
         output_dir = Path(output_dir)
+        legacy_output_dir = SCRIPT_DIR / "mt5_files" / "MQL5"
+        if output_dir.resolve() == legacy_output_dir.resolve():
+            package_dir = SCRIPT_DIR / "mt5_files" / "packages" / deploy_name
+            output_dir = package_dir / "MQL5"
+            print(f"[redirect] legacy output_dir -> {output_dir}")
+        else:
+            package_dir = output_dir.parent if output_dir.name.lower() == "mql5" else output_dir
 
     out_files   = output_dir / "Files"
     out_include = output_dir / "Include"
     out_experts = output_dir / "Experts"
-    for d in [out_files, out_include, out_experts]:
+    out_indicators = output_dir / "Indicators"
+    for d in [out_files, out_include, out_experts, out_indicators]:
         d.mkdir(parents=True, exist_ok=True)
 
     # === Verify templates exist ===
@@ -88,12 +114,27 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
         print(f"❌ Template indicators not found: {TEMPLATE_INC}")
         return 1
 
+    if not TEMPLATE_CANDLE.exists():
+        print(f"ERROR: CandlePatterns indicator not found: {TEMPLATE_CANDLE}")
+        return 1
+
     # === Load PPO model ===
     from stable_baselines3 import PPO
-    candidates = [
-        f"{model_name}_best/best_model.zip",
-        f"{model_name}.zip",
-    ]
+    source = (source or "final").lower()
+    final_path = final_model_path(model_name)
+    legacy_final_path = legacy_final_model_path(model_name)
+    best_path = best_model_path(model_name)
+    legacy_best_path = legacy_best_model_path(model_name)
+    if source == "final":
+        candidates = [final_path, legacy_final_path]
+    elif source == "best":
+        candidates = [best_path, legacy_best_path]
+    elif source == "auto":
+        candidates = [final_path, legacy_final_path, best_path, legacy_best_path]
+    else:
+        print(f"❌ Unknown source: {source} (expected final, best, or auto)")
+        return 1
+
     model_path = None
     for c in candidates:
         if Path(c).exists():
@@ -101,11 +142,12 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
             break
 
     if model_path is None:
-        print(f"❌ Model not found. Tried: {candidates}")
+        tried = [str(p) for p in candidates]
+        print(f"❌ Model not found for --source {source}. Tried: {tried}")
         return 1
 
-    print(f"\n[load] {model_path}")
-    model = PPO.load(model_path, device='cpu')
+    print(f"\n[load] {model_path}  (source={source})")
+    model = PPO.load(str(model_path), device='cpu')
 
     obs_dim = model.policy.observation_space.shape[0]
     n_actions = int(model.policy.action_space.n)
@@ -124,7 +166,8 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     dummy = torch.randn(1, obs_dim, dtype=torch.float32)
     # NOTE: not using dynamic_axes / dynamic_shapes since MT5 always
     # inferences with batch_size=1 (one bar at a time).
-    # Fixed shape avoids dynamo deprecation warning + simpler ONNX graph.
+    # Keep the legacy exporter: torch 2.11's dynamo exporter can pass
+    # small random checks while diverging on real normalized trading states.
     torch.onnx.export(
         wrapped, dummy, str(onnx_path),
         export_params=True,
@@ -132,6 +175,7 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
         do_constant_folding=True,
         input_names=['state'],
         output_names=['action_probs'],
+        dynamo=False,
     )
 
     # === Consolidate external data into single file (MT5 requires this!) ===
@@ -156,6 +200,9 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
         torch.randn(1, obs_dim, dtype=torch.float32),
         torch.zeros(1, obs_dim, dtype=torch.float32),
         torch.ones(1, obs_dim, dtype=torch.float32),
+        torch.full((1, obs_dim), 5.0, dtype=torch.float32),
+        torch.full((1, obs_dim), -5.0, dtype=torch.float32),
+        torch.linspace(-6.0, 6.0, obs_dim, dtype=torch.float32).reshape(1, obs_dim),
     ]
     max_diff = 0.0
     for i, t in enumerate(test_inputs):
@@ -169,10 +216,12 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     else:
         print(f"  ⚠️  Max diff = {max_diff:.2e} — investigate!")
 
+        return 1
+
     # === Load norm stats ===
-    norm_path = f"{model_name}_norm.csv"
-    if not Path(norm_path).exists():
-        print(f"\n⚠️  Norm stats not found: {norm_path}")
+    norm_path = find_norm_path(model_name)
+    if norm_path is None:
+        print(f"\n⚠️  Norm stats not found for {model_name}")
         return 1
 
     print(f"\n[norm] {norm_path}")
@@ -199,6 +248,7 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     mqh.append(f"//| {config_filename} — Auto-generated by export_to_onnx.py")
     mqh.append(f"//| Model: {model_name}")
     mqh.append(f"//| Deploy: {deploy_name}")
+    mqh.append(f"//| Source: {model_path}")
     mqh.append(f"//| Input dim: {obs_dim} = window({window}) × features({feat_count}) + 3")
     mqh.append(f"//| Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
     mqh.append("//+------------------------------------------------------------------+")
@@ -234,9 +284,9 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
 
     # === Embed DataCollector params (if sidecar exists) ===
     import json as _json
-    params_file = SCRIPT_DIR / f"{model_name}.params.json"
+    params_file = find_params_path(model_name)
     mqh.append("//=== DataCollector feature-computation params (for parity) ===")
-    if params_file.exists():
+    if params_file and params_file.exists():
         try:
             params = _json.loads(params_file.read_text(encoding="utf-8"))
             mqh.append(f"// Embedded from {params_file.name} — applied via")
@@ -275,7 +325,7 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
 
     config_path.write_text('\n'.join(mqh), encoding='utf-8')
     print(f"\n[config] -> {config_path}")
-    if params_file.exists():
+    if params_file and params_file.exists():
         print(f"[config] embedded params from {params_file.name}")
 
     # === Generate EA from template ===
@@ -299,11 +349,18 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
             shutil.copy2(TEMPLATE_INC, indicators_dest)
     print(f"[helpers]-> {indicators_dest}")
 
+    # === Copy required custom indicator into the same model package ===
+    candle_dest = out_indicators / "CandlePatterns.mq5"
+    shutil.copy2(TEMPLATE_CANDLE, candle_dest)
+    print(f"[ind]    -> {candle_dest}")
+
     # === Summary ===
     print()
     print("=" * 70)
     print(f"  ✅ EXPORT COMPLETE — {deploy_name}")
     print("=" * 70)
+    print(f"\nPackage root:")
+    print(f"  {package_dir}/")
     print(f"\nOutput structure:")
     print(f"  {output_dir}/")
     print(f"  ├── Files/")
@@ -311,18 +368,21 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     print(f"  ├── Include/")
     print(f"  │   ├── {config_filename}")
     print(f"  │   └── RL_Indicators.mqh")
+    print(f"  ├── Indicators/")
+    print(f"  │   └── CandlePatterns.mq5")
     print(f"  └── Experts/")
     print(f"      └── {ea_filename}")
 
     print(f"\n📋 To deploy in MT5:")
     print(f"  1. Open MT5 → File → Open Data Folder")
     print(f"  2. Copy {output_dir}/* contents → MQL5/")
-    print(f"     (mirrors structure: Files/, Include/, Experts/)")
+    print(f"     (mirrors structure: Files/, Include/, Experts/, Indicators/)")
     print(f"  3. Open MetaEditor → Experts/{ea_filename}")
     print(f"  4. Compile (F7)")
     print(f"  5. Strategy Tester → select {deploy_name}_EA")
 
     print(f"\n⚙️  EA Settings to match training:")
+    print(f"  • Source:     {model_path}")
     print(f"  • Window:     {window}")
     print(f"  • Confidence: 0.95 (recommended)")
     print(f"  • Symbol/TF:  match training data")
@@ -335,10 +395,14 @@ def main():
     ap.add_argument("model_name", help="Model name (without .zip)")
     ap.add_argument("--name", dest="deploy_name", default=None,
                     help="Deployment name (default: same as model_name)")
+    ap.add_argument("--source", choices=["final", "best", "auto"], default="final",
+                    help="model artifact to export: final=<model>.zip (default, matches Backtest), "
+                         "best=best/best_model.zip, auto=final then best; organized artifacts "
+                         "are preferred, legacy root paths are fallback")
     ap.add_argument("--output_dir", default=None,
-                    help="Output directory (default: mt5_files/MQL5/)")
+                    help="MQL5 output directory (default: mt5_files/packages/<deploy_name>/MQL5/)")
     args = ap.parse_args()
-    return export_model(args.model_name, args.deploy_name, args.output_dir)
+    return export_model(args.model_name, args.deploy_name, args.output_dir, args.source)
 
 
 if __name__ == "__main__":

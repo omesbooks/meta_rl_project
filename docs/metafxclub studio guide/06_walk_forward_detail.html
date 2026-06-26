@@ -236,6 +236,7 @@
         <a href="#workflow">ขั้นตอนใช้งาน</a>
         <a href="#metrics">อ่านผล</a>
         <a href="#decision">ตัดสินใจ</a>
+        <a href="#confidence">Confidence Filter</a>
       </nav>
     </header>
 
@@ -597,6 +598,39 @@
       </div>
     </section>
 
+    <section id="confidence">
+      <h2>Walk-Forward ใช้ Confidence Filter ไหม</h2>
+      <p>
+        Walk-Forward ในโปรแกรมนี้ train temporary model แล้วประเมินด้วย environment แบบใกล้กับตอน train:
+        โมเดลเลือก action ด้วย policy โดยตรง และไม่ได้ใช้ confidence threshold แบบหน้า Backtest/Live.
+        ดังนั้นผล Walk-Forward ตอบว่า training recipe มี edge หลายช่วงเวลาไหม
+        แต่ยังไม่ได้ตอบว่า threshold <code>0.85</code> หรือ threshold อื่นเหมาะกับการส่ง order จริงหรือไม่
+      </p>
+      <div class="grid two">
+        <div class="card blue">
+          <span class="tag blue">What it proves</span>
+          <h3>recipe มี edge แบบ pure policy ไหม</h3>
+          <p>
+            ถ้าหลาย window ผ่าน แปลว่า dataset + feature + reward + window size + steps
+            มีน้ำหนักมากขึ้นว่าไม่ได้ดีเฉพาะช่วงเดียว
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">What it does not prove</span>
+          <h3>ยังไม่ calibrate live filter</h3>
+          <p>
+            ถ้าจะใช้ confidence filter ตอน live ต้องกลับไปหน้า Backtest/Analyze
+            แล้ว sweep threshold บน OOS ไม่ควรเดาว่า <code>0.85</code> ดีเสมอ
+          </p>
+        </div>
+      </div>
+      <div class="callout warn">
+        <strong>ลำดับที่แนะนำ:</strong>
+        Train/Walk-Forward ใช้ดู pure policy edge ก่อน จากนั้น Backtest แบบ <code>Confidence = 0</code>
+        เพื่อเทียบกับ train และค่อย sweep confidence threshold สำหรับ production gate
+      </div>
+    </section>
+
     <section id="common-confusion">
       <h2>คำถามที่ user มักงง</h2>
       <table>
@@ -627,6 +661,11 @@
             <td>ถ้า fail ควรกลับไปจุดไหน?</td>
             <td>กลับไป Quality/Regime/Train</td>
             <td>ดูว่า fail เพราะ data ปน regime, feature ซ้ำ, steps น้อย หรือ setup ไม่เหมาะกับตลาดล่าสุด</td>
+          </tr>
+          <tr>
+            <td>Walk-Forward ผ่านแล้วใช้ confidence 0.85 ได้เลยไหม?</td>
+            <td>ยังไม่ได้</td>
+            <td>Walk-Forward ไม่ได้ calibrate confidence filter ต้องใช้ Backtest/Analyze sweep threshold เพิ่มก่อน deploy</td>
           </tr>
         </tbody>
       </table>

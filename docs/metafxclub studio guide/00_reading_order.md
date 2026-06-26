@@ -18,15 +18,15 @@
 
 4. [04_train_page_detail.html](04_train_page_detail.html)
    - บทละเอียดของ Step 3: Train โมเดล RL
-   - ครอบคลุม dataset/params, PPO, reward mode, training steps, Train %, window size, max hold, advanced PPO และการอ่าน log
+   - ครอบคลุม dataset/params, PPO, reward mode, training steps, Train %, window size, max hold, advanced PPO, การอ่าน log และเหตุผลที่ Train/Quick eval ไม่ใช้ confidence filter
 
 5. [05_backtest_page_detail.html](05_backtest_page_detail.html)
    - บทละเอียดของ Step 4: Validation ด้วย Backtest
-   - ครอบคลุม model/test CSV, confidence threshold, Pure Agent vs Agent + SL/TP, risk settings, metric interpretation และ decision gate
+   - ครอบคลุม model/test CSV, confidence threshold, การเทียบ baseline กับ train ด้วย `Confidence = 0`, Pure Agent vs Agent + SL/TP, risk settings, metric interpretation และ decision gate
 
 6. [06_walk_forward_detail.html](06_walk_forward_detail.html)
    - บทละเอียดของ Step 5: Robustness ด้วย Walk-Forward
-   - ครอบคลุมเหตุผลที่หน้านี้ retrain model ชั่วคราวทุก window, validate training recipe ไม่ใช่ saved model file, window split, settings, metrics และ robust verdict
+   - ครอบคลุมเหตุผลที่หน้านี้ retrain model ชั่วคราวทุก window, validate training recipe ไม่ใช่ saved model file, window split, settings, metrics, robust verdict และข้อจำกัดว่า Walk-Forward ไม่ได้ calibrate confidence filter สำหรับ live โดยตรง
 
 ## Reference Files
 

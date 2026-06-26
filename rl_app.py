@@ -925,8 +925,7 @@ class RLTradingStudio(ctk.CTk):
         step = 50000
         return max(step, int(round(value / step) * step))
 
-    def _suggest_train_steps(self, rows):
-        effective = self._pipeline_effective_rows(rows)
+    def _suggest_steps_from_effective_rows(self, effective):
         if not effective:
             return None
 
@@ -942,6 +941,10 @@ class RLTradingStudio(ctk.CTk):
         suggested = self._round_steps(max(effective * target_passes, min_steps))
         approx_passes = suggested / effective
         return suggested, effective, approx_passes
+
+    def _suggest_train_steps(self, rows):
+        effective = self._pipeline_effective_rows(rows)
+        return self._suggest_steps_from_effective_rows(effective)
 
     def _model_results_signature(self):
         return (
@@ -4095,13 +4098,36 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(c3, text="Training Steps", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
-        self.train_steps = ctk.CTkEntry(c3, placeholder_text="200000")
+        train_steps_box = ctk.CTkFrame(c3, fg_color="transparent")
+        train_steps_box.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 4))
+        train_steps_box.grid_columnconfigure(0, weight=1)
+        self.train_steps = ctk.CTkEntry(train_steps_box, placeholder_text="200000")
         self.train_steps.insert(0, "200000")
-        self.train_steps.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
+        self.train_steps.grid(row=0, column=0, sticky="ew")
+        self.train_use_steps_btn = ctk.CTkButton(
+            train_steps_box,
+            text="Use suggested",
+            command=self._use_train_suggested_steps,
+            fg_color=COLOR_BG_INPUT,
+            hover_color=COLOR_HOVER,
+            width=112,
+            height=30,
+            state="disabled",
+        )
+        self.train_use_steps_btn.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.train_steps_hint = ctk.CTkLabel(
+            c3,
+            text="Suggested: select CSV to calculate from train bars",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+            justify="left",
+        )
+        self.train_steps_hint.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
 
         # Window + max_hold + train_pct (row)
         wm = ctk.CTkFrame(c3, fg_color="transparent")
-        wm.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
+        wm.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
         wm.grid_columnconfigure(0, weight=1)
         wm.grid_columnconfigure(1, weight=1)
         wm.grid_columnconfigure(2, weight=1)
@@ -4116,6 +4142,8 @@ class RLTradingStudio(ctk.CTk):
         self.train_window = ctk.CTkEntry(wm, placeholder_text="10")
         self.train_window.insert(0, "10")
         self.train_window.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        self.train_window.bind("<KeyRelease>", lambda _e: self._update_train_recommendation_hints())
+        self.train_window.bind("<FocusOut>", lambda _e: self._update_train_recommendation_hints())
 
         self.train_maxhold = ctk.CTkEntry(wm, placeholder_text="30")
         self.train_maxhold.insert(0, "30")
@@ -4134,15 +4162,45 @@ class RLTradingStudio(ctk.CTk):
             wraplength=280,
         )
         self.train_split_hint.grid(row=2, column=2, sticky="ew", padx=(8, 0), pady=(4, 0))
-        self.train_pct.bind("<KeyRelease>", lambda _e: self._schedule_train_split_hint_update())
-        self.train_pct.bind("<FocusOut>", lambda _e: self._schedule_train_split_hint_update(0))
+        self.train_window_hint = ctk.CTkLabel(
+            wm,
+            text="Recommended: 10 (H4 default)",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+            justify="left",
+            wraplength=240,
+        )
+        self.train_window_hint.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        self.train_maxhold_hint = ctk.CTkLabel(
+            wm,
+            text="Recommended: 30 bars (~5 H4 days)",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+            justify="left",
+            wraplength=240,
+        )
+        self.train_maxhold_hint.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(4, 0))
+        self.train_pct.bind(
+            "<KeyRelease>",
+            lambda _e: (
+                self._schedule_train_split_hint_update(),
+                self._update_train_recommendation_hints(),
+            ))
+        self.train_pct.bind(
+            "<FocusOut>",
+            lambda _e: (
+                self._schedule_train_split_hint_update(0),
+                self._update_train_recommendation_hints(),
+            ))
 
         ctk.CTkLabel(c3, text="Model Name", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
-                      ).grid(row=4, column=0, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
         self.train_name = ctk.CTkEntry(c3, placeholder_text="rl_prod_v1")
         self.train_name.insert(0, "rl_prod_v1")
-        self.train_name.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.train_name.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 16))
 
         # === Advanced PPO settings (collapsible) ===
         c_adv = Card(page, title="⚙️ Advanced PPO Settings")
@@ -4912,9 +4970,64 @@ class RLTradingStudio(ctk.CTk):
             text=f"{train_line}\n{eval_line}{pct_note}",
             text_color=COLOR_DIM)
 
+    def _train_effective_rows(self):
+        rows = getattr(self, "train_selected_rows", None)
+        if rows is None:
+            return None
+        train_pct = self._parse_train_pct(
+            self.train_pct.get() if hasattr(self, "train_pct") else "85", 0.85)
+        train_pct = min(max(train_pct, 0.01), 1.0)
+        try:
+            window = int(float(self.train_window.get().strip() or "0"))
+        except Exception:
+            window = 0
+        return max(int(rows * train_pct) - max(window, 0), 1)
+
+    def _update_train_recommendation_hints(self):
+        if not hasattr(self, "train_steps_hint"):
+            return
+        effective = self._train_effective_rows()
+        if not effective:
+            self.train_suggested_steps = None
+            self.train_steps_hint.configure(
+                text="Suggested: select CSV to calculate from train bars",
+                text_color=COLOR_DIM)
+            if hasattr(self, "train_use_steps_btn"):
+                self.train_use_steps_btn.configure(state="disabled")
+            return
+
+        rec = self._suggest_steps_from_effective_rows(effective)
+        if not rec:
+            self.train_suggested_steps = None
+            self.train_steps_hint.configure(
+                text="Suggested: -",
+                text_color=COLOR_DIM)
+            if hasattr(self, "train_use_steps_btn"):
+                self.train_use_steps_btn.configure(state="disabled")
+            return
+
+        suggested, train_bars, approx_passes = rec
+        self.train_suggested_steps = suggested
+        self.train_steps_hint.configure(
+            text=(
+                f"Suggested: {suggested:,} steps "
+                f"(~{approx_passes:.1f} passes over {train_bars:,} train bars)"
+            ),
+            text_color=COLOR_GREEN)
+        if hasattr(self, "train_use_steps_btn"):
+            self.train_use_steps_btn.configure(state="normal")
+
+    def _use_train_suggested_steps(self):
+        steps = getattr(self, "train_suggested_steps", None)
+        if not steps or not hasattr(self, "train_steps"):
+            return
+        self.train_steps.delete(0, "end")
+        self.train_steps.insert(0, str(int(steps)))
+
     def _set_train_csv(self, path):
         self.train_csv_path = path
         name = Path(path).name
+        rows = None
         try:
             import pandas as pd
             df = pd.read_csv(path, nrows=1)
@@ -4940,7 +5053,9 @@ class RLTradingStudio(ctk.CTk):
         self.train_csv_label.configure(text=name)
         self.train_csv_meta.configure(text=meta + params_status,
                                        text_color=params_color)
+        self.train_selected_rows = rows
         self._update_train_split_hint()
+        self._update_train_recommendation_hints()
 
     def _attach_train_params(self):
         """Let user attach a .params.json from anywhere; copy it next to the CSV
@@ -5406,11 +5521,11 @@ class RLTradingStudio(ctk.CTk):
         sub.grid_columnconfigure(1, weight=1)
         sub.grid_columnconfigure(2, weight=1)
 
-        ctk.CTkLabel(sub, text="Windows", text_color=COLOR_DIM
+        ctk.CTkLabel(sub, text="Windows (test rounds)", text_color=COLOR_DIM
                       ).grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(sub, text="Steps/window", text_color=COLOR_DIM
+        ctk.CTkLabel(sub, text="Steps/window (train each round)", text_color=COLOR_DIM
                       ).grid(row=0, column=1, sticky="w", padx=8)
-        ctk.CTkLabel(sub, text="Window size", text_color=COLOR_DIM
+        ctk.CTkLabel(sub, text="Window size (lookback bars)", text_color=COLOR_DIM
                       ).grid(row=0, column=2, sticky="w", padx=8)
 
         self.wf_windows = ctk.CTkEntry(sub); self.wf_windows.insert(0, "5")
@@ -5420,10 +5535,32 @@ class RLTradingStudio(ctk.CTk):
         self.wf_window = ctk.CTkEntry(sub); self.wf_window.insert(0, "10")
         self.wf_window.grid(row=1, column=2, sticky="ew", padx=8, pady=(2, 0))
 
+        ctk.CTkLabel(sub,
+            text="จำนวนช่วง OOS ที่จะ retrain/test เช่น 5 = 5 รอบ",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11),
+            wraplength=420, justify="left"
+        ).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        ctk.CTkLabel(sub,
+            text="จำนวน training steps ต่อ 1 รอบ walk-forward",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11),
+            wraplength=420, justify="left"
+        ).grid(row=2, column=1, sticky="w", padx=8, pady=(4, 0))
+        ctk.CTkLabel(sub,
+            text="จำนวนแท่งย้อนหลังที่โมเดลเห็นก่อนตัดสินใจ เช่น H4 10 = ~40 ชม.",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11),
+            wraplength=420, justify="left"
+        ).grid(row=2, column=2, sticky="w", padx=8, pady=(4, 0))
+
+        ctk.CTkLabel(c1,
+            text="Window logic: test slices do not overlap; rolling train slices overlap by design.",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11),
+            wraplength=1100, justify="left"
+        ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 12))
+
         ctk.CTkLabel(c1, text="Output Name", text_color=COLOR_DIM
-                      ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=6, column=0, sticky="w", padx=18, pady=(0, 4))
         self.wf_name = ctk.CTkEntry(c1); self.wf_name.insert(0, "wf_prod")
-        self.wf_name.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.wf_name.grid(row=7, column=0, sticky="ew", padx=18, pady=(0, 16))
 
         self.wf_run_btn = ctk.CTkButton(page, text="▶ Start Walk-Forward Retrain (~50 min)",
             command=self._run_walkforward,
@@ -5436,9 +5573,21 @@ class RLTradingStudio(ctk.CTk):
         c2.grid(row=3, column=0, sticky="ew")
         c2.grid_columnconfigure(0, weight=1)
 
+        wf_prog_frame = ctk.CTkFrame(c2, fg_color=COLOR_BG_INPUT, corner_radius=8)
+        wf_prog_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=8)
+        wf_prog_frame.grid_columnconfigure(0, weight=1)
+        self.wf_progress_label = ctk.CTkLabel(
+            wf_prog_frame, text="Progress: 0.0%",
+            font=ctk.CTkFont(size=13), text_color=COLOR_DIM)
+        self.wf_progress_label.grid(row=0, column=0, sticky="w", padx=14, pady=(10, 4))
+        self.wf_progress = ctk.CTkProgressBar(
+            wf_prog_frame, progress_color=COLOR_PURPLE, fg_color="#0f1419")
+        self.wf_progress.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+        self.wf_progress.set(0)
+
         self.wf_verdict_frame = ctk.CTkFrame(c2, fg_color=COLOR_BG_INPUT,
             corner_radius=8)
-        self.wf_verdict_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=8)
+        self.wf_verdict_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=8)
 
         self.wf_verdict_icon = ctk.CTkLabel(self.wf_verdict_frame, text="—",
             font=ctk.CTkFont(size=40))
@@ -5451,7 +5600,7 @@ class RLTradingStudio(ctk.CTk):
         self.wf_verdict_sub.pack(pady=(2, 16))
 
         log_frame = ctk.CTkFrame(c2, fg_color="#0a0e14", corner_radius=8)
-        log_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+        log_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 16))
         self.wf_log = self._make_log_widget(log_frame, height=10)
 
     def _run_walkforward(self):
@@ -5472,6 +5621,16 @@ class RLTradingStudio(ctk.CTk):
         ]
 
         self._log(self.wf_log, f"$ {' '.join(cmd)}", "info")
+        if hasattr(self, "wf_progress"):
+            self.wf_progress.set(0)
+        if hasattr(self, "wf_progress_label"):
+            self.wf_progress_label.configure(
+                text="Progress: 0.0% — starting",
+                text_color=COLOR_DIM)
+        if hasattr(self, "wf_verdict_icon"):
+            self.wf_verdict_icon.configure(text="—")
+            self.wf_verdict_text.configure(text="Running...", text_color=COLOR_TEXT)
+            self.wf_verdict_sub.configure(text="")
         self.wf_run_btn.configure(state="disabled")
         self.status_label.configure(text="● Walk-Forward...", text_color=COLOR_PURPLE)
         self.runner.start(cmd)
@@ -6877,6 +7036,8 @@ Built with: CustomTkinter + stable-baselines3
                 pass
 
         l = line.lower()
+        if l.startswith("wf_progress"):
+            return "metric"
         if any(w in l for w in ["error", "fail", "exception", "traceback"]):
             return "error"
         if any(w in l for w in ["warn", "skip", "abort"]):
@@ -6917,6 +7078,18 @@ Built with: CustomTkinter + stable-baselines3
                 pass
 
         return None
+
+    def _parse_walkforward_progress(self, line):
+        m = re.match(r'WF_PROGRESS\s+(\d[\d,]*)\s+(\d[\d,]*)(?:\s+(.*))?$', line)
+        if not m:
+            return None
+        try:
+            cur = int(m.group(1).replace(',', ''))
+            total = int(m.group(2).replace(',', ''))
+        except ValueError:
+            return None
+        label = (m.group(3) or "").strip()
+        return cur, total, label
 
     def _parse_stats(self, line):
         """Parse final backtest stats"""
@@ -7006,6 +7179,17 @@ Built with: CustomTkinter + stable-baselines3
                 self.stat_dd = self._update_stat(self.stat_dd, stats['dd'] + '%', COLOR_RED)
 
         elif page == 'walkfwd':
+            wf_prog = self._parse_walkforward_progress(line)
+            if wf_prog:
+                cur, total, label = wf_prog
+                pct = min(max(cur / total, 0.0), 1.0) if total > 0 else 0.0
+                if hasattr(self, "wf_progress"):
+                    self.wf_progress.set(pct)
+                if hasattr(self, "wf_progress_label"):
+                    suffix = f" — {label}" if label else ""
+                    self.wf_progress_label.configure(
+                        text=f"Progress: {pct * 100:.1f}%{suffix}",
+                        text_color=COLOR_PURPLE if pct < 1.0 else COLOR_GREEN)
             if 'ROBUST' in line and 'NOT' not in line:
                 self.wf_verdict_icon.configure(text="✅")
                 self.wf_verdict_text.configure(text="ROBUST", text_color=COLOR_GREEN)
@@ -7076,6 +7260,19 @@ Built with: CustomTkinter + stable-baselines3
         # Refresh model list if was training
         if page in ('train', 'finetune'):
             self._refresh_dropdowns()
+
+        if page == 'walkfwd':
+            if rc == 0:
+                if hasattr(self, "wf_progress"):
+                    self.wf_progress.set(1)
+                if hasattr(self, "wf_progress_label"):
+                    self.wf_progress_label.configure(
+                        text="Progress: 100.0% — complete",
+                        text_color=COLOR_GREEN)
+            elif hasattr(self, "wf_progress_label"):
+                self.wf_progress_label.configure(
+                    text="Progress: stopped/failed",
+                    text_color=COLOR_RED)
 
         # Populate regime breakpoint table on success
         if page == 'regime' and rc == 0:

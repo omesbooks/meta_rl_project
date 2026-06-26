@@ -443,8 +443,10 @@
           <span class="tag purple">Filter</span>
           <h3>Confidence Threshold</h3>
           <p>
-            ระดับความมั่นใจขั้นต่ำก่อนอนุญาตให้เปิด Buy/Sell เช่น <code>0.85</code>
+            ค่า gate ใน Backtest/Live ที่ใช้กรองเฉพาะ action Buy/Sell เช่น <code>0.85</code>
             ถ้าต่ำกว่านี้ระบบจะ skip signal แต่ action Close ไม่ควรถูกกรอง
+            ตอน Train/Quick eval ของ PPO ไม่ได้ใช้ filter นี้ จึงควรเทียบผลแบบ <code>conf = 0</code>
+            ก่อน แล้วค่อย sweep threshold หลัง train
           </p>
         </div>
         <div class="card">
@@ -560,7 +562,8 @@
             <p>ใช้หน้า <strong>Backtest</strong> เพื่อดูว่าโมเดลที่ train แล้วทำงานกับข้อมูลทดสอบได้จริงหรือไม่</p>
             <ul>
               <li>เลือก model และ CSV สำหรับ backtest</li>
-              <li>ตั้ง confidence threshold เช่น <code>0.85</code></li>
+              <li>เริ่มด้วย <code>Confidence = 0</code> เพื่อเทียบ baseline กับ quick eval ตอน train</li>
+              <li>ถ้าจะใช้ live gate ให้ sweep confidence threshold เช่น <code>0.3</code>, <code>0.5</code>, <code>0.85</code> แทนการ fix ค่าเดียวทุกโมเดล</li>
               <li>ดู return, profit factor, win rate, max drawdown, จำนวน trades</li>
               <li>ถ้าผลลบหนักหรือ PF ต่ำกว่า 1 ให้กลับไปแก้ data/train</li>
             </ul>
@@ -568,7 +571,7 @@
           <aside class="deep">
             <strong>Deep dive ต่อ</strong>
             <a href="05_backtest_page_detail.html">05_backtest_page_detail.html</a>
-            อธิบาย confidence filter, backtest modes, metric interpretation, และ common failure patterns
+            อธิบาย confidence filter, การเทียบกับ train baseline, backtest modes, metric interpretation, และ common failure patterns
           </aside>
         </article>
 

@@ -186,6 +186,7 @@
         <a href="#inputs">ไฟล์ที่ใช้</a>
         <a href="#modes">Backtest Mode</a>
         <a href="#settings">ค่าหลัก</a>
+        <a href="#confidence">Confidence Filter</a>
         <a href="#metrics">อ่าน Metrics</a>
         <a href="#decision">ตัดสินใจ</a>
       </nav>
@@ -368,8 +369,8 @@
         <tbody>
           <tr>
             <td>Confidence Threshold</td>
-            <td>ถ้า action Buy/Sell มีความมั่นใจต่ำกว่าค่านี้ ระบบจะ skip signal</td>
-            <td>เริ่ม <code>0.85</code>; Close ไม่ควรถูกกรองด้วย threshold</td>
+            <td>ถ้า action Buy/Sell มี policy probability ต่ำกว่าค่านี้ ระบบจะ skip signal</td>
+            <td>ใช้ <code>0</code> เพื่อเทียบกับ train ก่อน แล้วค่อย sweep threshold; <code>0.85</code> ไม่ควรเป็นค่าตายตัวทุกโมเดล</td>
           </tr>
           <tr>
             <td>Skip % / Start fraction</td>
@@ -398,6 +399,76 @@
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <section id="confidence">
+      <h2>Confidence Filter ใน Backtest มีไว้ทำไม</h2>
+      <p>
+        Confidence filter มีไว้จำลอง gate ตอนส่ง order จริงใน Backtest/Live:
+        ถ้าโมเดลเลือก Buy/Sell แต่ policy probability ต่ำกว่าค่า threshold ระบบจะไม่เปิด position.
+        แต่ค่าตัวนี้ไม่ได้ใช้ตอน train และไม่ได้แปลว่าโมเดลมีโอกาสชนะตามเปอร์เซ็นต์นั้นเสมอ
+      </p>
+      <div class="grid three">
+        <div class="card blue">
+          <span class="tag blue">ตอน Train</span>
+          <h3>ไม่มี filter</h3>
+          <p>
+            quick eval หลัง train ใช้ action ที่โมเดลเลือกทันที จึงเทียบได้ใกล้กับ Backtest แบบ
+            <code>Confidence = 0</code>
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">ตอน Backtest/Live</span>
+          <h3>ใช้เป็น order gate</h3>
+          <p>
+            ใช้ลดการเข้า trade ตอน policy ลังเล แต่ต้องยืนยันจาก OOS เพราะ confidence ของ PPO
+            ไม่ใช่ probability calibrated แบบ classifier
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">จุดเสี่ยง</span>
+          <h3>threshold สูงอาจแย่ลง</h3>
+          <p>
+            ถ้า <code>0.85</code> ทำให้ skip เยอะและ PF ลด แปลว่าโมเดลนั้น confidence ยังไม่สัมพันธ์กับ trade quality
+          </p>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>คำถาม</th>
+            <th>วิธีอ่าน</th>
+            <th>การตัดสินใจ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ทำไม quick eval ตอน train ดี แต่ backtest ด้วย <code>0.85</code> แย่</td>
+            <td>สองผลนี้ใช้ execution rule ไม่เหมือนกัน: train ไม่กรอง, backtest กรอง Buy/Sell</td>
+            <td>รันซ้ำด้วย <code>Confidence = 0</code> ก่อน เพื่อเทียบ baseline ให้ตรง train</td>
+          </tr>
+          <tr>
+            <td>ควรใช้ threshold เท่าไร</td>
+            <td>ไม่มีค่ากลางที่ดีทุกโมเดล</td>
+            <td>sweep หลายค่า เช่น <code>0, 0.3, 0.5, 0.7, 0.85, 0.9</code> บน OOS/WF</td>
+          </tr>
+          <tr>
+            <td>Skipped low confidence เยอะมาก</td>
+            <td>threshold อาจสูงเกิน หรือโมเดลไม่มั่นใจจริง</td>
+            <td>เทียบ PF/Return/Trades ก่อนและหลัง filter ถ้าแย่ลงให้ลดหรือปิด filter</td>
+          </tr>
+          <tr>
+            <td>Close ถูก filter ไหม</td>
+            <td>ไม่ควร filter Close</td>
+            <td>Close ต้องปล่อยให้ทำงานเพื่อให้โมเดลออกจาก position ได้</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>Baseline ที่ควรทำทุกครั้ง:</strong>
+        หลัง train ให้ backtest ด้วย <code>Pure Agent</code>, <code>Confidence = 0</code>,
+        <code>Max Positions = 1</code> เพื่อเทียบกับ quick eval ก่อน แล้วจึงลอง threshold/risk แบบ live.
+      </div>
     </section>
 
     <section id="metrics">

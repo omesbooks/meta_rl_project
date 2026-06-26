@@ -183,6 +183,7 @@
         <a href="#workflow">ขั้นตอนใช้งาน</a>
         <a href="#inputs">ไฟล์ที่ต้องใช้</a>
         <a href="#settings">ค่าหลัก</a>
+        <a href="#confidence">Confidence Filter</a>
         <a href="#advanced">Advanced PPO</a>
         <a href="#logs">อ่าน Log</a>
         <a href="#handoff">ส่งต่อ Validation</a>
@@ -406,6 +407,65 @@
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <section id="confidence">
+      <h2>Confidence Filter ใช้ตอน Train ไหม</h2>
+      <p>
+        ตอน train และ quick eval ของ <code>rl_train.py</code> ไม่ได้ใช้ Confidence Threshold.
+        ระบบให้ PPO เลือก action ด้วย <code>model.predict(obs, deterministic=True)</code>
+        แล้วส่ง action นั้นเข้า environment ตรง ๆ ดังนั้นมุมมองตอน train จะใกล้กับ Backtest แบบ
+        <code>Pure Agent</code>, <code>Confidence = 0</code> และ <code>Max Positions = 1</code>
+      </p>
+      <div class="grid two">
+        <div class="card blue">
+          <span class="tag blue">Train / Quick eval</span>
+          <h3>ไม่มี gate จาก confidence</h3>
+          <p>
+            agent เรียนจาก reward ว่า Hold, Buy, Sell หรือ Close แล้วผลดีหรือเสีย
+            ไม่ได้เรียนกติกาว่า probability ต้องมากกว่า <code>0.85</code> ถึงจะเปิด order
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">Backtest / Live</span>
+          <h3>ค่อยใช้เป็น execution gate</h3>
+          <p>
+            หลัง train แล้วจึงค่อยใช้ confidence threshold เพื่อกรอง Buy/Sell ที่ไม่มั่นใจ
+            แต่ต้อง calibrate จาก validation ของแต่ละโมเดล ไม่ใช่ fix <code>0.85</code> ทุกตัว
+          </p>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>สถานการณ์</th>
+            <th>ควรตั้งค่าอย่างไร</th>
+            <th>เหตุผล</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>เช็คว่า policy ที่ train มามี edge ไหม</td>
+            <td><code>Pure Agent</code>, <code>Confidence = 0</code>, <code>Max Positions = 1</code></td>
+            <td>ใกล้กับ environment ตอน train มากที่สุด และใช้เทียบกับ quick eval ได้ตรงกว่า</td>
+          </tr>
+          <tr>
+            <td>เตรียมใช้ live หรือ EA</td>
+            <td>sweep <code>0, 0.3, 0.5, 0.7, 0.85, 0.9</code></td>
+            <td>confidence ของ PPO ไม่ได้แปลว่าโอกาสชนะจริงเสมอ ต้องหา threshold ที่ดีจาก OOS/WF</td>
+          </tr>
+          <tr>
+            <td>filter ทำให้ PF แย่ลง</td>
+            <td>ลด threshold หรือปิด filter สำหรับโมเดลนั้น</td>
+            <td>แปลว่า confidence ยังไม่ calibrate กับ trade quality อย่าฝืนใช้ค่า default</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>ข้อควรจำ:</strong>
+        ไม่ต้องกำหนด confidence filter ตอน train.
+        ให้ train policy ก่อน จากนั้นใช้ Backtest/Analyze เพื่อ calibrate threshold สำหรับการส่ง order จริง
+      </div>
     </section>
 
     <section id="advanced">

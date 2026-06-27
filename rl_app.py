@@ -2798,11 +2798,27 @@ class RLTradingStudio(ctk.CTk):
             wraplength=900, justify="left")
         intro.grid(row=0, column=0, sticky="w", padx=8, pady=(0, 16))
 
+        notice_frame = ctk.CTkFrame(page, fg_color=COLOR_BG_CARD,
+                                    corner_radius=8, border_width=1,
+                                    border_color="#30363d")
+        notice_frame.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        notice_frame.grid_columnconfigure(0, weight=1)
+        self.tools_notice = ctk.CTkLabel(
+            notice_frame,
+            text="No file changes yet",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+            justify="left",
+            wraplength=900,
+        )
+        self.tools_notice.grid(row=0, column=0, sticky="ew", padx=14, pady=10)
+
         # =====================================================
         # CARD 1: Import from DataCollector_RL (Common\Files)
         # =====================================================
         c1 = Card(page, title="① 🤖 Import from DataCollector_RL")
-        c1.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        c1.grid(row=2, column=0, sticky="ew", pady=(0, 12))
         c1.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(c1,
@@ -2851,7 +2867,7 @@ class RLTradingStudio(ctk.CTk):
         # CARD 2: Train/Test Split by Date
         # =====================================================
         c2 = Card(page, title="② ✂️ Split Train/Test by Date")
-        c2.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        c2.grid(row=3, column=0, sticky="ew", pady=(0, 12))
         c2.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(c2,
@@ -2946,7 +2962,7 @@ class RLTradingStudio(ctk.CTk):
         # CARD 3: Feature Analysis & Cleanup ⭐ NEW
         # =====================================================
         c4 = Card(page, title="③ 🔬 Feature Analysis & Cleanup")
-        c4.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        c4.grid(row=4, column=0, sticky="ew", pady=(0, 12))
         c4.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(c4,
@@ -3008,7 +3024,7 @@ class RLTradingStudio(ctk.CTk):
         # CARD 4: Export to MT5 (ONNX) ⭐ NEW
         # =====================================================
         c5 = Card(page, title="④ 🚀 Export to MT5 (ONNX)")
-        c5.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        c5.grid(row=5, column=0, sticky="ew", pady=(0, 12))
         c5.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(c5,
@@ -3080,7 +3096,7 @@ class RLTradingStudio(ctk.CTk):
         # CARD 5: Tools Log
         # =====================================================
         c6 = Card(page, title="📝 Tools Log")
-        c6.grid(row=5, column=0, sticky="ew")
+        c6.grid(row=6, column=0, sticky="ew")
         c6.grid_columnconfigure(0, weight=1)
 
         log_frame = ctk.CTkFrame(c6, fg_color="#0a0e14", corner_radius=8,
@@ -3163,17 +3179,22 @@ class RLTradingStudio(ctk.CTk):
             # 1) Copy raw CSV
             dst_csv = WORK_DIR / Path(out_name).with_suffix(".csv").name
             raw_copy = dst_csv
+            csv_existed = raw_copy.exists()
             shutil.copy(src_csv, raw_copy)
             self.after(0, lambda p=raw_copy: self._log(
                 self.tools_log, f"[copy] CSV  -> {p.name}", "success"))
 
             # 2) Copy params.json (if exists)
+            copied_paths = [raw_copy]
             if src_params.exists():
                 dst_params = raw_copy.with_suffix(".params.json")
+                params_existed = dst_params.exists()
                 shutil.copy(src_params, dst_params)
+                copied_paths.append(dst_params)
                 self.after(0, lambda p=dst_params: self._log(
                     self.tools_log, f"[copy] params -> {p.name}", "success"))
             else:
+                params_existed = False
                 self.after(0, lambda: self._log(self.tools_log,
                     "[warn] no params.json sidecar — EA will use RL_Indicators defaults",
                     "warn"))
@@ -3181,6 +3202,12 @@ class RLTradingStudio(ctk.CTk):
             self.after(0, lambda: self._refresh_project_csv_dropdowns(log=False))
             self.after(0, lambda: self._log(self.tools_log,
                 "[done] collector files imported", "success"))
+            action = "Updated existing import" if (csv_existed or params_existed) else "Created import files"
+            self._tools_file_notice(
+                action,
+                "Collector CSV/params copied into the project folder.",
+                copied_paths,
+            )
         except Exception as e:
             self.after(0, lambda err=e: self._log(
                 self.tools_log, f"[error] {err}", "error"))
@@ -3242,6 +3269,7 @@ class RLTradingStudio(ctk.CTk):
 
             out_name = self.tool_out_name.get().strip() or "training_data_v3.csv"
             dst = WORK_DIR / out_name
+            dst_existed = dst.exists()
 
             self._log(self.tools_log, f"Reading source ({Path(src).stat().st_size / 1024 / 1024:.1f} MB)...", "info")
 
@@ -3322,6 +3350,12 @@ class RLTradingStudio(ctk.CTk):
             # Refresh dropdowns
             self._refresh_dropdowns()
             self._refresh_tools_dropdowns()
+            title = "Updated CSV" if dst_existed else "Created CSV"
+            self._tools_file_notice(
+                title,
+                f"MT5 CSV imported and normalized as UTF-8 ({size_mb:.1f} MB).",
+                [dst],
+            )
 
         except Exception as e:
             import traceback
@@ -3453,6 +3487,10 @@ class RLTradingStudio(ctk.CTk):
             base = Path(csv).stem
             train_path = WORK_DIR / f"{base}{train_suffix}.csv"
             test_path  = WORK_DIR / f"{base}{test_suffix}.csv"
+            train_existed = train_path.exists()
+            test_existed = test_path.exists()
+            auto_cleaned = False
+            auto_clean_dropped = 0
 
             train_df.to_csv(train_path, index=False)
             test_df.to_csv(test_path, index=False)
@@ -3482,9 +3520,14 @@ class RLTradingStudio(ctk.CTk):
                         "warn")
                     for col in dropped[:10]:
                         kept_col, r = reasons[col]
-                        self._log(self.tools_log,
-                            f"    - {col:25s}  (r={r:.3f} with {kept_col})",
-                            "warn")
+                        if kept_col is None:
+                            self._log(self.tools_log,
+                                f"    - {col:25s}  (constant / no variance)",
+                                "warn")
+                        else:
+                            self._log(self.tools_log,
+                                f"    - {col:25s}  (r={r:.3f} with {kept_col})",
+                                "warn")
                     if len(dropped) > 10:
                         self._log(self.tools_log,
                             f"    ... +{len(dropped) - 10} more", "warn")
@@ -3500,6 +3543,8 @@ class RLTradingStudio(ctk.CTk):
 
                     train_df[out_cols_train].to_csv(train_path, index=False)
                     test_df[out_cols_test].to_csv(test_path, index=False)
+                    auto_cleaned = True
+                    auto_clean_dropped = len(dropped)
 
                     self._log(self.tools_log,
                         f"  ✓ Re-saved: {train_path.name} ({len(out_cols_train)} cols)",
@@ -3514,6 +3559,12 @@ class RLTradingStudio(ctk.CTk):
 
             self._refresh_dropdowns()
             self._refresh_tools_dropdowns()
+            title = "Updated split files" if (train_existed or test_existed) else "Created split files"
+            detail = (f"Train/test split saved: {len(train_df):,} train rows, "
+                      f"{len(test_df):,} test rows.")
+            if auto_cleaned:
+                detail += f" Auto-clean re-saved both files after dropping {auto_clean_dropped} features."
+            self._tools_file_notice(title, detail, [train_path, test_path])
 
         except Exception as e:
             import traceback
@@ -3580,11 +3631,18 @@ class RLTradingStudio(ctk.CTk):
             # Save
             base = Path(csv).stem
             out_path = WORK_DIR / f"{base}_relabeled.csv"
+            out_existed = out_path.exists()
             df.to_csv(out_path, index=False)
             self._log(self.tools_log, f"\n✓ Saved: {out_path.name}", "success")
 
             self._refresh_dropdowns()
             self._refresh_tools_dropdowns()
+            title = "Updated relabeled CSV" if out_existed else "Created relabeled CSV"
+            self._tools_file_notice(
+                title,
+                f"Relabeled dataset saved with {len(df):,} rows.",
+                [out_path],
+            )
 
         except Exception as e:
             import traceback
@@ -3637,6 +3695,60 @@ class RLTradingStudio(ctk.CTk):
                     self.tool_export_model.set(model_list[0])
             except: pass
 
+    def _tools_file_notice(self, title, message, paths=None,
+                           level="success", popup=True):
+        """Show a Data Tools file-operation notice in the UI and optional popup."""
+        paths = [Path(p) for p in (paths or []) if p]
+
+        def _display_path(p: Path) -> str:
+            try:
+                return str(p.resolve().relative_to(WORK_DIR))
+            except Exception:
+                return str(p)
+
+        path_lines = [_display_path(p) for p in paths]
+        log_msg = message
+        if path_lines:
+            log_msg += " | " + " | ".join(path_lines)
+
+        color = {
+            "success": COLOR_GREEN,
+            "warn": COLOR_YELLOW,
+            "error": COLOR_RED,
+            "metric": COLOR_ACCENT,
+        }.get(level, COLOR_DIM)
+
+        def _apply():
+            if hasattr(self, "tools_notice"):
+                shown_paths = " | ".join(path_lines)
+                suffix = f"\n{shown_paths}" if shown_paths else ""
+                self.tools_notice.configure(
+                    text=f"{title}: {message}{suffix}",
+                    text_color=color,
+                )
+            if hasattr(self, "tools_log"):
+                self._log(self.tools_log, f"[notice] {title}: {log_msg}", level)
+            if hasattr(self, "status_label"):
+                self.status_label.configure(text=f"Data Tools: {title}",
+                                            text_color=color)
+
+                def _reset_status():
+                    if not self._is_process_busy():
+                        self.status_label.configure(text="● Idle",
+                                                    text_color=COLOR_DIM)
+
+                self.after(6500, _reset_status)
+            if popup:
+                body = message
+                if path_lines:
+                    body += "\n\n" + "\n".join(path_lines)
+                messagebox.showinfo(title, body)
+
+        try:
+            self.after(0, _apply)
+        except Exception:
+            _apply()
+
     def _on_export_model_change(self, choice):
         """When user picks a model, default deploy_name to the same"""
         if choice in ("(none)", ""):
@@ -3686,6 +3798,14 @@ class RLTradingStudio(ctk.CTk):
             else:
                 display_outdir = WORK_DIR / "mt5_files" / "packages" / deploy_name / "MQL5"
                 self._log(self.tools_log, f"Output: {display_outdir} (auto package)", "info")
+            expected_export_paths = [
+                display_outdir / "Files" / f"{deploy_name}.onnx",
+                display_outdir / "Include" / f"{deploy_name}_config.mqh",
+                display_outdir / "Include" / "RL_Indicators.mqh",
+                display_outdir / "Indicators" / "CandlePatterns.mq5",
+                display_outdir / "Experts" / f"{deploy_name}_EA.mq5",
+            ]
+            export_had_existing = any(p.exists() for p in expected_export_paths)
 
             # Verify model exists
             model_path = find_model_path(model_name, source_key)
@@ -3745,6 +3865,12 @@ class RLTradingStudio(ctk.CTk):
                 self._log(self.tools_log,
                     f"\n📋 Next: copy {out_path}/* to MT5's MQL5/ folder",
                     "info")
+                title = "Updated MT5 export package" if export_had_existing else "Created MT5 export package"
+                self._tools_file_notice(
+                    title,
+                    f"ONNX/EA package generated for {deploy_name}.",
+                    expected_export_paths,
+                )
             else:
                 self._log(self.tools_log,
                     f"❌ Export failed (exit code {proc.returncode})",
@@ -3799,6 +3925,12 @@ class RLTradingStudio(ctk.CTk):
         self._log(self.tools_log,
             f"  ✓ Converted to UTF-8 ({path.stat().st_size / 1024 / 1024:.1f} MB)",
             "success")
+        self._tools_file_notice(
+            "Modified CSV encoding",
+            "Converted the source CSV to UTF-8 and kept the original backup.",
+            [path, backup],
+            popup=False,
+        )
 
         # Read again
         return pd.read_csv(path, **kwargs)
@@ -3821,15 +3953,24 @@ class RLTradingStudio(ctk.CTk):
         """Greedy: drop feature with highest avg correlation in each high-corr pair.
         Returns: (kept_features, dropped_features, drop_reasons)"""
         import numpy as np
-        kept = list(features)
+        kept = []
         dropped = []
         reasons = {}  # dropped_col -> (kept_col, corr_value)
 
-        while True:
-            corr = df[kept].corr().abs()
-            np.fill_diagonal(corr.values, 0)
-            max_val = corr.values.max()
-            if max_val <= threshold:
+        for col in features:
+            # Constant features create NaN correlations; drop them explicitly
+            # before pairwise pruning so NaN never becomes the "largest" pair.
+            if df[col].nunique(dropna=True) <= 1:
+                dropped.append(col)
+                reasons[col] = (None, None)
+            else:
+                kept.append(col)
+
+        while len(kept) > 1:
+            corr = df[kept].corr().abs().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+            np.fill_diagonal(corr.values, 0.0)
+            max_val = float(corr.values.max())
+            if not np.isfinite(max_val) or max_val <= threshold:
                 break
             # find highest pair
             i, j = np.unravel_index(np.argmax(corr.values), corr.values.shape)
@@ -3873,9 +4014,18 @@ class RLTradingStudio(ctk.CTk):
                 self._log(self.tools_log, "Not enough features to analyze", "error")
                 return
 
+            constant_features = [
+                c for c in features if df[c].nunique(dropna=True) <= 1
+            ]
+            if constant_features:
+                self._log(self.tools_log,
+                    f"Found {len(constant_features)} constant/no-variance feature(s); "
+                    "their correlations are shown as 0.",
+                    "warn")
+
             # Compute correlation
             self._log(self.tools_log, "Computing correlation matrix...", "info")
-            corr = df[features].corr().abs()
+            corr = df[features].corr().abs().replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
             # Find high-correlation pairs
             pairs = []
@@ -3932,9 +4082,16 @@ class RLTradingStudio(ctk.CTk):
             plt.tight_layout()
 
             png_path = WORK_DIR / f"{Path(csv).stem}_correlation.png"
+            png_existed = png_path.exists()
             plt.savefig(png_path, dpi=110, bbox_inches='tight')
             plt.close(fig)
             self._log(self.tools_log, f"✓ Saved: {png_path.name}", "success")
+            title = "Updated correlation image" if png_existed else "Created correlation image"
+            self._tools_file_notice(
+                title,
+                f"Correlation heatmap saved. Found {len(pairs)} pairs above threshold {threshold}.",
+                [png_path],
+            )
 
             # Auto-open
             try:
@@ -3981,14 +4138,24 @@ class RLTradingStudio(ctk.CTk):
                 self._log(self.tools_log,
                     "✓ No redundant features found — already clean!",
                     "success")
+                self._tools_file_notice(
+                    "No file changed",
+                    "No redundant features were found, so no cleaned CSV was created.",
+                    level="warn",
+                    popup=False,
+                )
                 return
 
             self._log(self.tools_log,
                 f"\nDropped {len(dropped)} features:", "warn")
             for col in dropped:
                 kept_col, r = reasons[col]
-                self._log(self.tools_log,
-                    f"  - {col:25s}  (r={r:.3f} with {kept_col})", "warn")
+                if kept_col is None:
+                    self._log(self.tools_log,
+                        f"  - {col:25s}  (constant / no variance)", "warn")
+                else:
+                    self._log(self.tools_log,
+                        f"  - {col:25s}  (r={r:.3f} with {kept_col})", "warn")
 
             self._log(self.tools_log,
                 f"\nKept {len(kept)} features:", "metric")
@@ -4002,6 +4169,7 @@ class RLTradingStudio(ctk.CTk):
 
             out_name = f"{Path(csv).stem}_clean.csv"
             out_path = WORK_DIR / out_name
+            out_existed = out_path.exists()
             cleaned_df.to_csv(out_path, index=False)
 
             size_mb = out_path.stat().st_size / 1024 / 1024
@@ -4014,6 +4182,12 @@ class RLTradingStudio(ctk.CTk):
 
             self._refresh_dropdowns()
             self._refresh_tools_dropdowns()
+            title = "Updated cleaned CSV" if out_existed else "Created cleaned CSV"
+            self._tools_file_notice(
+                title,
+                f"Cleaned dataset saved after dropping {len(dropped)} redundant features.",
+                [out_path],
+            )
 
         except Exception as e:
             import traceback

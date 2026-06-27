@@ -89,7 +89,20 @@ The same update prompt is also kept in `docs\codex_git_update_prompts.md`.
 
 ## What Users Need Locally
 
-This repo does not include large generated runtime files such as datasets, trained models, logs, ONNX exports, or user-specific params.
+Most generated runtime files are still ignored by git. This repo includes only a small curated sample set so new users can try the Backtest page without training a model first.
+
+Sample backtest assets are kept in:
+
+```text
+artifacts\models
+```
+
+Included sample pairs:
+
+- `rl_uj_h4` with `uj_h4_dataset.csv`
+- `rl_au_h4` with `data_au_h4_dataset_clean.csv`
+
+Each sample model includes the final `.zip`, normalization CSV, params sidecar, and saved backtest outputs. Training logs, duplicate best-model checkpoints, ONNX exports, and per-user MT5 export packages remain ignored.
 
 Each user should generate or provide their own:
 

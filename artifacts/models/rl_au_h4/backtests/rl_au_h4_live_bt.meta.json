@@ -1,0 +1,75 @@
+{
+  "model": "rl_au_h4",
+  "created_at": "2026-06-27T23:23:53",
+  "data_csv": "data_au_h4_dataset_clean.csv",
+  "data_rows_before_start": 8493,
+  "data_period_before_start": {
+    "start": "2020-12-31T20:00:00",
+    "end": "2026-06-12T16:00:00"
+  },
+  "start_fraction": 0.0,
+  "start_index": 0,
+  "backtest_rows": 8493,
+  "backtest_period": {
+    "start": "2020-12-31T20:00:00",
+    "end": "2026-06-12T16:00:00"
+  },
+  "feature_count": 60,
+  "model_path": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_au_h4\\rl_au_h4.zip",
+  "norm_path": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_au_h4\\rl_au_h4_norm.csv",
+  "artifacts_dir": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_au_h4\\backtests",
+  "artifacts": {
+    "trades": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_au_h4\\backtests\\rl_au_h4_live_bt_trades.csv",
+    "equity": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_au_h4\\backtests\\rl_au_h4_live_bt_equity.png",
+    "backtest_meta": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_au_h4\\backtests\\rl_au_h4_live_bt.meta.json"
+  },
+  "settings": {
+    "conf": 0.35,
+    "risk": 0.01,
+    "max_positions": 1,
+    "max_hold": 30,
+    "hard_dd": 0.15,
+    "atr_sl": 2.0,
+    "atr_tp": 4.0,
+    "mode": "pure_agent",
+    "balance": 10000,
+    "spread": 0.0002,
+    "commission": 0.0001,
+    "window": 0
+  },
+  "status": "complete",
+  "result": {
+    "total_trades": 886,
+    "long_trades": 414,
+    "short_trades": 472,
+    "win_rate": 0.6060948081264108,
+    "profit_factor": 2.1589666325618846,
+    "avg_win": 0.005558851105357578,
+    "avg_loss": -0.003961758241553421,
+    "total_pnl": 38597.637857116315,
+    "final_balance": 48597.637857116344,
+    "return_pct": 3.8597637857116345,
+    "max_drawdown": -0.13606742076889505,
+    "sharpe": 20.85438101951861,
+    "exit_reasons": {
+      "max_hold": 27,
+      "signal": 858,
+      "end": 1
+    },
+    "signals": {
+      "0": 1846,
+      "1": 2163,
+      "2": 3044,
+      "3": 1429
+    },
+    "executed": {
+      "1": 414,
+      "2": 472,
+      "3": 858
+    },
+    "skipped_low_confidence": 207,
+    "skipped_max_positions": 4114,
+    "force_closed_max_hold": 27,
+    "hard_stops": 0
+  }
+}

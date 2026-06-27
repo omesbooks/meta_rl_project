@@ -3993,7 +3993,7 @@ class RLTradingStudio(ctk.CTk):
         """Greedy: drop feature with highest avg correlation in each high-corr pair.
         Returns: (kept_features, dropped_features, drop_reasons)"""
         import numpy as np
-        kept = []
+        kept_source = []
         dropped = []
         reasons = {}  # dropped_col -> (kept_col, corr_value)
 
@@ -4004,25 +4004,43 @@ class RLTradingStudio(ctk.CTk):
                 dropped.append(col)
                 reasons[col] = (None, None)
             else:
-                kept.append(col)
+                kept_source.append(col)
 
-        while len(kept) > 1:
-            corr = df[kept].corr().abs().replace([np.inf, -np.inf], np.nan).fillna(0.0)
-            np.fill_diagonal(corr.values, 0.0)
-            max_val = float(corr.values.max())
+        if len(kept_source) <= 1:
+            return kept_source, dropped, reasons
+
+        # Compute correlations once. Pairwise correlations do not change when
+        # columns are dropped; only the active set and active-column averages do.
+        corr = df[kept_source].corr().abs().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+        names = list(corr.columns)
+        corr_values = corr.to_numpy(copy=True)
+        np.fill_diagonal(corr_values, 0.0)
+        active = np.ones(len(names), dtype=bool)
+
+        while int(active.sum()) > 1:
+            active_idx = np.flatnonzero(active)
+            active_corr = corr_values[np.ix_(active_idx, active_idx)]
+            max_val = float(active_corr.max())
             if not np.isfinite(max_val) or max_val <= threshold:
                 break
+
             # find highest pair
-            i, j = np.unravel_index(np.argmax(corr.values), corr.values.shape)
-            c1, c2 = corr.columns[i], corr.columns[j]
+            sub_i, sub_j = np.unravel_index(np.argmax(active_corr), active_corr.shape)
+            i, j = int(active_idx[sub_i]), int(active_idx[sub_j])
+            c1, c2 = names[i], names[j]
+
             # pick which to drop = higher avg correlation to others
-            avg_c1 = corr[c1].mean()
-            avg_c2 = corr[c2].mean()
-            drop_col = c1 if avg_c1 > avg_c2 else c2
-            keep_col = c2 if drop_col == c1 else c1
-            kept.remove(drop_col)
+            avg_c1 = float(corr_values[i, active_idx].mean())
+            avg_c2 = float(corr_values[j, active_idx].mean())
+            drop_idx = i if avg_c1 > avg_c2 else j
+            keep_idx = j if drop_idx == i else i
+            drop_col = names[drop_idx]
+            keep_col = names[keep_idx]
+            active[drop_idx] = False
             dropped.append(drop_col)
             reasons[drop_col] = (keep_col, max_val)
+
+        kept = [name for idx, name in enumerate(names) if active[idx]]
         return kept, dropped, reasons
 
     def _is_prune_too_aggressive(self, total_features, kept_features):
@@ -4161,28 +4179,34 @@ class RLTradingStudio(ctk.CTk):
             self._log(self.tools_log, traceback.format_exc(), "error")
 
     def _clean_features(self):
-        threading.Thread(target=self._clean_features_worker, daemon=True).start()
+        csv = self.tool_feat_csv.get()
+        if csv in ("(none)", ""):
+            self._log(self.tools_log, "Please select a CSV", "error")
+            return
 
-    def _clean_features_worker(self):
         try:
-            csv = self.tool_feat_csv.get()
-            if csv in ("(none)", ""):
-                self._log(self.tools_log, "Please select a CSV", "error")
-                return
+            threshold = float(self.tool_feat_threshold.get() or "0.99")
+        except ValueError:
+            threshold = 0.99
 
-            try:
-                threshold = float(self.tool_feat_threshold.get() or "0.99")
-            except ValueError:
-                threshold = 0.99
+        threading.Thread(
+            target=self._clean_features_worker,
+            args=(csv, threshold),
+            daemon=True,
+        ).start()
 
-            self._log(self.tools_log,
-                f"\n=== Cleaning redundant features (corr > {threshold}) ===", "info")
-            self._log(self.tools_log, f"Loading {csv}...", "info")
+    def _clean_features_worker(self, csv, threshold):
+        def log(text, tag="info"):
+            self.after(0, lambda text=text, tag=tag:
+                       self._log(self.tools_log, text, tag))
+
+        try:
+            log(f"\n=== Cleaning redundant features (corr > {threshold}) ===", "info")
+            log(f"Loading {csv}...", "info")
             import pandas as pd
             df = self._smart_read_csv(WORK_DIR / csv)
             features = self._get_feature_columns(df)
-            self._log(self.tools_log,
-                f"Original: {len(features)} features", "info")
+            log(f"Original: {len(features)} features", "info")
 
             kept, dropped, reasons = self._greedy_correlation_prune(
                 df, features, threshold)
@@ -4191,11 +4215,11 @@ class RLTradingStudio(ctk.CTk):
                 blocked, min_keep, keep_ratio = self._is_prune_too_aggressive(
                     len(features), len(kept))
                 if blocked:
-                    self._log(self.tools_log,
+                    log(
                         f"⚠ Clean skipped: would keep only {len(kept)}/{len(features)} "
                         f"features ({keep_ratio:.0%}); minimum safe keep is {min_keep}.",
                         "error")
-                    self._log(self.tools_log,
+                    log(
                         "Raise threshold closer to 0.99, then run Show Correlation Matrix first.",
                         "warn")
                     self._tools_file_notice(
@@ -4206,7 +4230,7 @@ class RLTradingStudio(ctk.CTk):
                     return
 
             if not dropped:
-                self._log(self.tools_log,
+                log(
                     "✓ No redundant features found — already clean!",
                     "success")
                 self._tools_file_notice(
@@ -4217,21 +4241,17 @@ class RLTradingStudio(ctk.CTk):
                 )
                 return
 
-            self._log(self.tools_log,
-                f"\nDropped {len(dropped)} features:", "warn")
+            log(f"\nDropped {len(dropped)} features:", "warn")
             for col in dropped:
                 kept_col, r = reasons[col]
                 if kept_col is None:
-                    self._log(self.tools_log,
-                        f"  - {col:25s}  (constant / no variance)", "warn")
+                    log(f"  - {col:25s}  (constant / no variance)", "warn")
                 else:
-                    self._log(self.tools_log,
-                        f"  - {col:25s}  (r={r:.3f} with {kept_col})", "warn")
+                    log(f"  - {col:25s}  (r={r:.3f} with {kept_col})", "warn")
 
-            self._log(self.tools_log,
-                f"\nKept {len(kept)} features:", "metric")
+            log(f"\nKept {len(kept)} features:", "metric")
             for col in kept:
-                self._log(self.tools_log, f"  + {col}", "info")
+                log(f"  + {col}", "info")
 
             # Save: keep all non-feature cols + kept features
             non_feature = [c for c in df.columns if c not in features]
@@ -4246,25 +4266,21 @@ class RLTradingStudio(ctk.CTk):
             params_path, params_error = self._copy_csv_params_sidecar(WORK_DIR / csv, out_path)
             if params_path:
                 notice_paths.append(params_path)
-                self._log(self.tools_log,
-                    f"  ✓ Copied params sidecar: {params_path.name}", "success")
+                log(f"  ✓ Copied params sidecar: {params_path.name}", "success")
             elif params_error:
-                self._log(self.tools_log,
-                    f"  ⚠ params sidecar copy failed: {params_error}", "warn")
+                log(f"  ⚠ params sidecar copy failed: {params_error}", "warn")
             else:
-                self._log(self.tools_log,
-                    "  ⚠ no params sidecar found for source CSV", "warn")
+                log("  ⚠ no params sidecar found for source CSV", "warn")
 
             size_mb = out_path.stat().st_size / 1024 / 1024
-            self._log(self.tools_log,
-                f"\n✓ Saved: {out_name} ({size_mb:.1f} MB · {len(out_cols)} cols)",
+            log(f"\n✓ Saved: {out_name} ({size_mb:.1f} MB · {len(out_cols)} cols)",
                 "success")
-            self._log(self.tools_log,
+            log(
                 f"  Reduction: {len(features)} → {len(kept)} features ({(len(kept)/len(features))*100:.0f}% kept)",
                 "metric")
 
-            self._refresh_dropdowns()
-            self._refresh_tools_dropdowns()
+            self.after(0, self._refresh_dropdowns)
+            self.after(0, self._refresh_tools_dropdowns)
             title = "Updated cleaned CSV" if out_existed else "Created cleaned CSV"
             self._tools_file_notice(
                 title,
@@ -4274,8 +4290,8 @@ class RLTradingStudio(ctk.CTk):
 
         except Exception as e:
             import traceback
-            self._log(self.tools_log, f"Error: {e}", "error")
-            self._log(self.tools_log, traceback.format_exc(), "error")
+            log(f"Error: {e}", "error")
+            log(traceback.format_exc(), "error")
 
     # --------------------------------------------------------
     # PAGE: TRAIN

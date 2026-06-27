@@ -45,11 +45,47 @@ After cloning the repo, open the project folder in Codex and ask:
 
 Codex should use the project instructions in `AGENTS.md`, keep the working directory at the repo root, and use `.venv\Scripts\python.exe` for Python commands.
 
-For copy-ready prompts that tell Codex how to pull updates from GitHub, refresh dependencies, and optionally commit/push local work back to the repo, see:
+To update an existing local checkout, open the project folder in Codex and paste this prompt:
 
 ```text
-docs\codex_git_update_prompts.md
+ช่วยอัพเดทโปรเจคนี้จาก GitHub และติดตั้ง dependencies ล่าสุดแบบปลอดภัย
+
+ขั้นตอน:
+1. เช็คว่าอยู่ใน repo ถูกต้อง:
+   git remote -v
+   git branch --show-current
+   git log -1 --oneline
+
+2. เช็ค local changes:
+   git status --short
+
+3. ถ้า worktree สะอาด ให้ update จาก remote:
+   git fetch --all --prune
+   git pull --ff-only origin main
+
+4. ถ้ามี local changes ห้าม reset / checkout / ทับไฟล์เอง
+   ให้หยุดแล้วสรุปไฟล์ที่เปลี่ยนก่อน เพื่อให้เลือกว่าจะเก็บงาน local ไว้อย่างไร
+
+5. หลัง pull แล้ว ให้ติดตั้ง dependencies ตามไฟล์ของโปรเจค:
+   - ถ้ามี requirements.txt ให้รัน .venv\Scripts\python.exe -m pip install -r requirements.txt
+   - ถ้ามี package-lock.json ให้รัน npm install
+   - ถ้ามี pyproject.toml ให้ดู README หรือไฟล์ config ว่าควรใช้ pip / poetry / uv
+
+6. เช็ค dependency conflict:
+   .venv\Scripts\python.exe -m pip check
+
+7. รัน smoke test เบื้องต้นของโปรเจค เช่น:
+   .venv\Scripts\python.exe -B -c "import rl_app; print('app import ok')"
+
+8. สรุปผล:
+   - ก่อนอัพเดทอยู่ commit ไหน
+   - หลังอัพเดทอยู่ commit ไหน
+   - dependencies ติดตั้ง/ตรวจผ่านไหม
+   - มี error/warning อะไรเหลือไหม
+   - git status หลังทำเสร็จเป็นยังไง
 ```
+
+The same update prompt is also kept in `docs\codex_git_update_prompts.md`.
 
 ## What Users Need Locally
 

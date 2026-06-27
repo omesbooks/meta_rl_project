@@ -5475,8 +5475,6 @@ class RLTradingStudio(ctk.CTk):
             segmented_button_selected_color=COLOR_ACCENT)
         tab_view.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         tab_view.add("Live Logic ⭐")
-        tab_view.add("Standard")
-        tab_view.add("Confidence Filter")
 
         # ===== Live Logic tab =====
         live_tab = tab_view.tab("Live Logic ⭐")

@@ -45,6 +45,12 @@ After cloning the repo, open the project folder in Codex and ask:
 
 Codex should use the project instructions in `AGENTS.md`, keep the working directory at the repo root, and use `.venv\Scripts\python.exe` for Python commands.
 
+For copy-ready prompts that tell Codex how to pull updates from GitHub, refresh dependencies, and optionally commit/push local work back to the repo, see:
+
+```text
+docs\codex_git_update_prompts.md
+```
+
 ## What Users Need Locally
 
 This repo does not include large generated runtime files such as datasets, trained models, logs, ONNX exports, or user-specific params.

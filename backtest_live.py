@@ -643,7 +643,7 @@ def main():
                     help="confidence threshold (default 0.85)")
     ap.add_argument("--risk", type=float, default=0.01,
                     help="risk per trade (default 1%%)")
-    ap.add_argument("--max_positions", type=int, default=3)
+    ap.add_argument("--max_positions", type=int, default=1)
     ap.add_argument("--max_hold", type=int, default=30,
                     help="force close after N bars")
     ap.add_argument("--hard_dd", type=float, default=0.15,

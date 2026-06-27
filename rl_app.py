@@ -5556,7 +5556,7 @@ class RLTradingStudio(ctk.CTk):
                       ).grid(row=1, column=1, sticky="w", padx=18, pady=(8, 4))
         self.bt_risk = ctk.CTkEntry(risk); self.bt_risk.insert(0, "0.01")
         self.bt_risk.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
-        self.bt_max_pos = ctk.CTkEntry(risk); self.bt_max_pos.insert(0, "3")
+        self.bt_max_pos = ctk.CTkEntry(risk); self.bt_max_pos.insert(0, "1")
         self.bt_max_pos.grid(row=2, column=1, sticky="ew", padx=18, pady=(0, 12))
 
         ctk.CTkLabel(risk, text="ATR × SL", text_color=COLOR_DIM
@@ -5742,7 +5742,7 @@ class RLTradingStudio(ctk.CTk):
             sys.executable, "backtest_live.py", model, csv,
             "--conf", self.bt_conf.get() or "0.85",
             "--risk", self.bt_risk.get() or "0.01",
-            "--max_positions", self.bt_max_pos.get() or "3",
+            "--max_positions", self.bt_max_pos.get() or "1",
             "--atr_sl", self.bt_sl.get() or "2.0",
             "--atr_tp", self.bt_tp.get() or "4.0",
             "--window", self.bt_window.get().strip() or "0",  # 0 = auto-detect from model

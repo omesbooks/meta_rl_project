@@ -30,7 +30,7 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Item | Value |
 |------|-------|
 | Python interpreter | `.venv/Scripts/python.exe` (Windows) — **ALWAYS use this**, not bare `python` |
-| Launch GUI | `run_rl_app.bat` (auto-creates venv + installs requirements on first setup; rerun `pip install -r requirements.txt` after dependency changes) |
+| Launch GUI | `run_rl_app.bat` (auto-creates venv + checks `requirements.txt` before launching) |
 | Requirements | `requirements.txt` (RL stack, GUI, ONNX, regime detection, Gemini labeler, MT5 Python API, doc/slide generators) |
 | Working dir | All scripts assume CWD = project root (`WORK_DIR = Path(__file__).parent`) |
 | OS | Windows (paths, `.bat` launcher, MT5 integration) |

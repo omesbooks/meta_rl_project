@@ -20,7 +20,7 @@ cd meta_rl_project
 .\run_rl_app.bat
 ```
 
-`run_rl_app.bat` is the recommended path on Windows. It creates `.venv` when missing, installs `requirements.txt` during first setup, and launches the dashboard.
+`run_rl_app.bat` is the recommended path on Windows. It creates `.venv` when missing, checks `requirements.txt` before launch, and then opens the dashboard.
 
 If you already have a `.venv` and later pull new dependency changes, refresh the environment before launching:
 

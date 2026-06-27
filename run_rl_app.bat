@@ -21,7 +21,7 @@ if not exist "%PY%" (
     exit /b 1
 )
 
-if "%NEED_SETUP%"=="1" if exist "requirements.txt" (
+if exist "requirements.txt" (
     echo [setup] Checking requirements...
     "%PY%" -m pip install -r requirements.txt
     if errorlevel 1 (

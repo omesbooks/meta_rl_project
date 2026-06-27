@@ -6,6 +6,12 @@ The active application is `rl_app.py` through the Windows launcher `run_rl_app.b
 
 ## Quick Install
 
+Prerequisites on Windows:
+
+- Python 3.10 or 3.11 available as `py -3` or `python`
+- MetaTrader 5 desktop terminal if you will run DataCollector_RL, Strategy Tester, MT5 export, or live/pull-data tools
+- Git for cloning/pulling the repo
+
 For a new machine or another Codex workspace:
 
 ```powershell
@@ -14,7 +20,14 @@ cd meta_rl_project
 .\run_rl_app.bat
 ```
 
-`run_rl_app.bat` is the recommended path on Windows. It creates/uses `.venv`, installs `requirements.txt`, and launches the dashboard.
+`run_rl_app.bat` is the recommended path on Windows. It creates `.venv` when missing, installs `requirements.txt` during first setup, and launches the dashboard.
+
+If you already have a `.venv` and later pull new dependency changes, refresh the environment before launching:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
 
 If the virtual environment already exists, you can also run:
 

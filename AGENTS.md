@@ -30,8 +30,8 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Item | Value |
 |------|-------|
 | Python interpreter | `.venv/Scripts/python.exe` (Windows) — **ALWAYS use this**, not bare `python` |
-| Launch GUI | `run_rl_app.bat` (auto-creates venv + installs requirements) |
-| Requirements | `requirements.txt` (stable-baselines3, gymnasium, torch, customtkinter, onnx, MetaTrader5) |
+| Launch GUI | `run_rl_app.bat` (auto-creates venv + installs requirements on first setup; rerun `pip install -r requirements.txt` after dependency changes) |
+| Requirements | `requirements.txt` (RL stack, GUI, ONNX, regime detection, Gemini labeler, MT5 Python API, doc/slide generators) |
 | Working dir | All scripts assume CWD = project root (`WORK_DIR = Path(__file__).parent`) |
 | OS | Windows (paths, `.bat` launcher, MT5 integration) |
 
@@ -109,8 +109,8 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | File | Role |
 |------|------|
 | `Indicators/CandlePatterns.mq5` | 10 candlestick patterns indicator (exposed via iCustom). |
-| `Experts/DataCollector_v4.mq5` | Export bars + indicators + 10 candle features → CSV (67 cols). |
-| `Experts/ML_RL_Trader_template.mq5` | **TEMPLATE** — placeholders filled by `export_to_onnx.py`. Do not hand-edit for a specific model. |
+| `Experts/DataCollector_RL.mq5` | Export bars + current RL feature stack -> CSV + `.params` sidecar for train/deploy parity. |
+| `Experts/ML_RL_Trader_template.mq5` | **TEMPLATE** — placeholders filled by `export_to_onnx.py`. Required for MT5 EA export; do not hand-edit for a specific model. |
 | `Include/RL_Indicators.mqh` | Feature library: 75-feature master list, dynamic feature mapping, iCustom auto-load. Shared by all models. |
 | `Experts/*_EA.mq5`, `Include/*_config.mqh` | **Generated per model** by export script. |
 
@@ -254,7 +254,7 @@ the post-Brexit subset removes the distribution shift.
 - `README.md` — project overview + architecture diagram.
 - `PRODUCTION_README.md` — full 5-step production deployment guide (pull → train → WF → gate → deploy).
 - `mt5_files/README_ONNX_Setup.md` — MT5 ONNX setup.
-- `mt5_files/MQL5/Experts/README_DataCollector_v4.md` — data collector usage.
+- `docs/metafxclub studio guide/02_data_prep_import_detail.html` — DataCollector_RL import workflow.
 - `mt5_files/MQL5/Indicators/README_CandlePatterns.md` — candle pattern reference.
 - `graphify-out/GRAPH_REPORT.md` — knowledge graph (god nodes, communities, gaps). Regenerate with `/graphify` or `/graphify . --update`.
 - `graphify-out/graph.html` — interactive Pyvis visualization. Open in any browser, no server needed.
@@ -264,7 +264,7 @@ the post-Brexit subset removes the distribution shift.
 - `regime_compare.html` — side-by-side comparison of all six regime-detection methods on the same series.
 - `regime_single.html` — single-method result (regenerated on each Regime Check run).
 - `ParityConfig_explained.html` — why `.params.json` sidecars exist and how `RL_ApplyDataCollectorConfig` works.
-- `DataCollector_v4_explained.html` — collector internals.
+- `docs/explainers/05_data_collector_v4_explained.html` — legacy explainer for the old v4 collector; current workflow uses `DataCollector_RL.mq5`.
 - `ClassImbalance_explained.html` — UP/DOWN/FLAT class-balance handling in `relabel.py`.
 
 ### Knowledge Base (quant theory)

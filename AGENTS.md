@@ -43,7 +43,7 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 |------|---------|
 | Launch GUI | `run_rl_app.bat` or `.venv/Scripts/python.exe rl_app.py` |
 | Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--eval_csv <csv>]` |
-| Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0.85 --window 10 --mode pure_agent` |
+| Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent` |
 | Backtest chart | `python backtest_chart.py <model> <csv> --limit 5000` |
 | Walk-forward | `python rl_walkforward.py <csv> --windows 5 --steps 50000` |
 | Export to ONNX | `python export_to_onnx.py <model> [--name <deploy>]` |
@@ -133,9 +133,10 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 → Break-even win-rate ~53% (matches real-$ break-even)
 ```
 
-### Confidence filter (the key to profitability)
-Backtest & live only execute Buy/Sell when `confidence ≥ threshold` (default 0.85).
-**Close is never filtered.** Raising the threshold turned V10 from PF 0.95 → PF 1.24.
+### Confidence filter (execution gate, not train logic)
+Backtest & live only execute Buy/Sell when `confidence ≥ threshold`.
+Backtest defaults to `--conf 0` so the first validation run matches train/quick eval as closely as possible.
+**Close is never filtered.** Sweep thresholds such as 0.3/0.5/0.7/0.85/0.9 on OOS/WF before using a live-style gate.
 `confidence = softmax(policy_logits)[argmax]`.
 
 ### Steps rule of thumb

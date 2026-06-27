@@ -162,7 +162,7 @@ Train from CLI:
 Backtest:
 
 ```powershell
-.\.venv\Scripts\python.exe backtest_live.py rl_v1 <csv> --conf 0.85 --window 10 --mode pure_agent
+.\.venv\Scripts\python.exe backtest_live.py rl_v1 <csv> --conf 0 --window 10 --mode pure_agent
 ```
 
 Walk-forward:

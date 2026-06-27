@@ -639,8 +639,8 @@ def main():
     ap.add_argument("csv", help="historical data CSV")
 
     # Filter & risk (เหมือน live_trader.py CONFIG)
-    ap.add_argument("--conf", type=float, default=0.85,
-                    help="confidence threshold (default 0.85)")
+    ap.add_argument("--conf", type=float, default=0,
+                    help="confidence threshold (default 0 = train-aligned baseline)")
     ap.add_argument("--risk", type=float, default=0.01,
                     help="risk per trade (default 1%%)")
     ap.add_argument("--max_positions", type=int, default=1)

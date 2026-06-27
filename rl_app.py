@@ -1331,7 +1331,7 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(setup, text="Backtest confidence", text_color=COLOR_DIM).grid(
             row=4, column=0, sticky="w", padx=18, pady=6)
         self.pipe_conf = ctk.CTkEntry(setup, width=120)
-        self.pipe_conf.insert(0, "0.85")
+        self.pipe_conf.insert(0, "0")
         self.pipe_conf.grid(row=4, column=1, sticky="w", padx=(8, 18), pady=6)
 
         ctk.CTkLabel(setup, text="Backtest mode", text_color=COLOR_DIM).grid(
@@ -1865,7 +1865,7 @@ class RLTradingStudio(ctk.CTk):
         try:
             steps = int(float(self.pipe_steps.get().strip() or "200000"))
             window = int(float(self.pipe_window.get().strip() or "10"))
-            conf = float(self.pipe_conf.get().strip() or "0.85")
+            conf = float(self.pipe_conf.get().strip() or "0")
             train_pct = self._parse_train_pct(self.pipe_train_pct.get(), 0.85)
         except ValueError:
             messagebox.showerror("Invalid settings", "Steps/window/confidence/train_pct must be numeric.")
@@ -5504,7 +5504,7 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(setup, text="Confidence Threshold", text_color=COLOR_DIM
                       ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_conf = ctk.CTkEntry(setup)
-        self.bt_conf.insert(0, "0.85")
+        self.bt_conf.insert(0, "0")
         self.bt_conf.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 12))
 
         # Skip % — backtest only the tail (e.g., 85 = skip first 85%, test on last 15%)
@@ -5740,7 +5740,7 @@ class RLTradingStudio(ctk.CTk):
         # Use backtest_live.py for realistic results
         cmd = [
             sys.executable, "backtest_live.py", model, csv,
-            "--conf", self.bt_conf.get() or "0.85",
+            "--conf", self.bt_conf.get() or "0",
             "--risk", self.bt_risk.get() or "0.01",
             "--max_positions", self.bt_max_pos.get() or "1",
             "--atr_sl", self.bt_sl.get() or "2.0",

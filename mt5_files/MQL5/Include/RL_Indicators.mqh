@@ -80,16 +80,22 @@ const string RL_ALL_FEATURES[RL_ALL_FEATURES_COUNT] = {
 //=== override here MUST be matched on the inference side or features mismatch.
 int RSI_PMIN    = 4;
 int RSI_PMAX    = 30;   // 27 periods
+int RSI_PSTEP   = 1;
 int ATR_PMIN    = 5;
 int ATR_PMAX    = 50;   // 46 periods
+int ATR_PSTEP   = 1;
 int STOCH_PMIN  = 5;
 int STOCH_PMAX  = 21;   // 17 periods
+int STOCH_PSTEP = 1;
 int CCI_PMIN    = 5;
 int CCI_PMAX    = 30;   // 26 periods
+int CCI_PSTEP   = 1;
 int WPR_PMIN    = 5;
 int WPR_PMAX    = 30;   // 26 periods
+int WPR_PSTEP   = 1;
 int ADX_PMIN    = 7;
 int ADX_PMAX    = 30;   // 24 periods
+int ADX_PSTEP   = 1;
 
 int BB_PERIOD       = 20;
 int MACD_FAST       = 12;
@@ -133,12 +139,13 @@ bool   CP_InsideStrict      = true;
 double CP_PiercingMinBody   = 0.5;
 
 //=== Indicator handle storage ===
-int g_h_rsi[];     // RSI handles for periods 4..30
-int g_h_atr[];     // ATR handles for periods 5..50
-int g_h_stoch[];   // Stoch handles for 5..21
-int g_h_cci[];     // CCI handles for 5..30
-int g_h_wpr[];     // WPR handles for 5..30
-int g_h_adx[];     // ADX handles for 7..30
+int g_h_rsi[];     // RSI handles for PMIN..PMAX using PSTEP
+int g_h_atr[];     // ATR handles for PMIN..PMAX using PSTEP
+int g_h_stoch[];   // Stoch handles for PMIN..PMAX using PSTEP
+int g_h_cci[];     // CCI handles for PMIN..PMAX using PSTEP
+int g_h_wpr[];     // WPR handles for PMIN..PMAX using PSTEP
+int g_h_adx[];     // ADX handles for PMIN..PMAX using PSTEP
+int g_h_atr14_ref = INVALID_HANDLE, g_h_adx14_ref = INVALID_HANDLE;  // fixed refs used by volatility/trend features
 int g_h_ema20, g_h_ema50, g_h_ema100, g_h_ema200, g_h_ema_long;
 int g_h_macd, g_h_bb;
 
@@ -155,62 +162,97 @@ int g_feature_idx_map[];
 bool g_uses_candles = false;   // true if any candle_* feature in model
 
 //+------------------------------------------------------------------+
+//| Period range helpers                                             |
+//+------------------------------------------------------------------+
+int RL_SafeStep(int step)
+{
+   return (step > 0) ? step : 1;
+}
+
+int RL_PeriodCount(int pmin, int pmax, int pstep)
+{
+   int step = RL_SafeStep(pstep);
+   if(pmax < pmin) return 0;
+   return ((pmax - pmin) / step) + 1;
+}
+
+int RL_PeriodAt(int pmin, int pstep, int index)
+{
+   return pmin + index * RL_SafeStep(pstep);
+}
+
+//+------------------------------------------------------------------+
 //| Initialize all indicator handles (call from OnInit)              |
 //+------------------------------------------------------------------+
 bool RL_InitIndicators(string symbol, ENUM_TIMEFRAMES tf)
 {
    // RSI: periods 4..30
-   int n_rsi = RSI_PMAX - RSI_PMIN + 1;
+   int n_rsi = RL_PeriodCount(RSI_PMIN, RSI_PMAX, RSI_PSTEP);
+   if(n_rsi <= 0) { Print("[RL] Invalid RSI period range"); return false; }
    ArrayResize(g_h_rsi, n_rsi);
    for(int i = 0; i < n_rsi; i++) {
-      g_h_rsi[i] = iRSI(symbol, tf, RSI_PMIN + i, PRICE_CLOSE);
+      int period = RL_PeriodAt(RSI_PMIN, RSI_PSTEP, i);
+      g_h_rsi[i] = iRSI(symbol, tf, period, PRICE_CLOSE);
       if(g_h_rsi[i] == INVALID_HANDLE) {
-         Print("Failed to create RSI handle period ", RSI_PMIN + i);
+         Print("Failed to create RSI handle period ", period);
          return false;
       }
    }
 
    // ATR: periods 5..50
-   int n_atr = ATR_PMAX - ATR_PMIN + 1;
+   int n_atr = RL_PeriodCount(ATR_PMIN, ATR_PMAX, ATR_PSTEP);
+   if(n_atr <= 0) { Print("[RL] Invalid ATR period range"); return false; }
    ArrayResize(g_h_atr, n_atr);
    for(int i = 0; i < n_atr; i++) {
-      g_h_atr[i] = iATR(symbol, tf, ATR_PMIN + i);
+      int period = RL_PeriodAt(ATR_PMIN, ATR_PSTEP, i);
+      g_h_atr[i] = iATR(symbol, tf, period);
       if(g_h_atr[i] == INVALID_HANDLE) return false;
    }
 
    // Stoch: periods 5..21 (use %K only)
-   int n_stoch = STOCH_PMAX - STOCH_PMIN + 1;
+   int n_stoch = RL_PeriodCount(STOCH_PMIN, STOCH_PMAX, STOCH_PSTEP);
+   if(n_stoch <= 0) { Print("[RL] Invalid Stoch period range"); return false; }
    ArrayResize(g_h_stoch, n_stoch);
    for(int i = 0; i < n_stoch; i++) {
+      int period = RL_PeriodAt(STOCH_PMIN, STOCH_PSTEP, i);
       g_h_stoch[i] = iStochastic(symbol, tf,
-                                  STOCH_PMIN + i, 3, 3,
+                                  period, 3, 3,
                                   MODE_SMA, STO_LOWHIGH);
       if(g_h_stoch[i] == INVALID_HANDLE) return false;
    }
 
    // CCI: 5..30
-   int n_cci = CCI_PMAX - CCI_PMIN + 1;
+   int n_cci = RL_PeriodCount(CCI_PMIN, CCI_PMAX, CCI_PSTEP);
+   if(n_cci <= 0) { Print("[RL] Invalid CCI period range"); return false; }
    ArrayResize(g_h_cci, n_cci);
    for(int i = 0; i < n_cci; i++) {
-      g_h_cci[i] = iCCI(symbol, tf, CCI_PMIN + i, PRICE_TYPICAL);
+      int period = RL_PeriodAt(CCI_PMIN, CCI_PSTEP, i);
+      g_h_cci[i] = iCCI(symbol, tf, period, PRICE_TYPICAL);
       if(g_h_cci[i] == INVALID_HANDLE) return false;
    }
 
    // WPR: 5..30
-   int n_wpr = WPR_PMAX - WPR_PMIN + 1;
+   int n_wpr = RL_PeriodCount(WPR_PMIN, WPR_PMAX, WPR_PSTEP);
+   if(n_wpr <= 0) { Print("[RL] Invalid WPR period range"); return false; }
    ArrayResize(g_h_wpr, n_wpr);
    for(int i = 0; i < n_wpr; i++) {
-      g_h_wpr[i] = iWPR(symbol, tf, WPR_PMIN + i);
+      int period = RL_PeriodAt(WPR_PMIN, WPR_PSTEP, i);
+      g_h_wpr[i] = iWPR(symbol, tf, period);
       if(g_h_wpr[i] == INVALID_HANDLE) return false;
    }
 
    // ADX: 7..30
-   int n_adx = ADX_PMAX - ADX_PMIN + 1;
+   int n_adx = RL_PeriodCount(ADX_PMIN, ADX_PMAX, ADX_PSTEP);
+   if(n_adx <= 0) { Print("[RL] Invalid ADX period range"); return false; }
    ArrayResize(g_h_adx, n_adx);
    for(int i = 0; i < n_adx; i++) {
-      g_h_adx[i] = iADX(symbol, tf, ADX_PMIN + i);
+      int period = RL_PeriodAt(ADX_PMIN, ADX_PSTEP, i);
+      g_h_adx[i] = iADX(symbol, tf, period);
       if(g_h_adx[i] == INVALID_HANDLE) return false;
    }
+
+   g_h_atr14_ref = iATR(symbol, tf, 14);
+   g_h_adx14_ref = iADX(symbol, tf, 14);
 
    // EMA fixed periods
    g_h_ema20    = iMA(symbol, tf, 20,  0, MODE_EMA, PRICE_CLOSE);
@@ -233,7 +275,8 @@ bool RL_InitIndicators(string symbol, ENUM_TIMEFRAMES tf)
    g_h_d1_adx      = iADX(symbol, PERIOD_D1, D1_ADX_PERIOD);
 
    if(g_h_ema20 == INVALID_HANDLE || g_h_macd == INVALID_HANDLE ||
-      g_h_bb == INVALID_HANDLE || g_h_d1_rsi == INVALID_HANDLE) {
+      g_h_bb == INVALID_HANDLE || g_h_d1_rsi == INVALID_HANDLE ||
+      g_h_atr14_ref == INVALID_HANDLE || g_h_adx14_ref == INVALID_HANDLE) {
       Print("Failed to create critical handles");
       return false;
    }
@@ -320,6 +363,8 @@ void RL_DeinitIndicators()
    for(int i = 0; i < ArraySize(g_h_cci); i++)   IndicatorRelease(g_h_cci[i]);
    for(int i = 0; i < ArraySize(g_h_wpr); i++)   IndicatorRelease(g_h_wpr[i]);
    for(int i = 0; i < ArraySize(g_h_adx); i++)   IndicatorRelease(g_h_adx[i]);
+   IndicatorRelease(g_h_atr14_ref);
+   IndicatorRelease(g_h_adx14_ref);
    IndicatorRelease(g_h_ema20);
    IndicatorRelease(g_h_ema50);
    IndicatorRelease(g_h_ema100);
@@ -569,7 +614,7 @@ bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
       // Compute atr_mean (the same way Python does — mean of ATR aggregate)
       // For simplicity, use atr(14) over RANK_WINDOW history as proxy
       double atr14_buf[];
-      if(CopyBuffer(g_h_atr[14 - ATR_PMIN], 0, shift, RANK_WINDOW, atr14_buf) > 0) {
+      if(CopyBuffer(g_h_atr14_ref, 0, shift, RANK_WINDOW, atr14_buf) > 0) {
          double cur = atr14_buf[0];
          int below = 0;
          for(int i = 0; i < RANK_WINDOW; i++)
@@ -581,7 +626,7 @@ bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
    //   atr_zscore_100
    {
       double atr14_buf[];
-      if(CopyBuffer(g_h_atr[14 - ATR_PMIN], 0, shift, RANK_WINDOW, atr14_buf) > 0) {
+      if(CopyBuffer(g_h_atr14_ref, 0, shift, RANK_WINDOW, atr14_buf) > 0) {
          double sum = 0;
          for(int i = 0; i < RANK_WINDOW; i++) sum += atr14_buf[i];
          double mean = sum / RANK_WINDOW;
@@ -597,7 +642,7 @@ bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
    else if(features[56] < 0.67) features[58] = 1;
    else features[58] = 2;
    //   adx_trending (main ADX > 25)
-   double adx14 = GetVal(g_h_adx[14 - ADX_PMIN], 0, shift);
+   double adx14 = GetVal(g_h_adx14_ref, 0, shift);
    features[59] = (adx14 > 25) ? 1 : 0;
    //   adx_strong (main ADX > 40)
    features[60] = (adx14 > 40) ? 1 : 0;

@@ -30,16 +30,22 @@ input string InpOutFile = "rl_gbpusd_dataset.csv";   // output CSV (Common\Files
 input group "=== Indicator periods (advanced — must sync with EA) ==="
 input int InpRSI_Pmin    = 4;
 input int InpRSI_Pmax    = 30;
+input int InpRSI_Pstep   = 1;
 input int InpATR_Pmin    = 5;
 input int InpATR_Pmax    = 50;
+input int InpATR_Pstep   = 1;
 input int InpStoch_Pmin  = 5;
 input int InpStoch_Pmax  = 21;
+input int InpStoch_Pstep = 1;
 input int InpCCI_Pmin    = 5;
 input int InpCCI_Pmax    = 30;
+input int InpCCI_Pstep   = 1;
 input int InpWPR_Pmin    = 5;
 input int InpWPR_Pmax    = 30;
+input int InpWPR_Pstep   = 1;
 input int InpADX_Pmin    = 7;
 input int InpADX_Pmax    = 30;
+input int InpADX_Pstep   = 1;
 
 input group "=== Single-period indicators ==="
 input int InpBB_Period   = 20;
@@ -91,12 +97,12 @@ long     g_rows = 0;
 int OnInit()
 {
    // Apply period overrides to RL_Indicators globals BEFORE init
-   RSI_PMIN    = InpRSI_Pmin;     RSI_PMAX    = InpRSI_Pmax;
-   ATR_PMIN    = InpATR_Pmin;     ATR_PMAX    = InpATR_Pmax;
-   STOCH_PMIN  = InpStoch_Pmin;   STOCH_PMAX  = InpStoch_Pmax;
-   CCI_PMIN    = InpCCI_Pmin;     CCI_PMAX    = InpCCI_Pmax;
-   WPR_PMIN    = InpWPR_Pmin;     WPR_PMAX    = InpWPR_Pmax;
-   ADX_PMIN    = InpADX_Pmin;     ADX_PMAX    = InpADX_Pmax;
+   RSI_PMIN    = InpRSI_Pmin;     RSI_PMAX    = InpRSI_Pmax;     RSI_PSTEP    = InpRSI_Pstep;
+   ATR_PMIN    = InpATR_Pmin;     ATR_PMAX    = InpATR_Pmax;     ATR_PSTEP    = InpATR_Pstep;
+   STOCH_PMIN  = InpStoch_Pmin;   STOCH_PMAX  = InpStoch_Pmax;   STOCH_PSTEP  = InpStoch_Pstep;
+   CCI_PMIN    = InpCCI_Pmin;     CCI_PMAX    = InpCCI_Pmax;     CCI_PSTEP    = InpCCI_Pstep;
+   WPR_PMIN    = InpWPR_Pmin;     WPR_PMAX    = InpWPR_Pmax;     WPR_PSTEP    = InpWPR_Pstep;
+   ADX_PMIN    = InpADX_Pmin;     ADX_PMAX    = InpADX_Pmax;     ADX_PSTEP    = InpADX_Pstep;
    BB_PERIOD   = InpBB_Period;
    MACD_FAST   = InpMACD_Fast;    MACD_SLOW   = InpMACD_Slow;
    MACD_SIGNAL = InpMACD_Signal;
@@ -217,16 +223,22 @@ void OnDeinit(const int reason)
       FileWriteString(pf, "{\r\n");
       FileWriteString(pf, "  \"RSI_PMIN\": "          + IntegerToString(RSI_PMIN)        + ",\r\n");
       FileWriteString(pf, "  \"RSI_PMAX\": "          + IntegerToString(RSI_PMAX)        + ",\r\n");
+      FileWriteString(pf, "  \"RSI_PSTEP\": "         + IntegerToString(RSI_PSTEP)       + ",\r\n");
       FileWriteString(pf, "  \"ATR_PMIN\": "          + IntegerToString(ATR_PMIN)        + ",\r\n");
       FileWriteString(pf, "  \"ATR_PMAX\": "          + IntegerToString(ATR_PMAX)        + ",\r\n");
+      FileWriteString(pf, "  \"ATR_PSTEP\": "         + IntegerToString(ATR_PSTEP)       + ",\r\n");
       FileWriteString(pf, "  \"STOCH_PMIN\": "        + IntegerToString(STOCH_PMIN)      + ",\r\n");
       FileWriteString(pf, "  \"STOCH_PMAX\": "        + IntegerToString(STOCH_PMAX)      + ",\r\n");
+      FileWriteString(pf, "  \"STOCH_PSTEP\": "       + IntegerToString(STOCH_PSTEP)     + ",\r\n");
       FileWriteString(pf, "  \"CCI_PMIN\": "          + IntegerToString(CCI_PMIN)        + ",\r\n");
       FileWriteString(pf, "  \"CCI_PMAX\": "          + IntegerToString(CCI_PMAX)        + ",\r\n");
+      FileWriteString(pf, "  \"CCI_PSTEP\": "         + IntegerToString(CCI_PSTEP)       + ",\r\n");
       FileWriteString(pf, "  \"WPR_PMIN\": "          + IntegerToString(WPR_PMIN)        + ",\r\n");
       FileWriteString(pf, "  \"WPR_PMAX\": "          + IntegerToString(WPR_PMAX)        + ",\r\n");
+      FileWriteString(pf, "  \"WPR_PSTEP\": "         + IntegerToString(WPR_PSTEP)       + ",\r\n");
       FileWriteString(pf, "  \"ADX_PMIN\": "          + IntegerToString(ADX_PMIN)        + ",\r\n");
       FileWriteString(pf, "  \"ADX_PMAX\": "          + IntegerToString(ADX_PMAX)        + ",\r\n");
+      FileWriteString(pf, "  \"ADX_PSTEP\": "         + IntegerToString(ADX_PSTEP)       + ",\r\n");
       FileWriteString(pf, "  \"BB_PERIOD\": "         + IntegerToString(BB_PERIOD)       + ",\r\n");
       FileWriteString(pf, "  \"MACD_FAST\": "         + IntegerToString(MACD_FAST)       + ",\r\n");
       FileWriteString(pf, "  \"MACD_SLOW\": "         + IntegerToString(MACD_SLOW)       + ",\r\n");

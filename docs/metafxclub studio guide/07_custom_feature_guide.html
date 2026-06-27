@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Custom Feature Guide</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid #dfe8dd;
+      background: #0f172a;
+      color: #e2e8f0;
+      overflow-x: auto;
+      line-height: 1.5;
+    }
+
+    pre code {
+      background: transparent;
+      border: 0;
+      color: inherit;
+      padding: 0;
+      white-space: pre;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #dbeafe;
+      color: var(--blue);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+
+    .lead { max-width: 920px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .card.red { background: #fff1f0; border-color: #ffd3cc; }
+
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+
+    .flow { display: grid; gap: 12px; margin-top: 16px; }
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid var(--line); padding: 10px; vertical-align: top; text-align: left; }
+    th { background: #eef3ec; }
+    ul, ol { margin: 8px 0 0; padding-left: 22px; }
+    li { margin: 4px 0; }
+
+    .warnbox {
+      border-left: 5px solid var(--yellow);
+      background: var(--soft-warn);
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-top: 14px;
+    }
+
+    .okbox {
+      border-left: 5px solid var(--green);
+      background: var(--soft);
+      padding: 14px 16px;
+      border-radius: 8px;
+      margin-top: 14px;
+    }
+
+    @media (max-width: 880px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="eyebrow">Metafxclub Studio Guide</span>
+      <h1>Custom Feature Guide</h1>
+      <p class="lead">
+        คู่มือนี้อธิบายวิธีออกแบบ feature สำหรับ dataset ของตัวเอง
+        โดยยังให้ EA บน MT5 สร้าง feature ส่งเข้าโมเดลได้ตรงกับตอน train ตาม flow
+        <code>dataset → train → export → EA live</code>
+      </p>
+      <nav>
+        <a href="00_reading_order.md">Reading Order</a>
+        <a href="02_data_prep_import_detail.html">Data Prep</a>
+        <a href="03_quality_check_detail.html">Quality Check</a>
+        <a href="04_train_page_detail.html">Train</a>
+        <a href="05_backtest_page_detail.html">Backtest</a>
+        <a href="#codex-prompt">Codex Prompt</a>
+      </nav>
+    </header>
+
+    <section id="quick-flow">
+      <h2>Workflow ที่ต้องรักษาไว้</h2>
+      <p>
+        ระบบนี้เปิดให้ปรับ feature ได้ แต่มีข้อแลกเปลี่ยนสำคัญ:
+        feature ที่ใช้ตอน train ต้องเป็น feature ชุดเดียวกับที่ EA คำนวณตอน live
+        ทั้งชื่อ, ลำดับ, จำนวน, ค่า parameter และวิธีคำนวณ
+      </p>
+
+      <div class="flow">
+        <div class="step">
+          <div class="num">1</div>
+          <div>
+            <h3>ออกแบบ feature และ parameter</h3>
+            <p>กำหนดว่าจะใช้ indicator อะไร, period เท่าไร, ใช้ aggregate แบบไหน และชื่อ column อะไรใน CSV</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <div>
+            <h3>ให้ DataCollector และ EA ใช้สูตรเดียวกัน</h3>
+            <p>แก้ <code>DataCollector_RL.mq5</code> สำหรับ input/sidecar และแก้ <code>RL_Indicators.mqh</code> สำหรับการคำนวณจริง</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <div>
+            <h3>บันทึก parameter ลง .params.json</h3>
+            <p>ไฟล์ sidecar นี้คือสัญญาว่า dataset ถูกสร้างด้วย settings อะไร และ export จะฝังค่านี้ลง config ของ EA</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">4</div>
+          <div>
+            <h3>เก็บ CSV แล้ว import เข้าโปรเจค</h3>
+            <p>ใช้ DataCollector_RL ใน MT5 แล้วนำ CSV + <code>.params.json</code> เข้า Data Tools เพื่อให้ training และ export เห็น config เดียวกัน</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">5</div>
+          <div>
+            <h3>Train → Export → Test EA</h3>
+            <p>Train โมเดลใหม่เสมอ แล้ว export ONNX/EA ใหม่ จากนั้นตรวจ log ว่า EA map feature ได้ครบ ไม่มี unknown feature</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="warnbox">
+        <strong>ห้ามใช้ model เก่ากับ feature format ใหม่</strong>
+        เพราะ PPO จำ pattern จาก feature distribution เดิมไว้แล้ว ถ้า column หรือสูตรเปลี่ยน ต้อง train/export ใหม่ทั้งชุด
+      </div>
+    </section>
+
+    <section id="contract">
+      <h2>Feature Contract</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">Name</span>
+          <h3>ชื่อ feature ต้องตรง</h3>
+          <p>
+            ชื่อ column ใน CSV จะกลายเป็น <code>RL_FEATURE_NAMES</code> ตอน export
+            และ EA จะหา feature ชื่อนั้นใน <code>RL_ALL_FEATURES</code>
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Order</span>
+          <h3>ลำดับต้องตรงกับ model</h3>
+          <p>
+            export ใช้ลำดับจาก norm stats ของโมเดล ถ้าเปลี่ยนลำดับเองหลัง train
+            ค่า state ที่เข้า ONNX จะผิดทันที
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Params</span>
+          <h3>parameter ต้องฝังไปถึง EA</h3>
+          <p>
+            period, threshold, toggle และ custom settings ต้องอยู่ใน <code>.params.json</code>
+            เพื่อให้ <code>RL_ApplyDataCollectorConfig()</code> ตั้งค่า EA ก่อนสร้าง handles
+          </p>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ไฟล์</th>
+            <th>หน้าที่ใน custom feature flow</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>mt5_files/MQL5/Experts/DataCollector_RL.mq5</code></td>
+            <td>รับ input จาก user, เรียก feature builder, เขียน CSV และเขียน <code>.params.json</code></td>
+          </tr>
+          <tr>
+            <td><code>mt5_files/MQL5/Include/RL_Indicators.mqh</code></td>
+            <td>เป็น source of truth ของ feature ที่ EA และ collector คำนวณร่วมกัน</td>
+          </tr>
+          <tr>
+            <td><code>rl_train.py</code></td>
+            <td>อ่าน numeric feature columns จาก CSV, normalize ด้วย train stats, forward sidecar ไป model artifacts</td>
+          </tr>
+          <tr>
+            <td><code>export_to_onnx.py</code></td>
+            <td>เขียน <code>RL_FEATURE_NAMES</code>, mean/std และฝัง params เป็น <code>RL_ApplyDataCollectorConfig()</code></td>
+          </tr>
+          <tr>
+            <td><code>ML_RL_Trader_template.mq5</code></td>
+            <td>EA เรียก config ก่อน init indicators แล้วคำนวณ feature ส่งเข้า ONNX</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="period-step">
+      <h2>ปรับ Period Range ด้วย Min / Max / Step</h2>
+      <p>
+        feature aggregate เช่น <code>rsi_min</code>, <code>rsi_max</code>, <code>rsi_mean</code>,
+        <code>rsi_std</code> ไม่ได้สร้าง column แยกทุก period แต่สร้างสถิติรวมจากชุด period ที่กำหนด
+      </p>
+
+      <div class="grid two">
+        <div class="card">
+          <span class="tag blue">Example</span>
+          <h3>RSI 4 ถึง 30 step 2</h3>
+          <p>
+            ถ้าตั้ง <code>InpRSI_Pmin = 4</code>, <code>InpRSI_Pmax = 30</code>,
+            <code>InpRSI_Pstep = 2</code> ระบบจะใช้ period:
+          </p>
+          <pre><code>4, 6, 8, 10, 12, ..., 30</code></pre>
+          <p>แล้วคำนวณออกมาเป็น <code>rsi_min/max/mean/std</code> เหมือนเดิม</p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Important</span>
+          <h3>จำนวน column อาจเท่าเดิม แต่ distribution เปลี่ยน</h3>
+          <p>
+            แม้ column ยังชื่อเดิม แต่ค่า feature เปลี่ยนตามชุด period
+            จึงต้อง train model ใหม่ และ export EA ใหม่เสมอ
+          </p>
+        </div>
+      </div>
+
+      <p>
+        ค่า step จะถูกเขียนลง <code>.params.json</code> เช่น <code>RSI_PSTEP</code>,
+        <code>ATR_PSTEP</code>, <code>STOCH_PSTEP</code>, <code>CCI_PSTEP</code>,
+        <code>WPR_PSTEP</code>, <code>ADX_PSTEP</code> แล้ว export จะฝังค่าเหล่านี้ลง config ของ EA
+      </p>
+    </section>
+
+    <section id="add-feature">
+      <h2>เพิ่ม Indicator หรือ Feature ใหม่</h2>
+      <p>
+        Python training รับ numeric column ใหม่ได้ แต่ EA จะส่ง feature ได้ถูกต้องก็ต่อเมื่อ
+        <code>RL_Indicators.mqh</code> รู้จักและคำนวณ feature นั้นได้ด้วย
+      </p>
+
+      <div class="flow">
+        <div class="step">
+          <div class="num">1</div>
+          <div>
+            <h3>ตั้งชื่อ feature แบบนิ่ง</h3>
+            <p>ใช้ชื่อสั้น อ่านง่าย เป็น snake_case เช่น <code>custom_momentum_20</code> หรือ <code>adx_slope_14</code></p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <div>
+            <h3>เพิ่มชื่อใน <code>RL_ALL_FEATURES</code></h3>
+            <p>เพิ่มชื่อท้าย master list และเพิ่ม <code>RL_ALL_FEATURES_COUNT</code> ให้ตรงจำนวนจริง</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <div>
+            <h3>เพิ่ม handle / buffer / สูตรคำนวณ</h3>
+            <p>สร้าง indicator handle ใน <code>RL_InitIndicators()</code>, release ใน <code>RL_DeinitIndicators()</code>, แล้วเขียนค่าใน <code>RL_BuildAllFeatures()</code></p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">4</div>
+          <div>
+            <h3>เพิ่ม parameter ลง <code>.params.json</code></h3>
+            <p>ถ้า feature มี period หรือ threshold ให้ DataCollector เขียน key ลง sidecar เพื่อให้ export ฝังไป EA</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">5</div>
+          <div>
+            <h3>เก็บ dataset และ train ใหม่</h3>
+            <p>หลัง feature set เปลี่ยน ให้สร้าง CSV ใหม่, import ใหม่, train ใหม่, backtest ใหม่ และ export EA ใหม่</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="warnbox">
+        ถ้า train CSV มี column ที่ EA ไม่รู้จัก ตอน export จะยังเขียนชื่อ feature นั้นลง config ได้
+        แต่ตอน EA รันจะขึ้น unknown feature และใช้ค่า <code>0.0</code> แทน ทำให้ inference ไม่น่าเชื่อถือ
+      </div>
+    </section>
+
+    <section id="params-json">
+      <h2>.params.json คือสะพานระหว่าง Dataset กับ EA</h2>
+      <p>
+        sidecar นี้ควรอยู่คู่กับ CSV เสมอ เช่น <code>gu_h4_dataset.csv</code>
+        คู่กับ <code>gu_h4_dataset.params.json</code>
+      </p>
+
+      <pre><code>{
+  "RSI_PMIN": 4,
+  "RSI_PMAX": 30,
+  "RSI_PSTEP": 2,
+  "ATR_PMIN": 5,
+  "ATR_PMAX": 50,
+  "ATR_PSTEP": 1,
+  "CUSTOM_FEATURE_VERSION": 1
+}</code></pre>
+
+      <p>
+        ตอน train, <code>rl_train.py</code> จะ copy sidecar ไปไว้กับ model artifacts
+        และตอน export, <code>export_to_onnx.py</code> จะอ่าน sidecar นี้เพื่อ generate
+        <code>RL_ApplyDataCollectorConfig()</code> ในไฟล์ config ของ EA
+      </p>
+
+      <div class="okbox">
+        ถ้าต้องการให้ user ทดลอง feature หลายชุด ให้ตั้งชื่อ dataset/model ให้บอก recipe ชัดเจน
+        เช่น <code>gu_h4_rsi_step2_v1.csv</code> และ <code>rl_gu_h4_rsi_step2_v1</code>
+      </div>
+    </section>
+
+    <section id="validation">
+      <h2>Checklist ก่อนเชื่อผล Backtest / EA</h2>
+      <div class="grid two">
+        <div class="card green">
+          <span class="tag green">Dataset</span>
+          <h3>ตรวจ CSV</h3>
+          <ul>
+            <li>timestamp เรียงเวลาและไม่มี duplicate ที่ผิดปกติ</li>
+            <li>feature เป็น numeric และไม่มีค่า NaN/inf ค้าง</li>
+            <li>ไม่มี future/target/leaky column ปนเป็น feature</li>
+            <li>มี <code>.params.json</code> อยู่ข้าง CSV</li>
+          </ul>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">EA</span>
+          <h3>ตรวจ MT5 log</h3>
+          <ul>
+            <li>ไม่มี unknown feature ใน <code>RL_BuildFeatureMap()</code></li>
+            <li>feature count ตรงกับ config ของโมเดล</li>
+            <li>debug log แสดง feature/state ได้ ไม่เป็นศูนย์ทั้งชุด</li>
+            <li>Strategy Tester รันบน symbol/timeframe เดียวกับ dataset</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="warnbox">
+        Backtest ใน Python ผ่าน ไม่ได้แปลว่า EA live ถูกต้องเสมอไป ต้องตรวจ parity ใน MT5 ด้วย
+        โดยเฉพาะหลังเพิ่ม custom indicator หรือเปลี่ยน parameter ของ collector
+      </div>
+    </section>
+
+    <section id="safe-editing">
+      <h2>สิ่งที่ User ปรับได้ และสิ่งที่ต้องระวัง</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ปรับได้</th>
+            <th>เงื่อนไข</th>
+            <th>ต้องทำต่อ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Period min/max/step</td>
+            <td>ต้องเขียนลง <code>.params.json</code> และ EA ต้องใช้ค่าเดียวกัน</td>
+            <td>เก็บ CSV ใหม่, train ใหม่, export ใหม่</td>
+          </tr>
+          <tr>
+            <td>Candle pattern toggles/thresholds</td>
+            <td>ต้องส่งผ่าน sidecar และ <code>RL_ApplyDataCollectorConfig()</code></td>
+            <td>ตรวจว่า <code>CandlePatterns</code> compile แล้ว</td>
+          </tr>
+          <tr>
+            <td>เพิ่ม indicator ใหม่</td>
+            <td>ต้องเพิ่มทั้ง master feature list และสูตรใน <code>RL_Indicators.mqh</code></td>
+            <td>ตรวจ unknown feature = 0 ก่อนรันจริง</td>
+          </tr>
+          <tr>
+            <td>ลบ feature ด้วย Clean Redundant Features</td>
+            <td>ลบจาก CSV train/test ได้ แต่ EA ยังต้องรู้จัก feature ที่ model เหลือใช้อยู่</td>
+            <td>train/export จาก CSV ที่ clean แล้วเท่านั้น</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="codex-prompt">
+      <h2>Prompt สำหรับสั่ง Codex เพิ่ม Custom Feature</h2>
+      <p>
+        ใช้ prompt นี้เมื่อ user มีไอเดีย indicator หรือ feature ของตัวเอง
+        และต้องการให้ Codex แก้ครบทั้ง flow ไม่ใช่เพิ่มแค่ column ใน CSV
+      </p>
+
+      <div class="warnbox">
+        ก่อนส่ง prompt ให้แทนค่าช่อง <code>&lt;...&gt;</code> ให้ชัดเจน เช่นชื่อ feature,
+        สูตรคำนวณ, period/lookback และ parameter ที่อยากให้ปรับได้ใน MT5
+      </div>
+
+      <pre><code>อยู่ในโปรเจค C:\Users\omesb\Documents\claude code\pycaret_trainer
+
+ช่วยเพิ่ม custom feature ใหม่เข้า flow RL ให้ครบ dataset → train → export → EA live
+
+Feature ที่ต้องการ:
+- ชื่อ feature/column: &lt;ใส่ชื่อ เช่น ma_slope_50&gt;
+- สูตรคำนวณ: &lt;อธิบายสูตร เช่น slope ของ EMA50 เทียบกับ 10 bars ก่อนหน้า&gt;
+- input/parameter ที่ user ควรปรับได้ใน MT5: &lt;เช่น InpMASlope_Period=50, InpMASlope_Lookback=10&gt;
+- ต้องการให้เขียนลง .params.json ไหม: ใช่
+- feature นี้ใช้ closed bar เท่านั้น ห้ามใช้ future data
+
+งานที่ต้องทำ:
+1. อ่าน docs\metafxclub studio guide\07_custom_feature_guide.html ก่อน
+2. แก้ mt5_files\MQL5\Experts\DataCollector_RL.mq5:
+   - เพิ่ม input ถ้าจำเป็น
+   - apply parameter เข้า global/helper
+   - เขียน parameter ลง .params.json
+3. แก้ mt5_files\MQL5\Include\RL_Indicators.mqh:
+   - เพิ่มชื่อ feature ใน RL_ALL_FEATURES และปรับ RL_ALL_FEATURES_COUNT
+   - เพิ่ม handle/init/deinit ถ้าต้องใช้ indicator handle
+   - เพิ่มสูตรคำนวณใน RL_BuildAllFeatures()
+   - ตรวจว่า RL_BuildModelFeatures() จะ map feature ได้ ไม่กลายเป็น unknown feature
+4. ถ้าต้องแก้ export_to_onnx.py เพื่อให้ params type ถูก ต้องแก้ด้วย
+5. อัปเดต docs ถ้าจำเป็น โดยเฉพาะ Custom Feature Guide
+6. รันเช็ค:
+   - git diff --check
+   - .venv\Scripts\python.exe -B -c "import ast, pathlib; ast.parse(pathlib.Path('export_to_onnx.py').read_text(encoding='utf-8')); print('export ast ok')"
+7. สรุปไฟล์ที่แก้ และบอกด้วยว่ายังต้อง compile MQL5 ใน MetaEditor/MT5 หรือไม่</code></pre>
+
+      <div class="okbox">
+        ถ้าเป็นแค่การปรับค่า period ของ feature เดิม เช่น RSI min/max/step
+        ให้สั่ง Codex ให้ตรวจ <code>DataCollector_RL</code>, <code>RL_Indicators</code>,
+        <code>.params.json</code> และ export config ว่าค่าเดียวกันเดินครบ flow หรือยัง
+      </div>
+    </section>
+  </div>
+</body>
+</html>

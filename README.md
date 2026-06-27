@@ -121,8 +121,9 @@ docs\metafxclub studio guide
 Start with:
 
 - `00_reading_order.md`
-- `03_dashboard_user_flow_guide.html`
-- `15_data_prep_import_detail.html`
+- `01_dashboard_user_flow_guide.html`
+- `02_data_prep_import_detail.html`
+- `07_custom_feature_guide.html` for users who want to design custom dataset features, keep EA feature parity, and copy a Codex prompt for adding new features
 
 Reference/background explainers are separated in:
 

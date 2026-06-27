@@ -28,6 +28,10 @@
    - บทละเอียดของ Step 5: Robustness ด้วย Walk-Forward
    - ครอบคลุมเหตุผลที่หน้านี้ retrain model ชั่วคราวทุก window, validate training recipe ไม่ใช่ saved model file, window split, settings, metrics, robust verdict และข้อจำกัดว่า Walk-Forward ไม่ได้ calibrate confidence filter สำหรับ live โดยตรง
 
+7. [07_custom_feature_guide.html](07_custom_feature_guide.html)
+   - บทละเอียดสำหรับผู้ใช้ที่ต้องการออกแบบ feature / indicator / dataset schema ของตัวเอง
+   - ครอบคลุม feature contract, `.params.json`, min/max/step, การเพิ่ม feature ใน `RL_Indicators.mqh`, และ checklist ให้ flow `dataset -> train -> export -> EA live` ไม่หลุด parity
+
 ## Reference Files
 
 ไฟล์ explainer เก่าที่เป็น background หรือเอกสารเฉพาะเรื่องถูกแยกไว้ที่ `../explainers/` แล้ว เพื่อไม่ให้ปนกับชุดคู่มือ flow นี้
@@ -49,7 +53,7 @@
 
 ไฟล์ที่จะทำต่อในโฟลเดอร์นี้ควรเป็นไฟล์ที่แตกจาก flow หลักโดยตรง:
 
-- `07_export_mt5_detail.html` สำหรับสอน export ONNX, config, EA และการเอาไปใช้ใน MT5 Strategy Tester
+- `08_export_mt5_detail.html` สำหรับสอน export ONNX, config, EA และการเอาไปใช้ใน MT5 Strategy Tester
 
 ## Rule For This Folder
 

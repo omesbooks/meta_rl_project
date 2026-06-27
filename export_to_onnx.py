@@ -292,7 +292,7 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
             mqh.append(f"// Embedded from {params_file.name} — applied via")
             mqh.append("// RL_ApplyDataCollectorConfig() (call in OnInit before RL_InitIndicators).")
             mqh.append("")
-            INT_KEYS = ("PMIN", "PMAX", "PERIOD", "WINDOW", "FAST", "SLOW", "SIGNAL", "_P")
+            INT_KEYS = ("PMIN", "PMAX", "PSTEP", "PERIOD", "WINDOW", "FAST", "SLOW", "SIGNAL", "_P")
             BOOL_KEYS = ("CP_Hammer", "CP_Engulfing", "CP_Inside", "CP_Outside",
                          "CP_Star", "CP_Soldiers", "CP_Marubozu", "CP_Harami",
                          "CP_Piercing", "CP_MatHold",

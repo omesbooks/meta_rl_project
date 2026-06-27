@@ -198,6 +198,7 @@
         <a href="03_quality_check_detail.html">Quality Check</a>
         <a href="04_train_page_detail.html">Train</a>
         <a href="05_backtest_page_detail.html">Backtest</a>
+        <a href="#ea-feature-flow">EA Flow</a>
         <a href="#codex-prompt">Codex Prompt</a>
       </nav>
     </header>
@@ -215,7 +216,7 @@
           <div class="num">1</div>
           <div>
             <h3>ออกแบบ feature และ parameter</h3>
-            <p>กำหนดว่าจะใช้ indicator อะไร, period เท่าไร, ใช้ aggregate แบบไหน และชื่อ column อะไรใน CSV</p>
+            <p>กำหนดว่าจะใช้ indicator อะไร, period เท่าไร, step เท่าไร และชื่อ column อะไรใน CSV</p>
           </div>
         </div>
         <div class="step">
@@ -262,7 +263,8 @@
           <h3>ชื่อ feature ต้องตรง</h3>
           <p>
             ชื่อ column ใน CSV จะกลายเป็น <code>RL_FEATURE_NAMES</code> ตอน export
-            และ EA จะหา feature ชื่อนั้นใน <code>RL_ALL_FEATURES</code>
+            และ EA จะหา feature ชื่อนั้นใน dynamic <code>RL_ALL_FEATURES</code>
+            ที่สร้างจาก <code>RL_BuildAllFeatureNames()</code>
           </p>
         </div>
         <div class="card blue">
@@ -315,11 +317,81 @@
       </table>
     </section>
 
+    <section id="ea-feature-flow">
+      <h2>EA รู้จำนวน Feature และลำดับได้ยังไง</h2>
+      <p>
+        EA ไม่ได้เดาเองว่า model ต้องการ feature อะไรหรือกี่ตัว
+        ทุกอย่างถูกล็อกมาจากไฟล์ที่สร้างระหว่าง train และ export ตามลำดับนี้
+      </p>
+
+      <div class="flow">
+        <div class="step">
+          <div class="num">1</div>
+          <div>
+            <h3>DataCollector_RL สร้าง CSV + params</h3>
+            <p>
+              DataCollector_RL ใช้ input ใน MT5 เช่น min/max/step เพื่อสร้าง column จริงใน CSV
+              เช่น <code>rsi_4</code>, <code>rsi_6</code>, <code>rsi_8</code>
+              และเขียนค่า input ชุดเดียวกันลง <code>.params.json</code>
+            </p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">2</div>
+          <div>
+            <h3>Train บันทึก feature order</h3>
+            <p>
+              <code>rl_train.py</code> อ่าน numeric feature columns จาก CSV ตามลำดับที่ใช้จริง
+              แล้วบันทึกเป็น <code>&lt;model&gt;_norm.csv</code> พร้อม mean/std ของแต่ละ feature
+              และ forward sidecar เป็น <code>&lt;model&gt;.params.json</code>
+            </p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">3</div>
+          <div>
+            <h3>Export ฝัง contract ลง config</h3>
+            <p>
+              <code>export_to_onnx.py</code> อ่าน norm stats และ params ของ model แล้วสร้าง config ที่มี
+              <code>RL_FEATURE_COUNT</code>, <code>RL_FEATURE_NAMES[]</code>,
+              <code>RL_MEANS[]</code>, <code>RL_STDS[]</code> และ
+              <code>RL_ApplyDataCollectorConfig()</code>
+            </p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="num">4</div>
+          <div>
+            <h3>EA live map feature ก่อนส่งเข้า ONNX</h3>
+            <p>
+              ตอนเริ่ม EA จะเรียก <code>RL_ApplyDataCollectorConfig()</code>,
+              <code>RL_InitIndicators()</code> และ <code>RL_BuildFeatureMap()</code>
+              จากนั้นทุก closed bar จะเรียก <code>RL_BuildModelFeatures()</code>
+              เพื่อสร้าง state จำนวนเท่ากับ <code>RL_FEATURE_COUNT</code> ตามลำดับของ model
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="okbox">
+        ถ้า dataset แต่ละชุดใช้ min/max/step ต่างกัน ให้ถือว่าแต่ละ model มี config ของตัวเอง:
+        export package ของ model นั้นจะพก <code>.onnx</code>, <code>_config.mqh</code>,
+        EA และ <code>RL_Indicators.mqh</code> ไปเป็นชุดเดียวกัน
+      </div>
+
+      <div class="warnbox">
+        ถ้าไม่มี <code>.params.json</code> ตอน train/export ระบบอาจ fallback เป็นค่า default ฝั่ง MT5
+        ซึ่งเสี่ยงทำให้ live EA คำนวณ feature ไม่เหมือน dataset ที่ใช้ train
+        ส่วนโมเดลเก่าที่ใช้ aggregate เช่น <code>rsi_min</code>, <code>rsi_max</code>
+        ยังมี legacy fallback แต่ถ้าต้องการ per-period columns ต้องเก็บ CSV ใหม่, train ใหม่ และ export ใหม่
+      </div>
+    </section>
+
     <section id="period-step">
       <h2>ปรับ Period Range ด้วย Min / Max / Step</h2>
       <p>
-        feature aggregate เช่น <code>rsi_min</code>, <code>rsi_max</code>, <code>rsi_mean</code>,
-        <code>rsi_std</code> ไม่ได้สร้าง column แยกทุก period แต่สร้างสถิติรวมจากชุด period ที่กำหนด
+        indicator period range จะสร้าง column แยกตาม period จริง ไม่ใช่สรุปเป็น aggregate เดิม
+        เช่น <code>rsi_4</code>, <code>rsi_5</code>, <code>rsi_6</code> ไล่ไปตามค่า step ที่กำหนด
       </p>
 
       <div class="grid two">
@@ -331,14 +403,18 @@
             <code>InpRSI_Pstep = 2</code> ระบบจะใช้ period:
           </p>
           <pre><code>4, 6, 8, 10, 12, ..., 30</code></pre>
-          <p>แล้วคำนวณออกมาเป็น <code>rsi_min/max/mean/std</code> เหมือนเดิม</p>
+          <p>
+            CSV จะได้ column เป็น <code>rsi_4</code>, <code>rsi_6</code>,
+            <code>rsi_8</code>, ... , <code>rsi_30</code>
+          </p>
         </div>
         <div class="card warn">
           <span class="tag warn">Important</span>
-          <h3>จำนวน column อาจเท่าเดิม แต่ distribution เปลี่ยน</h3>
+          <h3>จำนวน column และชื่อ column อาจเปลี่ยน</h3>
           <p>
-            แม้ column ยังชื่อเดิม แต่ค่า feature เปลี่ยนตามชุด period
-            จึงต้อง train model ใหม่ และ export EA ใหม่เสมอ
+            เมื่อ min/max/step เปลี่ยน ชื่อ column และจำนวน feature อาจเปลี่ยนตามชุด period
+            เช่น <code>rsi_4</code>, <code>rsi_6</code>, ... จึงต้องเก็บ CSV ใหม่,
+            train model ใหม่ และ export EA ใหม่เสมอ
           </p>
         </div>
       </div>
@@ -348,6 +424,11 @@
         <code>ATR_PSTEP</code>, <code>STOCH_PSTEP</code>, <code>CCI_PSTEP</code>,
         <code>WPR_PSTEP</code>, <code>ADX_PSTEP</code> แล้ว export จะฝังค่าเหล่านี้ลง config ของ EA
       </p>
+      <div class="okbox">
+        ชื่อ aggregate เก่าอย่าง <code>rsi_min</code>, <code>rsi_max</code>,
+        <code>rsi_mean</code>, <code>rsi_std</code> ยังมี fallback ใน EA สำหรับโมเดลเก่า
+        แต่ DataCollector_RL รุ่นใหม่จะเขียน feature แบบราย period เป็นหลัก
+      </div>
     </section>
 
     <section id="add-feature">
@@ -368,8 +449,11 @@
         <div class="step">
           <div class="num">2</div>
           <div>
-            <h3>เพิ่มชื่อใน <code>RL_ALL_FEATURES</code></h3>
-            <p>เพิ่มชื่อท้าย master list และเพิ่ม <code>RL_ALL_FEATURES_COUNT</code> ให้ตรงจำนวนจริง</p>
+            <h3>เพิ่มชื่อใน dynamic feature list</h3>
+            <p>
+              เพิ่มชื่อผ่าน <code>RL_BuildAllFeatureNames()</code> หรือ helper ที่เกี่ยวข้อง
+              เพื่อให้ <code>RL_ALL_FEATURES</code> และ feature count สร้างจาก logic เดียวกัน
+            </p>
           </div>
         </div>
         <div class="step">
@@ -484,7 +568,7 @@
           </tr>
           <tr>
             <td>เพิ่ม indicator ใหม่</td>
-            <td>ต้องเพิ่มทั้ง master feature list และสูตรใน <code>RL_Indicators.mqh</code></td>
+            <td>ต้องเพิ่มทั้ง dynamic feature list และสูตรใน <code>RL_Indicators.mqh</code></td>
             <td>ตรวจ unknown feature = 0 ก่อนรันจริง</td>
           </tr>
           <tr>
@@ -526,7 +610,7 @@ Feature ที่ต้องการ:
    - apply parameter เข้า global/helper
    - เขียน parameter ลง .params.json
 3. แก้ mt5_files\MQL5\Include\RL_Indicators.mqh:
-   - เพิ่มชื่อ feature ใน RL_ALL_FEATURES และปรับ RL_ALL_FEATURES_COUNT
+   - เพิ่มหรือปรับชื่อ feature ใน dynamic RL_ALL_FEATURES / RL_BuildAllFeatureNames()
    - เพิ่ม handle/init/deinit ถ้าต้องใช้ indicator handle
    - เพิ่มสูตรคำนวณใน RL_BuildAllFeatures()
    - ตรวจว่า RL_BuildModelFeatures() จะ map feature ได้ ไม่กลายเป็น unknown feature
@@ -540,7 +624,7 @@ Feature ที่ต้องการ:
       <div class="okbox">
         ถ้าเป็นแค่การปรับค่า period ของ feature เดิม เช่น RSI min/max/step
         ให้สั่ง Codex ให้ตรวจ <code>DataCollector_RL</code>, <code>RL_Indicators</code>,
-        <code>.params.json</code> และ export config ว่าค่าเดียวกันเดินครบ flow หรือยัง
+        header CSV แบบราย period, <code>.params.json</code> และ export config ว่าค่าเดียวกันเดินครบ flow หรือยัง
       </div>
     </section>
   </div>

@@ -137,7 +137,7 @@ int OnInit()
       return INIT_FAILED;
    }
 
-   // Force-load CandlePatterns so candle_* features compute (we dump ALL 75).
+   // Force-load CandlePatterns so candle_* features compute in the dynamic dump.
    // Defaults match RL_BuildFeatureMap()'s iCustom call -> parity with EA.
    // Override via inputs only if you also re-tune the EA side.
    g_uses_candles = true;
@@ -166,7 +166,7 @@ int OnInit()
       return INIT_FAILED;
    }
 
-   // Header: timestamp + OHLCV + all 75 feature names
+   // Header: timestamp + OHLCV + all dynamic feature names
    string hdr = "timestamp,open,high,low,close,volume";
    for(int i = 0; i < RL_ALL_FEATURES_COUNT; i++)
       hdr += "," + RL_ALL_FEATURES[i];

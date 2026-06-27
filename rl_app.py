@@ -2943,12 +2943,12 @@ class RLTradingStudio(ctk.CTk):
             font=ctk.CTkFont(size=11), text_color=COLOR_DIM
             ).grid(row=0, column=1, sticky="e", padx=(8, 4))
         self.tool_split_clean_thr = ctk.CTkEntry(clean_frame, width=70,
-            placeholder_text="0.85", font=ctk.CTkFont(family="Consolas", size=11))
-        self.tool_split_clean_thr.insert(0, "0.85")
+            placeholder_text="0.99", font=ctk.CTkFont(family="Consolas", size=11))
+        self.tool_split_clean_thr.insert(0, "0.99")
         self.tool_split_clean_thr.grid(row=0, column=2, sticky="e")
 
         ctk.CTkLabel(c2,
-            text="(เปิดเช็กบ็อกซ์ → ลบ features ที่ correlate กันสูง > threshold หลัง split — ลด overfitting)",
+            text="(เปิดเช็กบ็อกซ์ → ลบเฉพาะ features ที่ correlate กันสูงมาก > threshold หลัง split — แนะนำ 0.99 สำหรับ period features)",
             font=ctk.CTkFont(size=10), text_color=COLOR_DIM
             ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 8))
 
@@ -2997,9 +2997,9 @@ class RLTradingStudio(ctk.CTk):
         ).grid(row=0, column=1)
 
         self.tool_feat_threshold = ctk.CTkEntry(feat_grid,
-            placeholder_text="0.85",
+            placeholder_text="0.99",
             font=ctk.CTkFont(family="Consolas", size=12))
-        self.tool_feat_threshold.insert(0, "0.85")
+        self.tool_feat_threshold.insert(0, "0.99")
         self.tool_feat_threshold.grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
         # 2-button row
@@ -3501,9 +3501,9 @@ class RLTradingStudio(ctk.CTk):
             # ⭐ Auto-clean redundant features if checkbox is checked
             if self.tool_clean_after_split.get():
                 try:
-                    threshold = float(self.tool_split_clean_thr.get() or "0.85")
+                    threshold = float(self.tool_split_clean_thr.get() or "0.99")
                 except ValueError:
-                    threshold = 0.85
+                    threshold = 0.99
 
                 self._log(self.tools_log,
                     f"\n=== Auto-cleaning redundant features (corr > {threshold}) ===",
@@ -3515,43 +3515,59 @@ class RLTradingStudio(ctk.CTk):
                     train_df, train_features, threshold)
 
                 if dropped:
-                    self._log(self.tools_log,
-                        f"  Dropped {len(dropped)} features  (kept {len(kept)})",
-                        "warn")
-                    for col in dropped[:10]:
-                        kept_col, r = reasons[col]
-                        if kept_col is None:
-                            self._log(self.tools_log,
-                                f"    - {col:25s}  (constant / no variance)",
-                                "warn")
-                        else:
-                            self._log(self.tools_log,
-                                f"    - {col:25s}  (r={r:.3f} with {kept_col})",
-                                "warn")
-                    if len(dropped) > 10:
+                    blocked, min_keep, keep_ratio = self._is_prune_too_aggressive(
+                        len(train_features), len(kept))
+                    if blocked:
                         self._log(self.tools_log,
-                            f"    ... +{len(dropped) - 10} more", "warn")
+                            f"  ⚠ Auto-clean skipped: would keep only {len(kept)}/{len(train_features)} "
+                            f"features ({keep_ratio:.0%}); minimum safe keep is {min_keep}. "
+                            "Raise threshold closer to 0.99.",
+                            "error")
+                        self._tools_file_notice(
+                            "Auto-clean skipped",
+                            "Redundant-feature cleanup was too aggressive, so split CSV files were left unchanged.",
+                            level="warn",
+                            popup=False,
+                        )
+                        dropped = []
+                    else:
+                        self._log(self.tools_log,
+                            f"  Dropped {len(dropped)} features  (kept {len(kept)})",
+                            "warn")
+                        for col in dropped[:10]:
+                            kept_col, r = reasons[col]
+                            if kept_col is None:
+                                self._log(self.tools_log,
+                                    f"    - {col:25s}  (constant / no variance)",
+                                    "warn")
+                            else:
+                                self._log(self.tools_log,
+                                    f"    - {col:25s}  (r={r:.3f} with {kept_col})",
+                                    "warn")
+                        if len(dropped) > 10:
+                            self._log(self.tools_log,
+                                f"    ... +{len(dropped) - 10} more", "warn")
 
-                    # Apply same column selection to both files
-                    non_feat_train = [c for c in train_df.columns if c not in train_features]
-                    out_cols_train = non_feat_train + kept
+                        # Apply same column selection to both files
+                        non_feat_train = [c for c in train_df.columns if c not in train_features]
+                        out_cols_train = non_feat_train + kept
 
-                    non_feat_test  = [c for c in test_df.columns if c not in train_features]
-                    # filter: only kept that exist in test (should be all)
-                    kept_in_test = [c for c in kept if c in test_df.columns]
-                    out_cols_test = non_feat_test + kept_in_test
+                        non_feat_test  = [c for c in test_df.columns if c not in train_features]
+                        # filter: only kept that exist in test (should be all)
+                        kept_in_test = [c for c in kept if c in test_df.columns]
+                        out_cols_test = non_feat_test + kept_in_test
 
-                    train_df[out_cols_train].to_csv(train_path, index=False)
-                    test_df[out_cols_test].to_csv(test_path, index=False)
-                    auto_cleaned = True
-                    auto_clean_dropped = len(dropped)
+                        train_df[out_cols_train].to_csv(train_path, index=False)
+                        test_df[out_cols_test].to_csv(test_path, index=False)
+                        auto_cleaned = True
+                        auto_clean_dropped = len(dropped)
 
-                    self._log(self.tools_log,
-                        f"  ✓ Re-saved: {train_path.name} ({len(out_cols_train)} cols)",
-                        "success")
-                    self._log(self.tools_log,
-                        f"  ✓ Re-saved: {test_path.name} ({len(out_cols_test)} cols)",
-                        "success")
+                        self._log(self.tools_log,
+                            f"  ✓ Re-saved: {train_path.name} ({len(out_cols_train)} cols)",
+                            "success")
+                        self._log(self.tools_log,
+                            f"  ✓ Re-saved: {test_path.name} ({len(out_cols_test)} cols)",
+                            "success")
                 else:
                     self._log(self.tools_log,
                         "  No redundant features found — files unchanged",
@@ -3935,6 +3951,30 @@ class RLTradingStudio(ctk.CTk):
         # Read again
         return pd.read_csv(path, **kwargs)
 
+    def _find_csv_params_sidecar(self, csv_path):
+        csv_path = Path(csv_path)
+        candidates = [
+            csv_path.with_suffix(".params.json"),
+            csv_path.parent / (csv_path.stem + ".params.json"),
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _copy_csv_params_sidecar(self, src_csv, dst_csv):
+        src_params = self._find_csv_params_sidecar(src_csv)
+        if not src_params:
+            return None, None
+        dst_csv = Path(dst_csv)
+        dst_params = dst_csv.with_suffix(".params.json")
+        try:
+            import shutil
+            shutil.copy(src_params, dst_params)
+            return dst_params, None
+        except Exception as e:
+            return None, e
+
     # --------------------------------------------------------
     # ⭐ Feature analysis helpers
     # --------------------------------------------------------
@@ -3985,6 +4025,19 @@ class RLTradingStudio(ctk.CTk):
             reasons[drop_col] = (keep_col, max_val)
         return kept, dropped, reasons
 
+    def _is_prune_too_aggressive(self, total_features, kept_features):
+        """Safety guard for broad period-feature datasets.
+
+        Correlation pruning can delete entire indicator period ladders when the
+        threshold is too low. Block writes when the result keeps too little.
+        """
+        import math
+        if total_features <= 0:
+            return False, 0, 1.0
+        min_keep = min(total_features, max(5, math.ceil(total_features * 0.35)))
+        keep_ratio = kept_features / total_features
+        return kept_features < min_keep, min_keep, keep_ratio
+
     def _show_correlation(self):
         threading.Thread(target=self._show_correlation_worker, daemon=True).start()
 
@@ -3996,9 +4049,9 @@ class RLTradingStudio(ctk.CTk):
                 return
 
             try:
-                threshold = float(self.tool_feat_threshold.get() or "0.85")
+                threshold = float(self.tool_feat_threshold.get() or "0.99")
             except ValueError:
-                threshold = 0.85
+                threshold = 0.99
 
             self._log(self.tools_log, f"Loading {csv}...", "info")
             import pandas as pd
@@ -4118,9 +4171,9 @@ class RLTradingStudio(ctk.CTk):
                 return
 
             try:
-                threshold = float(self.tool_feat_threshold.get() or "0.85")
+                threshold = float(self.tool_feat_threshold.get() or "0.99")
             except ValueError:
-                threshold = 0.85
+                threshold = 0.99
 
             self._log(self.tools_log,
                 f"\n=== Cleaning redundant features (corr > {threshold}) ===", "info")
@@ -4133,6 +4186,24 @@ class RLTradingStudio(ctk.CTk):
 
             kept, dropped, reasons = self._greedy_correlation_prune(
                 df, features, threshold)
+
+            if dropped:
+                blocked, min_keep, keep_ratio = self._is_prune_too_aggressive(
+                    len(features), len(kept))
+                if blocked:
+                    self._log(self.tools_log,
+                        f"⚠ Clean skipped: would keep only {len(kept)}/{len(features)} "
+                        f"features ({keep_ratio:.0%}); minimum safe keep is {min_keep}.",
+                        "error")
+                    self._log(self.tools_log,
+                        "Raise threshold closer to 0.99, then run Show Correlation Matrix first.",
+                        "warn")
+                    self._tools_file_notice(
+                        "Clean skipped",
+                        "Redundant-feature cleanup was too aggressive, so no cleaned CSV was written.",
+                        level="warn",
+                    )
+                    return
 
             if not dropped:
                 self._log(self.tools_log,
@@ -4171,6 +4242,18 @@ class RLTradingStudio(ctk.CTk):
             out_path = WORK_DIR / out_name
             out_existed = out_path.exists()
             cleaned_df.to_csv(out_path, index=False)
+            notice_paths = [out_path]
+            params_path, params_error = self._copy_csv_params_sidecar(WORK_DIR / csv, out_path)
+            if params_path:
+                notice_paths.append(params_path)
+                self._log(self.tools_log,
+                    f"  ✓ Copied params sidecar: {params_path.name}", "success")
+            elif params_error:
+                self._log(self.tools_log,
+                    f"  ⚠ params sidecar copy failed: {params_error}", "warn")
+            else:
+                self._log(self.tools_log,
+                    "  ⚠ no params sidecar found for source CSV", "warn")
 
             size_mb = out_path.stat().st_size / 1024 / 1024
             self._log(self.tools_log,
@@ -4186,7 +4269,7 @@ class RLTradingStudio(ctk.CTk):
             self._tools_file_notice(
                 title,
                 f"Cleaned dataset saved after dropping {len(dropped)} redundant features.",
-                [out_path],
+                notice_paths,
             )
 
         except Exception as e:

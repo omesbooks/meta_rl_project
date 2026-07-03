@@ -499,6 +499,31 @@
   "ATR_PMIN": 5,
   "ATR_PMAX": 50,
   "ATR_PSTEP": 1,
+  "SESSION_ASIA_START": 0,
+  "SESSION_ASIA_END": 9,
+  "SESSION_LONDON_START": 8,
+  "SESSION_LONDON_END": 17,
+  "SESSION_NY_START": 13,
+  "SESSION_NY_END": 22,
+  "EX_TEMA_PERIOD": 14,
+  "EX_DEMA_PERIOD": 14,
+  "EX_AMA_PERIOD": 10,
+  "EX_AMA_FAST": 2,
+  "EX_AMA_SLOW": 30,
+  "EX_ENV_PERIOD": 14,
+  "EX_ENV_METHOD": 0,
+  "EX_ENV_APPLIED_PRICE": 1,
+  "EX_ENV_DEVIATION": 0.1,
+  "EX_RVI_PERIOD": 10,
+  "EX_MFI_PERIOD": 14,
+  "EX_ADXW_PERIOD": 14,
+  "EX_CHV_SMOOTH_PERIOD": 10,
+  "EX_CHV_PERIOD": 10,
+  "EX_CHV_SMOOTH_TYPE": 1,
+  "EX_ROC_PERIOD": 12,
+  "EX_ROC_APPLIED_PRICE": 1,
+  "EX_WPR_PERIOD": 14,
+  "EX_VOLUME_TYPE": 0,
   "CUSTOM_FEATURE_VERSION": 1
 }</code></pre>
 
@@ -560,6 +585,27 @@
             <td>Period min/max/step</td>
             <td>ต้องเขียนลง <code>.params.json</code> และ EA ต้องใช้ค่าเดียวกัน</td>
             <td>เก็บ CSV ใหม่, train ใหม่, export ใหม่</td>
+          </tr>
+          <tr>
+            <td>Session/time context</td>
+            <td>
+              ค่า <code>InpSession_Asia/London/NY_Start/End</code>
+              ใช้ broker server time และต้อง forward ผ่าน <code>.params.json</code>
+              เพื่อให้ EA live คำนวณ <code>session_*</code> และ cyclic time features ตรงกับ dataset
+            </td>
+            <td>ถ้าปรับ session window ให้เก็บ CSV ใหม่, train ใหม่, export ใหม่</td>
+          </tr>
+          <tr>
+            <td>MT5 Examples indicators</td>
+            <td>
+              feature ชื่อ <code>ex_*</code> เรียก indicator ใน
+              <code>MQL5/Indicators/Examples</code> เช่น TEMA, DEMA, AMA,
+              Envelopes, Fractals, RVI, OBV, MFI, AC, ADXW, CHV, PVT, ROC และ WPR
+            </td>
+            <td>
+              เครื่องที่เก็บ dataset และเครื่องที่รัน EA ต้องมี Examples indicators พร้อม compile;
+              ถ้าปรับ input ให้เก็บ CSV ใหม่, train ใหม่, export ใหม่
+            </td>
           </tr>
           <tr>
             <td>Candle pattern toggles/thresholds</td>

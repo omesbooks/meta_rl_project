@@ -1,0 +1,35 @@
+{
+  "schema": "metafxclub.reward_profile.v1",
+  "name": "balanced_custom_1",
+  "base_profile": "balanced",
+  "base_profile_label": "Balanced (default)",
+  "overrides": {
+    "close_pnl_mult": 65.0,
+    "loss_penalty_mult": 0.7,
+    "profit_bonus_threshold": 0.008,
+    "profit_bonus": 0.02,
+    "giveback_trigger": 0.003,
+    "giveback_fraction": 0.65,
+    "giveback_penalty": 0.004,
+    "idle_penalty": 0.0002
+  },
+  "params": {
+    "close_pnl_mult": 65.0,
+    "loss_penalty_mult": 0.7,
+    "profit_bonus_threshold": 0.008,
+    "profit_bonus": 0.02,
+    "unrealized_scale": 0.1,
+    "giveback_trigger": 0.003,
+    "giveback_fraction": 0.65,
+    "giveback_penalty": 0.004,
+    "trade_penalty": 0.005,
+    "idle_penalty": 0.0002,
+    "time_decay_start": 0.7,
+    "time_decay_penalty": 0.0002,
+    "mtm_profit_bonus": 0.001,
+    "mtm_long_hold_bars": 50,
+    "mtm_long_hold_penalty": 0.0005,
+    "blowup_penalty": 1.0
+  },
+  "notes": "Saved from MetaFXClub RL Studio Train page."
+}

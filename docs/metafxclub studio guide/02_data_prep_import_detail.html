@@ -375,6 +375,25 @@
               <code>rsi_30</code> ไม่ใช่สรุปเหลือแค่ <code>rsi_min</code>
               กับ <code>rsi_max</code>
             </p>
+            <p>
+              DataCollector_RL ยังสร้าง session/time context จากเวลา broker server time เช่น
+              <code>hour_sin</code>, <code>hour_cos</code>, <code>dow_sin</code>,
+              <code>dow_cos</code>, <code>month_sin</code>, <code>month_cos</code>,
+              <code>session_london_ny_overlap</code>, <code>session_active_count</code>,
+              <code>week_start</code> และ <code>week_end</code>
+              ถ้า broker server time ต่างกัน สามารถปรับช่วง
+              <code>InpSession_Asia/London/NY_Start/End</code> ได้ และค่านี้จะถูกเขียนลง
+              <code>.params.json</code> เพื่อให้ EA ที่ export ออกมาใช้ session window เดียวกัน
+            </p>
+            <p>
+              ชุด collector ปัจจุบันยังเพิ่ม feature จาก MT5 Examples indicators ด้วย
+              โดยใช้ชื่อ column ขึ้นต้น <code>ex_</code> เช่น <code>ex_tema</code>,
+              <code>ex_dema</code>, <code>ex_ama</code>, <code>ex_env_position</code>,
+              <code>ex_rvi</code>, <code>ex_mfi</code>, <code>ex_adxw</code>,
+              <code>ex_chv</code>, <code>ex_pvt</code>, <code>ex_roc</code>
+              และ <code>ex_wpr</code> เครื่อง MT5 ที่ใช้เก็บข้อมูลหรือรัน EA
+              ต้องมี indicators ใน <code>MQL5/Indicators/Examples</code> พร้อมใช้งาน
+            </p>
           </div>
         </article>
 

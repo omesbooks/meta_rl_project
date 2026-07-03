@@ -12,7 +12,7 @@ Action (discrete):
     2 = Sell  (เปิด short ถ้ายังไม่มี position)
     3 = Close (ปิด position ปัจจุบัน)
 
-Reward (V4 — Honest):
+Reward (Balanced profile, V4 — Honest):
     + Net-PnL × 50 ตอนปิด (real $ dominates reward)
     + +0.01 bonus เฉพาะถ้า net pnl > 0.5% (meaningful win)
     + incremental unrealized × 0.1 (tiny direction hint)
@@ -21,11 +21,17 @@ Reward (V4 — Honest):
     - hold idle penalty -0.0001 ต่อ bar (ตอน flat)
     - time-decay -0.0002 หลังถือเกิน 70% max_hold
     → Break-even WR ~53% (ตรงกับ real $ break-even)
+
+Other presets come from reward_profiles.py and change these weights.
 """
 import numpy as np
 import pandas as pd
 import gymnasium as gym
 from gymnasium import spaces
+
+from reward_formula import compile_reward_formula, eval_reward_formula
+from reward_profiles import get_reward_profile
+from action_profiles import action_ids_by_name, get_action_profile
 
 
 class TradingEnv(gym.Env):
@@ -41,6 +47,10 @@ class TradingEnv(gym.Env):
         max_steps: int = None,
         max_hold_bars: int = 30,      # บังคับปิดถ้าถือเกิน
         reward_mode: str = "realized", # "mtm" (เก่า/buy-hold trap) หรือ "realized" (ดีกว่า)
+        reward_profile: str | dict = "balanced",
+        reward_formula: str = "",
+        action_profile: str | dict = "basic_4",
+        action_params: dict | None = None,
     ):
         super().__init__()
         self.df = df.reset_index(drop=True)
@@ -52,9 +62,18 @@ class TradingEnv(gym.Env):
         self.max_steps = max_steps if max_steps else len(df) - window_size - 2
         self.max_hold_bars = max_hold_bars
         self.reward_mode = reward_mode
+        self.reward_profile_name, self.reward_cfg = get_reward_profile(reward_profile)
+        self.reward_formula = (reward_formula or "").strip()
+        self._reward_formula_code = (
+            compile_reward_formula(self.reward_formula)
+            if self.reward_formula else None
+        )
+        self.action_profile_name, self.action_profile = get_action_profile(action_profile, action_params)
+        self.action_params = self.action_profile["params"]
+        self.action_ids = action_ids_by_name(self.action_profile)
 
-        # Action: 0=Hold, 1=Buy, 2=Sell, 3=Close
-        self.action_space = spaces.Discrete(4)
+        # Action profile decides output dimension.
+        self.action_space = spaces.Discrete(len(self.action_profile["actions"]))
 
         # Obs: window flat + [position, unrealized_pnl, bars_in_position]
         obs_dim = self.window_size * self.n_features + 3
@@ -65,6 +84,8 @@ class TradingEnv(gym.Env):
         # Pre-compute feature window matrix for speed
         self._features = self.df[feature_cols].values.astype(np.float32)
         self._closes = self.df["close"].values.astype(np.float32)
+        self._highs = self.df["high"].values.astype(np.float32) if "high" in self.df.columns else self._closes
+        self._lows = self.df["low"].values.astype(np.float32) if "low" in self.df.columns else self._closes
 
     # --------------------------------------------------------------
     def reset(self, seed=None, options=None):
@@ -91,6 +112,7 @@ class TradingEnv(gym.Env):
         self.start_t = self.t
         self.position = 0          # -1 short, 0 flat, +1 long
         self.entry_price = 0.0
+        self.stop_price = 0.0
         self.bars_in_position = 0
         self.equity = 1.0          # normalized; multiply by initial capital later
         self.peak_equity = 1.0
@@ -124,63 +146,133 @@ class TradingEnv(gym.Env):
             "n_trades": len(self.trades),
         }
 
+    def _atr_proxy(self):
+        period = int(self.action_params.get("trail_atr_period", 14))
+        period = max(2, period)
+        start = max(0, self.t - period + 1)
+        ranges = self._highs[start:self.t + 1] - self._lows[start:self.t + 1]
+        atr = float(np.mean(np.maximum(ranges, 0.0))) if len(ranges) else 0.0
+        price = float(self._closes[self.t])
+        return max(atr, price * 0.001)
+
+    def _current_unrealized(self, price):
+        if self.position == 0 or self.entry_price <= 0:
+            return 0.0
+        return (price - self.entry_price) / self.entry_price * self.position
+
+    def _close_current_position(self, price, reason="signal"):
+        if self.position == 0:
+            return None
+        exit_p = price * (1.0 - self.spread) if self.position == 1 else price * (1.0 + self.spread)
+        pnl_pct = (exit_p - self.entry_price) / self.entry_price * self.position
+        net_pnl = pnl_pct - self.commission
+        self.equity *= (1 + net_pnl)
+        self.trades.append({
+            "entry": self.entry_price,
+            "exit": exit_p,
+            "side": self.position,
+            "bars": self.bars_in_position,
+            "pnl": net_pnl,
+            "reason": reason,
+            "stop": self.stop_price,
+        })
+        self.position = 0
+        self.entry_price = 0.0
+        self.stop_price = 0.0
+        self.bars_in_position = 0
+        return net_pnl
+
+    def _apply_breakeven_stop(self, price):
+        if self.position == 0 or self.entry_price <= 0:
+            return False
+        if self._current_unrealized(price) < float(self.action_params["breakeven_min_profit"]):
+            return False
+        old_stop = self.stop_price
+        if self.position == 1:
+            self.stop_price = max(self.stop_price, self.entry_price)
+        else:
+            self.stop_price = min(self.stop_price if self.stop_price > 0 else float("inf"), self.entry_price)
+        return self.stop_price != old_stop
+
+    def _apply_trailing_stop(self, price):
+        if self.position == 0 or self.entry_price <= 0:
+            return False
+        if self._current_unrealized(price) < float(self.action_params["trail_min_profit"]):
+            return False
+        atr = self._atr_proxy()
+        dist = atr * float(self.action_params["trail_atr_mult"])
+        old_stop = self.stop_price
+        if self.position == 1:
+            candidate = price - dist
+            self.stop_price = max(self.stop_price, candidate)
+        else:
+            candidate = price + dist
+            self.stop_price = min(self.stop_price if self.stop_price > 0 else float("inf"), candidate)
+        return self.stop_price != old_stop
+
+    def _check_managed_stop(self, price):
+        if self.position == 0 or self.stop_price <= 0:
+            return None
+        if self.position == 1 and price <= self.stop_price:
+            return self._close_current_position(self.stop_price, "managed_sl")
+        if self.position == -1 and price >= self.stop_price:
+            return self._close_current_position(self.stop_price, "managed_sl")
+        return None
+
     # --------------------------------------------------------------
     def step(self, action):
+        action = int(action)
         prev_equity = self.equity
         price = self._closes[self.t]
         trade_closed_pnl = None
         just_opened = False   # ⭐ Phase 2: flag สำหรับ trade penalty (แทน cost > 0)
+        management_action = False
+        stop_adjusted = False
+        invalid_action = False
+        buy_id = self.action_ids.get("buy")
+        sell_id = self.action_ids.get("sell")
+        close_id = self.action_ids.get("close")
+        breakeven_id = self.action_ids.get("move_sl_breakeven")
+        trail_id = self.action_ids.get("trail_sl_atr")
 
         # ---- execute action ----
         # ⭐⭐ Phase 2: apply spread to entry/exit prices (match backtest_live.py)
         # Long:  buy at higher price (market + spread), sell at lower (market - spread)
         # Short: sell at lower price (market - spread), buy at higher (market + spread)
-        if action == 1 and self.position == 0:           # BUY
+        if action == buy_id and self.position == 0:      # BUY
             self.position = 1
             self.entry_price = price * (1.0 + self.spread)   # ⭐ shift up
+            self.stop_price = 0.0
             self.bars_in_position = 0
             just_opened = True
 
-        elif action == 2 and self.position == 0:         # SELL
+        elif action == sell_id and self.position == 0:   # SELL
             self.position = -1
             self.entry_price = price * (1.0 - self.spread)   # ⭐ shift down
+            self.stop_price = 0.0
             self.bars_in_position = 0
             just_opened = True
 
-        elif action == 3 and self.position != 0:         # CLOSE
-            # ⭐ apply exit spread (long: -, short: +)
-            exit_p = price * (1.0 - self.spread) if self.position == 1 else price * (1.0 + self.spread)
-            pnl_pct = (exit_p - self.entry_price) / self.entry_price * self.position
-            net_pnl = pnl_pct - self.commission
-            self.equity *= (1 + net_pnl)
-            trade_closed_pnl = net_pnl
-            self.trades.append({
-                "entry": self.entry_price,
-                "exit": exit_p,                            # ⭐ store shifted price
-                "side": self.position,
-                "bars": self.bars_in_position,
-                "pnl": net_pnl,
-            })
-            self.position = 0
-            self.entry_price = 0.0
-            self.bars_in_position = 0
+        elif action == close_id and self.position != 0:  # CLOSE
+            trade_closed_pnl = self._close_current_position(price, "signal")
+
+        elif action == breakeven_id:
+            management_action = True
+            stop_adjusted = self._apply_breakeven_stop(price)
+            invalid_action = not stop_adjusted
+
+        elif action == trail_id:
+            management_action = True
+            stop_adjusted = self._apply_trailing_stop(price)
+            invalid_action = not stop_adjusted
+
+        stop_closed_pnl = self._check_managed_stop(price)
+        if stop_closed_pnl is not None:
+            trade_closed_pnl = stop_closed_pnl
 
         # ---- force close if held too long (avoid buy-and-hold trap) ----
         if self.position != 0 and self.bars_in_position >= self.max_hold_bars:
-            # ⭐ apply exit spread for forced close too
-            exit_p = price * (1.0 - self.spread) if self.position == 1 else price * (1.0 + self.spread)
-            pnl_pct = (exit_p - self.entry_price) / self.entry_price * self.position
-            net_pnl = pnl_pct - self.commission
-            self.equity *= (1 + net_pnl)
-            trade_closed_pnl = net_pnl
-            self.trades.append({
-                "entry": self.entry_price, "exit": exit_p,
-                "side": self.position, "bars": self.bars_in_position,
-                "pnl": net_pnl, "forced": True,
-            })
-            self.position = 0
-            self.entry_price = 0.0
-            self.bars_in_position = 0
+            trade_closed_pnl = self._close_current_position(price, "max_hold")
 
         # ---- update mark-to-market equity ----
         if self.position != 0:
@@ -192,71 +284,111 @@ class TradingEnv(gym.Env):
 
         # ---- reward shaping ----
         if self.reward_mode == "realized":
-            # ⭐⭐⭐ V4: Honest Reward (Real $ dominates)
-            # ─────────────────────────────────────────────────────────
-            # ปัญหาใน V3: profit bonus capped 0.005 → ทุก win เล็กก็ได้ bonus เต็ม
-            #            → agent เรียน "เก็บ small wins" → cost กิน
-            #
-            # V4 หลักการ:
-            #   1. close_pnl multiplier 5 → 50  (real $ เด่นใน reward)
-            #   2. profit bonus เฉพาะ pnl > 0.5% (10× cost)
-            #   3. trade penalty 0.002 → 0.005 (ป้องกัน over-trading จริงจัง)
-            #   4. unrealized scale 0.3 → 0.1 (ลด dense reward gaming)
-            #   5. give-back penalty 0.0002 → 0.001 (เร็วขึ้น 5×)
-            # → Break-even WR คาดว่า ~53% (สมจริง)
-            # ─────────────────────────────────────────────────────────
+            cfg = self.reward_cfg
             reward = 0.0
+            current_unrealized = 0.0
+            unrealized_delta = 0.0
+            giveback = False
 
-            # 1) Tiny unrealized hint (just direction signal — no gaming)
+            # 1) Tiny unrealized hint (just direction signal; no gaming)
             if self.position != 0 and self.entry_price > 0:
                 current_unrealized = (price - self.entry_price) / self.entry_price * self.position
                 unrealized_delta = current_unrealized - self._prev_unrealized
-                reward += unrealized_delta * 0.1   # ⭐ V4: ลด 0.3 → 0.1
 
-                # Give-back penalty (more aggressive)
+                # Give-back penalty.
                 self._peak_unrealized = max(self._peak_unrealized, current_unrealized)
-                if (self._peak_unrealized > 0.002 and       # ⭐ V4: 0.001 → 0.002 (เกณฑ์)
-                        current_unrealized < self._peak_unrealized * 0.5):
-                    reward -= 0.001                          # ⭐ V4: 0.0002 → 0.001 (× 5)
+                giveback = (
+                    self._peak_unrealized > cfg["giveback_trigger"] and
+                    current_unrealized < self._peak_unrealized * cfg["giveback_fraction"]
+                )
 
                 self._prev_unrealized = current_unrealized
             else:
                 self._prev_unrealized = 0.0
                 self._peak_unrealized = 0.0
+            trade_closed = trade_closed_pnl is not None
+            pnl_for_formula = 0.0 if trade_closed_pnl is None else float(trade_closed_pnl)
+            is_idle = action == 0 and self.position == 0
+            time_decay_active = (
+                self.position != 0 and
+                self.bars_in_position > self.max_hold_bars * cfg["time_decay_start"]
+            )
 
-            # 2) ⭐⭐ STRONG close reward — let real $ dominate
-            if trade_closed_pnl is not None:
-                # ⭐ V4: multiplier 5 → 50 — real pnl เด่นมาก
-                reward += trade_closed_pnl * 50.0
+            if self._reward_formula_code is not None:
+                variables = dict(cfg)
+                variables.update({
+                    "action": int(action),
+                    "position": float(self.position),
+                    "just_opened": bool(just_opened),
+                    "is_idle": bool(is_idle),
+                    "in_position": bool(self.position != 0),
+                    "trade_closed": bool(trade_closed),
+                    "trade_closed_pnl": pnl_for_formula,
+                    "current_unrealized": float(current_unrealized),
+                    "unrealized_delta": float(unrealized_delta),
+                    "peak_unrealized": float(self._peak_unrealized),
+                    "giveback": bool(giveback),
+                    "bars_in_position": float(self.bars_in_position),
+                    "max_hold_bars": float(self.max_hold_bars),
+                    "time_decay_active": bool(time_decay_active),
+                    "prev_equity": float(prev_equity),
+                    "current_equity": float(current_equity),
+                    "equity_delta": float((current_equity - prev_equity) / max(prev_equity, 1e-9)),
+                    "management_action": bool(management_action),
+                    "stop_adjusted": bool(stop_adjusted),
+                    "invalid_action": bool(invalid_action),
+                    "stop_price": float(self.stop_price),
+                })
+                reward = eval_reward_formula(self._reward_formula_code, variables)
+            else:
+                reward += unrealized_delta * cfg["unrealized_scale"]
+                if giveback:
+                    reward -= cfg["giveback_penalty"]
 
-                # ⭐ V4: profit bonus เฉพาะ MEANINGFUL wins (> 0.5% net)
-                # cost ต่อ trade = 0.05% → bonus ต้องการ pnl 10× ของ cost
-                if trade_closed_pnl > 0.005:
-                    reward += 0.01
+                # 2) Strong close reward; let real P/L dominate.
+                if trade_closed:
+                    close_mult = cfg["close_pnl_mult"]
+                    if trade_closed_pnl < 0:
+                        close_mult *= cfg["loss_penalty_mult"]
+                    reward += trade_closed_pnl * close_mult
 
-                # reset trackers
+                    if trade_closed_pnl > cfg["profit_bonus_threshold"]:
+                        reward += cfg["profit_bonus"]
+
+                # 3) Opening a trade must be worth the extra cost.
+                if just_opened:
+                    reward -= cfg["trade_penalty"]
+
+                # 4) Penalize doing nothing while flat.
+                if is_idle:
+                    reward -= cfg["idle_penalty"]
+
+                # 5) Mild time-decay while in position (encourage timely exits)
+                if time_decay_active:
+                    reward -= cfg["time_decay_penalty"]
+
+                if management_action:
+                    if stop_adjusted:
+                        reward -= float(self.action_params["management_action_penalty"])
+                    else:
+                        reward -= float(self.action_params["invalid_action_penalty"])
+
+            if trade_closed:
                 self._prev_unrealized = 0.0
                 self._peak_unrealized = 0.0
-
-            # 3) ⭐ HEAVY Trade Penalty (was 0.002 → 0.005)
-            #    ตอนเปิด trade agent ต้อง "มั่นใจมาก" จึงจะคุ้ม
-            if just_opened:
-                reward -= 0.005   # ⭐ V4: 0.002 → 0.005 (× 2.5)
-
-            # 4) ลงโทษ "Hold ตลอด" (no position, doing nothing)
-            if action == 0 and self.position == 0:
-                reward -= 0.0001
-
-            # 5) Mild time-decay while in position (encourage timely exits)
-            if self.position != 0 and self.bars_in_position > self.max_hold_bars * 0.7:
-                reward -= 0.0002
         else:
-            # legacy MTM mode — Phase 2: spread auto-captured via equity drop on entry
+            cfg = self.reward_cfg
+            # legacy MTM mode; spread is captured via equity drop on entry.
             reward = (current_equity - prev_equity) / max(prev_equity, 1e-9)
             if trade_closed_pnl is not None and trade_closed_pnl > 0:
-                reward += 0.001
-            if self.position != 0 and self.bars_in_position > 50:
-                reward -= 0.0005
+                reward += cfg["mtm_profit_bonus"]
+            if self.position != 0 and self.bars_in_position > cfg["mtm_long_hold_bars"]:
+                reward -= cfg["mtm_long_hold_penalty"]
+            if management_action:
+                reward -= float(
+                    self.action_params["management_action_penalty"]
+                    if stop_adjusted else self.action_params["invalid_action_penalty"]
+                )
 
         # ---- step forward ----
         self.t += 1
@@ -281,10 +413,11 @@ class TradingEnv(gym.Env):
                     "pnl": net_pnl,
                 })
                 self.position = 0
+                self.stop_price = 0.0
 
         if self.equity < 0.5:  # blew up half the capital
             terminated = True
-            reward -= 1.0  # big penalty
+            reward -= self.reward_cfg["blowup_penalty"]  # big penalty
 
         self.peak_equity = max(self.peak_equity, current_equity)
 

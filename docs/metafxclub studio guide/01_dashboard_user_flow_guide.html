@@ -437,6 +437,8 @@
           <p>
             จำนวนครั้งที่ agent ได้ฝึกตัดสินใจใน environment
             steps มากขึ้นไม่เท่ากับดีขึ้นเสมอ ต้องดู log, backtest และ walk-forward ประกอบ
+            ค่า Suggested steps เป็น heuristic จากจำนวน train bars, Train % และ window size
+            โดยมี minimum floor และปัดเป็นช่วงละ 50,000 จึงอาจเห็น 200,000 ซ้ำใน dataset H4 หลายชุดได้
           </p>
         </div>
         <div class="card">
@@ -542,7 +544,7 @@
             <ul>
               <li>เลือก dataset CSV</li>
               <li>เลือก PPO เป็นค่าแนะนำ</li>
-              <li>ใช้ reward mode <code>realized</code></li>
+              <li>ใช้ reward mode <code>realized</code> และ reward profile <code>Balanced</code> เป็น baseline</li>
               <li>ตั้ง Train %, Window Size, Max Hold, Training Steps</li>
               <li>ดู reward trend และ PPO health metrics ระหว่าง train</li>
             </ul>

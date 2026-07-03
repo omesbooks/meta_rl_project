@@ -1,0 +1,15 @@
+{
+  "schema": "metafxclub.reward_profile.v1",
+  "name": "developer_formula_example",
+  "base_profile": "balanced",
+  "base_profile_label": "Balanced (default)",
+  "overrides": {
+    "trade_penalty": 0.006,
+    "unrealized_scale": 0.08
+  },
+  "developer_mode": {
+    "enabled": true,
+    "formula": "(unrealized_delta * unrealized_scale) - (giveback_penalty if giveback else 0) + (trade_closed_pnl * close_pnl_mult * (loss_penalty_mult if trade_closed_pnl < 0 else 1) if trade_closed else 0) + (profit_bonus if trade_closed and trade_closed_pnl > profit_bonus_threshold else 0) - (trade_penalty if just_opened else 0) - (idle_penalty if is_idle else 0) - (time_decay_penalty if time_decay_active else 0)"
+  },
+  "notes": "Example developer-mode reward formula. It mirrors the default Balanced logic with small override values."
+}

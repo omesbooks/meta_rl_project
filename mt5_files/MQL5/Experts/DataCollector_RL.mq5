@@ -63,6 +63,35 @@ input int InpD1_EMA_Slow = 30;
 input int InpD1_ATR      = 14;
 input int InpD1_ADX      = 14;
 
+input group "=== Session/time context (broker server time) ==="
+input int InpSession_Asia_Start   = 0;
+input int InpSession_Asia_End     = 9;
+input int InpSession_London_Start = 8;
+input int InpSession_London_End   = 17;
+input int InpSession_NY_Start     = 13;
+input int InpSession_NY_End       = 22;
+
+input group "=== MT5 Examples indicators ==="
+input int    InpEx_TEMA_Period       = 14;
+input int    InpEx_DEMA_Period       = 14;
+input int    InpEx_AMA_Period        = 10;
+input int    InpEx_AMA_Fast          = 2;
+input int    InpEx_AMA_Slow          = 30;
+input int    InpEx_Env_Period        = 14;
+input int    InpEx_Env_Method        = 0;       // MODE_SMA
+input int    InpEx_Env_AppliedPrice  = 1;       // PRICE_CLOSE
+input double InpEx_Env_Deviation     = 0.1;
+input int    InpEx_RVI_Period        = 10;
+input int    InpEx_MFI_Period        = 14;
+input int    InpEx_ADXW_Period       = 14;
+input int    InpEx_CHV_SmoothPeriod  = 10;
+input int    InpEx_CHV_Period        = 10;
+input int    InpEx_CHV_SmoothType    = 1;       // Examples\CHV: 1 = EMA
+input int    InpEx_ROC_Period        = 12;
+input int    InpEx_ROC_AppliedPrice  = 1;       // PRICE_CLOSE
+input int    InpEx_WPR_Period        = 14;
+input int    InpEx_VolumeType        = 0;       // VOLUME_TICK
+
 input group "=== Candle Patterns — toggles (10) ==="
 input bool InpCP_Hammer     = true;
 input bool InpCP_Engulfing  = true;
@@ -111,6 +140,33 @@ int OnInit()
    D1_RSI_PERIOD = InpD1_RSI;
    D1_EMA_FAST_P = InpD1_EMA_Fast; D1_EMA_SLOW_P = InpD1_EMA_Slow;
    D1_ATR_PERIOD = InpD1_ATR;     D1_ADX_PERIOD = InpD1_ADX;
+
+   SESSION_ASIA_START   = InpSession_Asia_Start;
+   SESSION_ASIA_END     = InpSession_Asia_End;
+   SESSION_LONDON_START = InpSession_London_Start;
+   SESSION_LONDON_END   = InpSession_London_End;
+   SESSION_NY_START     = InpSession_NY_Start;
+   SESSION_NY_END       = InpSession_NY_End;
+
+   EX_TEMA_PERIOD       = InpEx_TEMA_Period;
+   EX_DEMA_PERIOD       = InpEx_DEMA_Period;
+   EX_AMA_PERIOD        = InpEx_AMA_Period;
+   EX_AMA_FAST          = InpEx_AMA_Fast;
+   EX_AMA_SLOW          = InpEx_AMA_Slow;
+   EX_ENV_PERIOD        = InpEx_Env_Period;
+   EX_ENV_METHOD        = InpEx_Env_Method;
+   EX_ENV_APPLIED_PRICE = InpEx_Env_AppliedPrice;
+   EX_ENV_DEVIATION     = InpEx_Env_Deviation;
+   EX_RVI_PERIOD        = InpEx_RVI_Period;
+   EX_MFI_PERIOD        = InpEx_MFI_Period;
+   EX_ADXW_PERIOD       = InpEx_ADXW_Period;
+   EX_CHV_SMOOTH_PERIOD = InpEx_CHV_SmoothPeriod;
+   EX_CHV_PERIOD        = InpEx_CHV_Period;
+   EX_CHV_SMOOTH_TYPE   = InpEx_CHV_SmoothType;
+   EX_ROC_PERIOD        = InpEx_ROC_Period;
+   EX_ROC_APPLIED_PRICE = InpEx_ROC_AppliedPrice;
+   EX_WPR_PERIOD        = InpEx_WPR_Period;
+   EX_VOLUME_TYPE       = InpEx_VolumeType;
 
    // Apply candle pattern inputs to RL_Indicators globals (used by both
    // our own iCustom below AND by RL_BuildFeatureMap when the EA loads).
@@ -251,6 +307,31 @@ void OnDeinit(const int reason)
       FileWriteString(pf, "  \"D1_EMA_SLOW_P\": "     + IntegerToString(D1_EMA_SLOW_P)   + ",\r\n");
       FileWriteString(pf, "  \"D1_ATR_PERIOD\": "     + IntegerToString(D1_ATR_PERIOD)   + ",\r\n");
       FileWriteString(pf, "  \"D1_ADX_PERIOD\": "     + IntegerToString(D1_ADX_PERIOD)   + ",\r\n");
+      FileWriteString(pf, "  \"SESSION_ASIA_START\": "   + IntegerToString(SESSION_ASIA_START)   + ",\r\n");
+      FileWriteString(pf, "  \"SESSION_ASIA_END\": "     + IntegerToString(SESSION_ASIA_END)     + ",\r\n");
+      FileWriteString(pf, "  \"SESSION_LONDON_START\": " + IntegerToString(SESSION_LONDON_START) + ",\r\n");
+      FileWriteString(pf, "  \"SESSION_LONDON_END\": "   + IntegerToString(SESSION_LONDON_END)   + ",\r\n");
+      FileWriteString(pf, "  \"SESSION_NY_START\": "     + IntegerToString(SESSION_NY_START)     + ",\r\n");
+      FileWriteString(pf, "  \"SESSION_NY_END\": "       + IntegerToString(SESSION_NY_END)       + ",\r\n");
+      FileWriteString(pf, "  \"EX_TEMA_PERIOD\": "       + IntegerToString(EX_TEMA_PERIOD)       + ",\r\n");
+      FileWriteString(pf, "  \"EX_DEMA_PERIOD\": "       + IntegerToString(EX_DEMA_PERIOD)       + ",\r\n");
+      FileWriteString(pf, "  \"EX_AMA_PERIOD\": "        + IntegerToString(EX_AMA_PERIOD)        + ",\r\n");
+      FileWriteString(pf, "  \"EX_AMA_FAST\": "          + IntegerToString(EX_AMA_FAST)          + ",\r\n");
+      FileWriteString(pf, "  \"EX_AMA_SLOW\": "          + IntegerToString(EX_AMA_SLOW)          + ",\r\n");
+      FileWriteString(pf, "  \"EX_ENV_PERIOD\": "        + IntegerToString(EX_ENV_PERIOD)        + ",\r\n");
+      FileWriteString(pf, "  \"EX_ENV_METHOD\": "        + IntegerToString(EX_ENV_METHOD)        + ",\r\n");
+      FileWriteString(pf, "  \"EX_ENV_APPLIED_PRICE\": " + IntegerToString(EX_ENV_APPLIED_PRICE) + ",\r\n");
+      FileWriteString(pf, "  \"EX_ENV_DEVIATION\": "     + DoubleToString(EX_ENV_DEVIATION, 4)   + ",\r\n");
+      FileWriteString(pf, "  \"EX_RVI_PERIOD\": "        + IntegerToString(EX_RVI_PERIOD)        + ",\r\n");
+      FileWriteString(pf, "  \"EX_MFI_PERIOD\": "        + IntegerToString(EX_MFI_PERIOD)        + ",\r\n");
+      FileWriteString(pf, "  \"EX_ADXW_PERIOD\": "       + IntegerToString(EX_ADXW_PERIOD)       + ",\r\n");
+      FileWriteString(pf, "  \"EX_CHV_SMOOTH_PERIOD\": " + IntegerToString(EX_CHV_SMOOTH_PERIOD) + ",\r\n");
+      FileWriteString(pf, "  \"EX_CHV_PERIOD\": "        + IntegerToString(EX_CHV_PERIOD)        + ",\r\n");
+      FileWriteString(pf, "  \"EX_CHV_SMOOTH_TYPE\": "   + IntegerToString(EX_CHV_SMOOTH_TYPE)   + ",\r\n");
+      FileWriteString(pf, "  \"EX_ROC_PERIOD\": "        + IntegerToString(EX_ROC_PERIOD)        + ",\r\n");
+      FileWriteString(pf, "  \"EX_ROC_APPLIED_PRICE\": " + IntegerToString(EX_ROC_APPLIED_PRICE) + ",\r\n");
+      FileWriteString(pf, "  \"EX_WPR_PERIOD\": "        + IntegerToString(EX_WPR_PERIOD)        + ",\r\n");
+      FileWriteString(pf, "  \"EX_VOLUME_TYPE\": "       + IntegerToString(EX_VOLUME_TYPE)       + ",\r\n");
       FileWriteString(pf, "  \"CP_Hammer\": "         + (CP_Hammer    ? "true" : "false") + ",\r\n");
       FileWriteString(pf, "  \"CP_Engulfing\": "      + (CP_Engulfing ? "true" : "false") + ",\r\n");
       FileWriteString(pf, "  \"CP_Inside\": "         + (CP_Inside    ? "true" : "false") + ",\r\n");

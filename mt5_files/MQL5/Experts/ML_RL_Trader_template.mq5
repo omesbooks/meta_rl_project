@@ -28,6 +28,37 @@
 #include <__CONFIG_HEADER__>                 // generated norm constants (in MQL5/Include/)
 #include <RL_Indicators.mqh>                 // feature computation (in MQL5/Include/)
 
+#ifndef RL_ACTION_HOLD
+   #define RL_ACTION_HOLD -1
+#endif
+#ifndef RL_ACTION_BUY
+   #define RL_ACTION_BUY 1
+#endif
+#ifndef RL_ACTION_SELL
+   #define RL_ACTION_SELL 2
+#endif
+#ifndef RL_ACTION_CLOSE
+   #define RL_ACTION_CLOSE 3
+#endif
+#ifndef RL_ACTION_MOVE_SL_BREAKEVEN
+   #define RL_ACTION_MOVE_SL_BREAKEVEN -1
+#endif
+#ifndef RL_ACTION_TRAIL_SL_ATR
+   #define RL_ACTION_TRAIL_SL_ATR -1
+#endif
+#ifndef RL_ACTION_BREAKEVEN_MIN_PROFIT
+   #define RL_ACTION_BREAKEVEN_MIN_PROFIT 0.0010
+#endif
+#ifndef RL_ACTION_TRAIL_ATR_PERIOD
+   #define RL_ACTION_TRAIL_ATR_PERIOD 14
+#endif
+#ifndef RL_ACTION_TRAIL_ATR_MULT
+   #define RL_ACTION_TRAIL_ATR_MULT 2.0
+#endif
+#ifndef RL_ACTION_TRAIL_MIN_PROFIT
+   #define RL_ACTION_TRAIL_MIN_PROFIT 0.0010
+#endif
+
 // ⭐ Embed ONNX model inside the compiled .ex5 (works in both Terminal + Tester)
 // File MUST exist in MQL5/Files/ at COMPILE TIME — embedded into .ex5 binary.
 #resource "\\Files\\__ONNX_FILE__" as uchar ExtModelData[]
@@ -43,6 +74,13 @@ input int      InpMaxHoldBars       = 30;         // Force close after N bars
 input double   InpATR_SL_Mult       = 2.0;        // SL = ATR × this
 input double   InpATR_TP_Mult       = 4.0;        // TP = ATR × this
 input double   InpHardDD_Pct        = 0.15;       // Hard stop drawdown 15%
+
+input group "=== Action Management ==="
+input bool     InpEnableActionManagement = true;  // Allow RL actions to modify SL
+input double   InpBE_MinProfit      = RL_ACTION_BREAKEVEN_MIN_PROFIT; // Min floating P/L before BE
+input int      InpTrailATRPeriod    = RL_ACTION_TRAIL_ATR_PERIOD;     // ATR proxy bars for trailing
+input double   InpTrailATRMult      = RL_ACTION_TRAIL_ATR_MULT;       // ATR trailing distance
+input double   InpTrailMinProfit    = RL_ACTION_TRAIL_MIN_PROFIT;     // Min floating P/L before trail
 
 input group "=== Trading ==="
 input int      InpMagicNumber       = 20251108;
@@ -442,6 +480,125 @@ void CalcSLTP(int direction, double price, double &out_sl, double &out_tp)
 }
 
 //+------------------------------------------------------------------+
+//| ATR proxy from recent closed bars for action-managed trailing     |
+//+------------------------------------------------------------------+
+double ActionATRProxy(int period)
+{
+   int p = period;
+   if(p < 2) p = 2;
+   double sum = 0.0;
+   int n = 0;
+   for(int shift = 1; shift <= p; shift++) {
+      double h = iHigh(_Symbol, _Period, shift);
+      double l = iLow(_Symbol, _Period, shift);
+      if(h <= 0 || l <= 0 || h < l) continue;
+      sum += (h - l);
+      n++;
+   }
+   if(n <= 0) {
+      double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      return MathMax(price * 0.001, SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10);
+   }
+   return sum / n;
+}
+
+//+------------------------------------------------------------------+
+//| Floating P/L pct for selected position                           |
+//+------------------------------------------------------------------+
+double SelectedPositionProfitPct()
+{
+   ENUM_POSITION_TYPE pt = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+   double entry = PositionGetDouble(POSITION_PRICE_OPEN);
+   if(entry <= 0) return 0.0;
+   double current = (pt == POSITION_TYPE_BUY)
+                    ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                    : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double sign = (pt == POSITION_TYPE_BUY) ? 1.0 : -1.0;
+   return (current - entry) / entry * sign;
+}
+
+//+------------------------------------------------------------------+
+//| Modify SL only if it improves protection                          |
+//+------------------------------------------------------------------+
+bool ImproveSelectedSL(ulong ticket, double proposed_sl)
+{
+   ENUM_POSITION_TYPE pt = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+   double old_sl = PositionGetDouble(POSITION_SL);
+   double tp = PositionGetDouble(POSITION_TP);
+   double point_size = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double min_dist = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point_size;
+   int digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+
+   if(pt == POSITION_TYPE_BUY) {
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double max_sl = bid - min_dist - 2 * point_size;
+      proposed_sl = MathMin(proposed_sl, max_sl);
+      if(proposed_sl <= 0) return false;
+      if(old_sl > 0 && proposed_sl <= old_sl + point_size) return false;
+   } else {
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double min_sl = ask + min_dist + 2 * point_size;
+      proposed_sl = MathMax(proposed_sl, min_sl);
+      if(proposed_sl <= 0) return false;
+      if(old_sl > 0 && proposed_sl >= old_sl - point_size) return false;
+   }
+
+   proposed_sl = NormalizeDouble(proposed_sl, digits);
+   bool ok = g_trade.PositionModify(ticket, proposed_sl, tp);
+   if(ok) {
+      Print("[Trade] MODIFY SL ticket=", ticket, " SL=", DoubleToString(proposed_sl, digits));
+   } else {
+      Print("[Trade] MODIFY SL failed ticket=", ticket, " ", g_trade.ResultRetcodeDescription());
+   }
+   return ok;
+}
+
+//+------------------------------------------------------------------+
+//| Action: move SL to breakeven                                     |
+//+------------------------------------------------------------------+
+void MoveSLToBreakeven()
+{
+   if(!InpEnableActionManagement) return;
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(SelectedPositionProfitPct() < InpBE_MinProfit) continue;
+
+      double entry = PositionGetDouble(POSITION_PRICE_OPEN);
+      ImproveSelectedSL(ticket, entry);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Action: trail SL by ATR                                          |
+//+------------------------------------------------------------------+
+void TrailSLByATR()
+{
+   if(!InpEnableActionManagement) return;
+   double atr = ActionATRProxy(InpTrailATRPeriod);
+   double dist = MathMax(atr * InpTrailATRMult, SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10);
+
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
+      ulong ticket = PositionGetTicket(i);
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(SelectedPositionProfitPct() < InpTrailMinProfit) continue;
+
+      ENUM_POSITION_TYPE pt = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      double current = (pt == POSITION_TYPE_BUY)
+                       ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                       : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double proposed_sl = (pt == POSITION_TYPE_BUY)
+                           ? current - dist
+                           : current + dist;
+      ImproveSelectedSL(ticket, proposed_sl);
+   }
+}
+
+//+------------------------------------------------------------------+
 //| Balance-based lot — used when opening WITHOUT SL                 |
 //| Lot = (InpLotPercent / 100 / 100000) * AccountBalance            |
 //+------------------------------------------------------------------+
@@ -738,43 +895,47 @@ void OnTick()
    }
 
    // 10) Apply confidence filter (Buy/Sell only)
-   if((action == 1 || action == 2) && confidence < InpConfidence) {
+   if((action == RL_ACTION_BUY || action == RL_ACTION_SELL) && confidence < InpConfidence) {
       return;  // skip low confidence
    }
 
    // 11) Execute action
-   //   0 = Hold
-   //   1 = Buy
-   //   2 = Sell
-   //   3 = Close
+   // Action ids are generated into the model config header.
    datetime current_bar_time = SessionCheckTime();
    bool session_ok = IsAllowedSession(current_bar_time);
 
-   if(!session_ok && action != 0) {
-      // Market not in session — skip ALL trade actions (Buy/Sell/Close)
+   if(!session_ok && action != RL_ACTION_HOLD) {
+      // Market not in session — skip trade/management actions
       // - Open trades stay protected by SL/TP set on entry
       // - When market reopens, EA re-evaluates on next bar
       return;
    }
 
-   if(action == 1) {
+   if(action == RL_ACTION_BUY) {
       // Skip if already long
       if(pos_side != 1) OpenPosition(1);
    }
-   else if(action == 2) {
+   else if(action == RL_ACTION_SELL) {
       if(pos_side != -1) OpenPosition(2);
    }
-   else if(action == 3) {
+   else if(action == RL_ACTION_CLOSE) {
       if(pos_side != 0) CloseAllPositions("signal");
+   }
+   else if(action == RL_ACTION_MOVE_SL_BREAKEVEN) {
+      if(pos_side != 0) MoveSLToBreakeven();
+   }
+   else if(action == RL_ACTION_TRAIL_SL_ATR) {
+      if(pos_side != 0) TrailSLByATR();
    }
 
    // Optional: print decision (verbose)
-   if(action != 0) {
+   if(action != RL_ACTION_HOLD) {
+      string prob_text = "";
+      for(int pi = 0; pi < RL_OUTPUT_DIM; pi++) {
+         if(pi > 0) prob_text += ",";
+         prob_text += DoubleToString(probs[pi], 3);
+      }
       Print("[RL] action=", action, " conf=", DoubleToString(confidence, 4),
-            " pos_side=", pos_side, " probs=[",
-            DoubleToString(probs[0], 3), ",",
-            DoubleToString(probs[1], 3), ",",
-            DoubleToString(probs[2], 3), ",",
-            DoubleToString(probs[3], 3), "]");
+            " pos_side=", pos_side, " probs=[", prob_text, "]");
    }
 }

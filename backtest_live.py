@@ -40,7 +40,17 @@ from artifact_paths import (
     equity_path as artifact_equity_path,
     find_model_path,
     find_norm_path,
+    train_meta_path,
     trades_path as artifact_trades_path,
+)
+from action_profiles import (
+    ACTION_PROFILES,
+    action_ids_by_name,
+    action_names_for_profile,
+    coerce_action_params,
+    get_action_profile,
+    load_action_profile_json,
+    profile_for_action_count,
 )
 
 TRADE_COLUMNS = [
@@ -78,6 +88,46 @@ def _write_json(path, payload):
     path.write_text(json.dumps(_jsonable(payload), indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _resolve_action_profile(args, model):
+    """Resolve action profile for a loaded model, preferring train metadata."""
+    n_actions = int(model.action_space.n)
+    action_params = {}
+    action_profile_json_meta = None
+    action_profile_value = None
+
+    if args.action_profile_json.strip():
+        action_profile_json_meta = load_action_profile_json(args.action_profile_json.strip())
+        action_profile_value = action_profile_json_meta["profile"]
+        action_params.update(action_profile_json_meta["params"])
+    elif args.action_profile != "auto":
+        action_profile_value = args.action_profile
+    else:
+        meta_file = train_meta_path(args.model)
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8-sig"))
+                hparams = meta.get("hyperparameters", {})
+                action_profile_value = hparams.get("action_profile_config") or hparams.get("action_profile")
+                action_params.update(hparams.get("action_profile_params") or {})
+            except Exception as exc:
+                print(f"[action] warn: could not read train metadata: {exc}")
+
+    if args.action_params.strip():
+        action_params.update(coerce_action_params(json.loads(args.action_params)))
+
+    if action_profile_value is None:
+        key, profile = profile_for_action_count(n_actions)
+    else:
+        key, profile = get_action_profile(action_profile_value, action_params)
+
+    if len(profile["actions"]) != n_actions:
+        raise ValueError(
+            f"action profile '{profile['label']}' has {len(profile['actions'])} actions "
+            f"but model outputs {n_actions}. Retrain or choose the matching profile."
+        )
+    return key, profile, action_profile_json_meta
+
+
 # =============================================================
 # Simulated Account (แทน MT5)
 # =============================================================
@@ -112,6 +162,10 @@ class SimAccount:
             change = (current_price - p['entry']) / p['entry'] * sign
             total += change * p['lots']
         return total / max(self.equity, 1.0)
+
+    def position_profit_pct(self, p, current_price):
+        sign = 1 if p['side'] == 'long' else -1
+        return (current_price - p['entry']) / p['entry'] * sign
 
     def calc_lot_size(self, sl_distance, risk_pct=0.01):
         """Risk-based lot sizing"""
@@ -211,6 +265,39 @@ class SimAccount:
                     self.close_position(i, p['sl'], bar_idx, bar_time, "SL")
                 elif p['tp'] > 0 and bar_low <= p['tp']:
                     self.close_position(i, p['tp'], bar_idx, bar_time, "TP")
+
+    def move_sl_breakeven(self, current_price, min_profit_pct=0.001):
+        """Move SL to entry for positions that already have enough floating profit."""
+        modified = 0
+        for p in self.positions:
+            if self.position_profit_pct(p, current_price) < min_profit_pct:
+                continue
+            old_sl = p.get('sl', 0) or 0
+            if p['side'] == 'long':
+                new_sl = max(old_sl, p['entry'])
+            else:
+                new_sl = min(old_sl if old_sl > 0 else float('inf'), p['entry'])
+            if new_sl > 0 and abs(new_sl - old_sl) > 1e-12:
+                p['sl'] = new_sl
+                modified += 1
+        return modified
+
+    def trail_sl_atr(self, current_price, atr_value, atr_mult=2.0, min_profit_pct=0.001):
+        """Trail SL behind price using ATR distance."""
+        modified = 0
+        dist = max(float(atr_value) * float(atr_mult), current_price * 0.0001)
+        for p in self.positions:
+            if self.position_profit_pct(p, current_price) < min_profit_pct:
+                continue
+            old_sl = p.get('sl', 0) or 0
+            if p['side'] == 'long':
+                new_sl = max(old_sl, current_price - dist)
+            else:
+                new_sl = min(old_sl if old_sl > 0 else float('inf'), current_price + dist)
+            if new_sl > 0 and abs(new_sl - old_sl) > 1e-12:
+                p['sl'] = new_sl
+                modified += 1
+        return modified
 
 
 # =============================================================
@@ -317,6 +404,27 @@ def run_backtest_live(args):
     meta["model_path"] = str(model_path)
     print(f"\n[load] {model_path}")
     model = PPO.load(str(model_path))
+    try:
+        action_profile_key, action_profile_cfg, action_profile_json_meta = _resolve_action_profile(args, model)
+    except Exception as exc:
+        print(f"\nERROR: {exc}")
+        _write_json(meta_path, {**meta, "status": "failed", "error": str(exc)})
+        return 1
+    action_ids = action_ids_by_name(action_profile_cfg)
+    action_names = action_names_for_profile(action_profile_cfg)
+    buy_id = action_ids.get("buy")
+    sell_id = action_ids.get("sell")
+    close_id = action_ids.get("close")
+    breakeven_id = action_ids.get("move_sl_breakeven")
+    trail_id = action_ids.get("trail_sl_atr")
+    entry_action_ids = {x for x in (buy_id, sell_id) if x is not None}
+    trail_atr_period = max(2, int(action_profile_cfg["params"].get("trail_atr_period", 14)))
+    print(f"[action] {action_profile_cfg['label']} ({len(action_profile_cfg['actions'])} actions)")
+    meta["settings"]["action_profile"] = action_profile_key
+    meta["settings"]["action_profile_label"] = action_profile_cfg["label"]
+    meta["settings"]["action_profile_json"] = action_profile_json_meta
+    meta["settings"]["action_profile_params"] = action_profile_cfg["params"]
+    meta["settings"]["action_profile_actions"] = action_profile_cfg["actions"]
 
     # Setup account
     account = SimAccount(initial_balance=args.balance,
@@ -324,8 +432,8 @@ def run_backtest_live(args):
                           commission=args.commission)
 
     # Stats counters
-    n_signals = {0: 0, 1: 0, 2: 0, 3: 0}
-    n_executed = {1: 0, 2: 0, 3: 0}
+    n_signals = {int(action["id"]): 0 for action in action_profile_cfg["actions"]}
+    n_executed = {int(action["id"]): 0 for action in action_profile_cfg["actions"] if int(action["id"]) > 0}
     n_skipped_conf = 0
     n_skipped_pos = 0
     n_force_close = 0
@@ -419,12 +527,12 @@ def run_backtest_live(args):
         n_signals[action] += 1
 
         # ---- Apply confidence filter ----
-        if action in (1, 2) and confidence < args.conf:
+        if action in entry_action_ids and confidence < args.conf:
             n_skipped_conf += 1
             continue
 
         # ---- Position limit ----
-        if action in (1, 2) and account.position_count() >= args.max_positions:
+        if action in entry_action_ids and account.position_count() >= args.max_positions:
             n_skipped_pos += 1
             continue
 
@@ -435,12 +543,16 @@ def run_backtest_live(args):
         recent_low = df.iloc[max(0, i - 14):i + 1]['low']
         atr_proxy = (recent_high - recent_low).mean()
         atr_proxy = max(atr_proxy, price * 0.001)  # min 0.1%
+        trail_recent_high = df.iloc[max(0, i - trail_atr_period):i + 1]['high']
+        trail_recent_low = df.iloc[max(0, i - trail_atr_period):i + 1]['low']
+        trail_atr_proxy = (trail_recent_high - trail_recent_low).mean()
+        trail_atr_proxy = max(trail_atr_proxy, price * 0.001)
 
         # ---- Execute ----
         # Pure agent mode: disable SL/TP (set to 0 = no level)
         sltp_enabled = args.mode == "agent_sltp" and args.atr_sl > 0
 
-        if action == 1:  # Buy
+        if action == buy_id:  # Buy
             if sltp_enabled:
                 sl = price - atr_proxy * args.atr_sl
                 tp = price + atr_proxy * args.atr_tp
@@ -451,12 +563,12 @@ def run_backtest_live(args):
                 # In pure mode, use fixed lot proportional to risk%
                 lots = max(0.01, args.risk * 100)
             account.open_position('long', price, lots, sl, tp, i, bar_time)
-            n_executed[1] += 1
+            n_executed[action] += 1
             if args.verbose:
                 print(f"  [{bar_time}] BUY  conf={confidence:.2f} lots={lots} "
                       f"price={price:.2f} sl={sl:.2f} tp={tp:.2f}")
 
-        elif action == 2:  # Sell
+        elif action == sell_id:  # Sell
             if sltp_enabled:
                 sl = price + atr_proxy * args.atr_sl
                 tp = price - atr_proxy * args.atr_tp
@@ -466,17 +578,37 @@ def run_backtest_live(args):
                 tp = 0
                 lots = max(0.01, args.risk * 100)
             account.open_position('short', price, lots, sl, tp, i, bar_time)
-            n_executed[2] += 1
+            n_executed[action] += 1
             if args.verbose:
                 print(f"  [{bar_time}] SELL conf={confidence:.2f} lots={lots} "
                       f"price={price:.2f} sl={sl:.2f} tp={tp:.2f}")
 
-        elif action == 3:  # Close
+        elif action == close_id:  # Close
             if account.position_count() > 0:
                 closed = account.close_all(price, i, bar_time, "signal")
-                n_executed[3] += closed
+                n_executed[action] += closed
                 if args.verbose:
                     print(f"  [{bar_time}] CLOSE conf={confidence:.2f} closed={closed}")
+
+        elif action == breakeven_id:
+            modified = account.move_sl_breakeven(
+                price,
+                min_profit_pct=float(action_profile_cfg["params"]["breakeven_min_profit"]),
+            )
+            n_executed[action] += modified
+            if args.verbose and modified:
+                print(f"  [{bar_time}] MOVE_SL_BE conf={confidence:.2f} modified={modified}")
+
+        elif action == trail_id:
+            modified = account.trail_sl_atr(
+                price,
+                trail_atr_proxy,
+                atr_mult=float(action_profile_cfg["params"]["trail_atr_mult"]),
+                min_profit_pct=float(action_profile_cfg["params"]["trail_min_profit"]),
+            )
+            n_executed[action] += modified
+            if args.verbose and modified:
+                print(f"  [{bar_time}] TRAIL_SL_ATR conf={confidence:.2f} modified={modified}")
 
     # Final close any remaining positions
     if account.positions:
@@ -553,12 +685,11 @@ def run_backtest_live(args):
 
     # Signal breakdown
     print(f"\n  Signal stats:")
-    names = {0: 'Hold', 1: 'Buy', 2: 'Sell', 3: 'Close'}
     total_signals = sum(n_signals.values())
-    for a in [0, 1, 2, 3]:
+    for a in sorted(n_signals):
         pct = n_signals[a] / total_signals * 100 if total_signals else 0
         executed = n_executed.get(a, 0) if a > 0 else '-'
-        print(f"    {names[a]:<6}: {n_signals[a]:>6,} signals "
+        print(f"    {action_names.get(a, str(a)):<16}: {n_signals[a]:>6,} signals "
               f"({pct:5.1f}%) | executed: {executed}")
 
     print(f"\n  Filter stats:")
@@ -655,6 +786,13 @@ def main():
     ap.add_argument("--mode", default="agent_sltp",
                     choices=["pure_agent", "agent_sltp"],
                     help="pure_agent = no SL/TP (matches training) · agent_sltp = with SL/TP")
+    ap.add_argument("--action_profile", default="auto",
+                    choices=["auto"] + list(ACTION_PROFILES.keys()),
+                    help="action profile (default auto = read model metadata)")
+    ap.add_argument("--action_params", default="",
+                    help="JSON object of safe action parameter overrides")
+    ap.add_argument("--action_profile_json", default="",
+                    help="path to limited action profile JSON recipe")
 
     # Account
     ap.add_argument("--balance", type=float, default=10000,

@@ -1,0 +1,30 @@
+{
+  "schema": "metafxclub.reward_profile.v1",
+  "name": "anti_overtrade_example",
+  "base_profile": "anti_overtrade",
+  "base_profile_label": "Anti Overtrade",
+  "overrides": {
+    "trade_penalty": 0.012,
+    "unrealized_scale": 0.04,
+    "profit_bonus_threshold": 0.008
+  },
+  "notes": "Example profile for reducing over-trading. Use as a starting point, then validate with backtest and walk-forward.",
+  "params": {
+    "close_pnl_mult": 55.0,
+    "loss_penalty_mult": 1.0,
+    "profit_bonus_threshold": 0.008,
+    "profit_bonus": 0.012,
+    "unrealized_scale": 0.04,
+    "giveback_trigger": 0.002,
+    "giveback_fraction": 0.5,
+    "giveback_penalty": 0.0012,
+    "trade_penalty": 0.012,
+    "idle_penalty": 0.00005,
+    "time_decay_start": 0.7,
+    "time_decay_penalty": 0.00025,
+    "mtm_profit_bonus": 0.001,
+    "mtm_long_hold_bars": 45,
+    "mtm_long_hold_penalty": 0.0006,
+    "blowup_penalty": 1.0
+  }
+}

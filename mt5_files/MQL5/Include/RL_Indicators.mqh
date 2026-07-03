@@ -97,6 +97,35 @@ int D1_EMA_SLOW_P   = 30;
 int D1_ATR_PERIOD   = 14;
 int D1_ADX_PERIOD   = 14;
 
+int SESSION_ASIA_START   = 0;
+int SESSION_ASIA_END     = 9;
+int SESSION_LONDON_START = 8;
+int SESSION_LONDON_END   = 17;
+int SESSION_NY_START     = 13;
+int SESSION_NY_END       = 22;
+
+//=== MT5 Examples indicators params — runtime overridable via .params.json.
+//=== These match the default Examples indicators shown in MT5.
+int    EX_TEMA_PERIOD       = 14;
+int    EX_DEMA_PERIOD       = 14;
+int    EX_AMA_PERIOD        = 10;
+int    EX_AMA_FAST          = 2;
+int    EX_AMA_SLOW          = 30;
+int    EX_ENV_PERIOD        = 14;
+int    EX_ENV_METHOD        = MODE_SMA;
+int    EX_ENV_APPLIED_PRICE = PRICE_CLOSE;
+double EX_ENV_DEVIATION     = 0.1;
+int    EX_RVI_PERIOD        = 10;
+int    EX_MFI_PERIOD        = 14;
+int    EX_ADXW_PERIOD       = 14;
+int    EX_CHV_SMOOTH_PERIOD = 10;
+int    EX_CHV_PERIOD        = 10;
+int    EX_CHV_SMOOTH_TYPE   = 1; // Examples\CHV: 1 = EMA
+int    EX_ROC_PERIOD        = 12;
+int    EX_ROC_APPLIED_PRICE = PRICE_CLOSE;
+int    EX_WPR_PERIOD        = 14;
+int    EX_VOLUME_TYPE       = VOLUME_TICK;
+
 //=== Candle Patterns params — runtime overridable (defaults match
 //=== RL_BuildFeatureMap()'s original iCustom values). Collector/EA can
 //=== override before calling RL_BuildFeatureMap() to keep parity.
@@ -138,6 +167,22 @@ int g_h_macd, g_h_bb;
 int g_h_d1_rsi, g_h_d1_ema_fast, g_h_d1_ema_slow;
 int g_h_d1_atr, g_h_d1_adx;
 
+// MT5 Examples indicator handles
+int g_h_ex_tema      = INVALID_HANDLE;
+int g_h_ex_dema      = INVALID_HANDLE;
+int g_h_ex_ama       = INVALID_HANDLE;
+int g_h_ex_env       = INVALID_HANDLE;
+int g_h_ex_fractals  = INVALID_HANDLE;
+int g_h_ex_rvi       = INVALID_HANDLE;
+int g_h_ex_obv       = INVALID_HANDLE;
+int g_h_ex_mfi       = INVALID_HANDLE;
+int g_h_ex_ac        = INVALID_HANDLE;
+int g_h_ex_adxw      = INVALID_HANDLE;
+int g_h_ex_chv       = INVALID_HANDLE;
+int g_h_ex_pvt       = INVALID_HANDLE;
+int g_h_ex_roc       = INVALID_HANDLE;
+int g_h_ex_wpr       = INVALID_HANDLE;
+
 // ⭐ Candle Patterns indicator handle (loaded via iCustom)
 int g_h_candles = INVALID_HANDLE;
 
@@ -171,6 +216,22 @@ int RL_PeriodAt(int pmin, int pmax, int pstep, int index)
 {
    int period = pmin + index * RL_SafeStep(pstep);
    return (period > pmax) ? pmax : period;
+}
+
+int RL_NormalizeHour(int hour)
+{
+   int h = hour % 24;
+   return (h < 0) ? h + 24 : h;
+}
+
+bool RL_HourInRange(int hour, int start_hour, int end_hour)
+{
+   int h = RL_NormalizeHour(hour);
+   int s = RL_NormalizeHour(start_hour);
+   int e = RL_NormalizeHour(end_hour);
+   if(s == e) return true;
+   if(s < e) return (h >= s && h < e);
+   return (h >= s || h < e);
 }
 
 void RL_AddFeatureName(string name)
@@ -217,6 +278,16 @@ void RL_BuildAllFeatureNames()
    RL_AddFeatureName("session_london");
    RL_AddFeatureName("session_ny");
    RL_AddFeatureName("session_asia");
+   RL_AddFeatureName("hour_sin");
+   RL_AddFeatureName("hour_cos");
+   RL_AddFeatureName("dow_sin");
+   RL_AddFeatureName("dow_cos");
+   RL_AddFeatureName("month_sin");
+   RL_AddFeatureName("month_cos");
+   RL_AddFeatureName("session_london_ny_overlap");
+   RL_AddFeatureName("session_active_count");
+   RL_AddFeatureName("week_start");
+   RL_AddFeatureName("week_end");
    RL_AddFeatureName("ret_1");
    RL_AddFeatureName("ret_3");
    RL_AddFeatureName("ret_5");
@@ -244,6 +315,26 @@ void RL_BuildAllFeatureNames()
    RL_AddFeatureName("range_pos_20");
    RL_AddFeatureName("dist_ema50");
    RL_AddFeatureName("dist_ema200");
+   RL_AddFeatureName("ex_tema");
+   RL_AddFeatureName("ex_dema");
+   RL_AddFeatureName("ex_ama");
+   RL_AddFeatureName("ex_env_upper");
+   RL_AddFeatureName("ex_env_lower");
+   RL_AddFeatureName("ex_env_position");
+   RL_AddFeatureName("ex_fractal_up");
+   RL_AddFeatureName("ex_fractal_down");
+   RL_AddFeatureName("ex_rvi");
+   RL_AddFeatureName("ex_rvi_signal");
+   RL_AddFeatureName("ex_obv");
+   RL_AddFeatureName("ex_mfi");
+   RL_AddFeatureName("ex_ac");
+   RL_AddFeatureName("ex_adxw");
+   RL_AddFeatureName("ex_adxw_plus_di");
+   RL_AddFeatureName("ex_adxw_minus_di");
+   RL_AddFeatureName("ex_chv");
+   RL_AddFeatureName("ex_pvt");
+   RL_AddFeatureName("ex_roc");
+   RL_AddFeatureName("ex_wpr");
    RL_AddFeatureName("candle_hammer");
    RL_AddFeatureName("candle_engulfing");
    RL_AddFeatureName("candle_inside");
@@ -271,6 +362,23 @@ int RL_FindAllFeatureIndex(string name)
 bool RL_IsCandleFeature(string name)
 {
    return (StringFind(name, "candle_") == 0);
+}
+
+bool RL_CheckHandle(int handle, string label)
+{
+   if(handle != INVALID_HANDLE)
+      return true;
+   Print("[RL] Failed to create ", label,
+         " handle (err=", GetLastError(),
+         "). Check MQL5/Indicators/Examples is installed/compiled.");
+   return false;
+}
+
+double RL_CleanValue(double value)
+{
+   if(value == EMPTY_VALUE || !MathIsValidNumber(value))
+      return 0.0;
+   return value;
 }
 
 int RL_LegacyFeatureIndex(string name)
@@ -377,16 +485,61 @@ bool RL_InitIndicators(string symbol, ENUM_TIMEFRAMES tf)
    g_h_d1_atr      = iATR(symbol, PERIOD_D1, D1_ATR_PERIOD);
    g_h_d1_adx      = iADX(symbol, PERIOD_D1, D1_ADX_PERIOD);
 
+   // MT5 Examples indicators
+   g_h_ex_tema     = iCustom(symbol, tf, "Examples\\TEMA", EX_TEMA_PERIOD, 0);
+   g_h_ex_dema     = iCustom(symbol, tf, "Examples\\DEMA", EX_DEMA_PERIOD, 0);
+   g_h_ex_ama      = iCustom(symbol, tf, "Examples\\AMA",
+                             EX_AMA_PERIOD, EX_AMA_FAST, EX_AMA_SLOW, 0);
+   g_h_ex_env      = iCustom(symbol, tf, "Examples\\Envelopes",
+                             EX_ENV_PERIOD, 0,
+                             (ENUM_MA_METHOD)EX_ENV_METHOD,
+                             (ENUM_APPLIED_PRICE)EX_ENV_APPLIED_PRICE,
+                             EX_ENV_DEVIATION);
+   g_h_ex_fractals = iCustom(symbol, tf, "Examples\\Fractals");
+   g_h_ex_rvi      = iCustom(symbol, tf, "Examples\\RVI", EX_RVI_PERIOD);
+   g_h_ex_obv      = iCustom(symbol, tf, "Examples\\OBV",
+                             (ENUM_APPLIED_VOLUME)EX_VOLUME_TYPE);
+   g_h_ex_mfi      = iCustom(symbol, tf, "Examples\\MFI",
+                             EX_MFI_PERIOD,
+                             (ENUM_APPLIED_VOLUME)EX_VOLUME_TYPE);
+   g_h_ex_ac       = iCustom(symbol, tf, "Examples\\Accelerator");
+   g_h_ex_adxw     = iCustom(symbol, tf, "Examples\\ADXW", EX_ADXW_PERIOD);
+   g_h_ex_chv      = iCustom(symbol, tf, "Examples\\CHV",
+                             EX_CHV_SMOOTH_PERIOD, EX_CHV_PERIOD,
+                             EX_CHV_SMOOTH_TYPE);
+   g_h_ex_pvt      = iCustom(symbol, tf, "Examples\\PVT",
+                             (ENUM_APPLIED_VOLUME)EX_VOLUME_TYPE);
+   g_h_ex_roc      = iCustom(symbol, tf, "Examples\\ROC",
+                             EX_ROC_PERIOD,
+                             (ENUM_APPLIED_PRICE)EX_ROC_APPLIED_PRICE);
+   g_h_ex_wpr      = iCustom(symbol, tf, "Examples\\WPR", EX_WPR_PERIOD);
+
    if(g_h_ema20 == INVALID_HANDLE || g_h_macd == INVALID_HANDLE ||
-      g_h_bb == INVALID_HANDLE || g_h_d1_rsi == INVALID_HANDLE ||
-      g_h_atr14_ref == INVALID_HANDLE || g_h_adx14_ref == INVALID_HANDLE) {
+       g_h_bb == INVALID_HANDLE || g_h_d1_rsi == INVALID_HANDLE ||
+       g_h_atr14_ref == INVALID_HANDLE || g_h_adx14_ref == INVALID_HANDLE) {
       Print("Failed to create critical handles");
       return false;
    }
 
+   if(!RL_CheckHandle(g_h_ex_tema, "Examples\\TEMA") ||
+      !RL_CheckHandle(g_h_ex_dema, "Examples\\DEMA") ||
+      !RL_CheckHandle(g_h_ex_ama, "Examples\\AMA") ||
+      !RL_CheckHandle(g_h_ex_env, "Examples\\Envelopes") ||
+      !RL_CheckHandle(g_h_ex_fractals, "Examples\\Fractals") ||
+      !RL_CheckHandle(g_h_ex_rvi, "Examples\\RVI") ||
+      !RL_CheckHandle(g_h_ex_obv, "Examples\\OBV") ||
+      !RL_CheckHandle(g_h_ex_mfi, "Examples\\MFI") ||
+      !RL_CheckHandle(g_h_ex_ac, "Examples\\Accelerator") ||
+      !RL_CheckHandle(g_h_ex_adxw, "Examples\\ADXW") ||
+      !RL_CheckHandle(g_h_ex_chv, "Examples\\CHV") ||
+      !RL_CheckHandle(g_h_ex_pvt, "Examples\\PVT") ||
+      !RL_CheckHandle(g_h_ex_roc, "Examples\\ROC") ||
+      !RL_CheckHandle(g_h_ex_wpr, "Examples\\WPR"))
+      return false;
+
    Print("[RL] Initialized indicators: RSI=", n_rsi, " ATR=", n_atr,
-         " Stoch=", n_stoch, " CCI=", n_cci, " WPR=", n_wpr, " ADX=", n_adx,
-         " + EMA/MACD/BB + D1 (5)");
+          " Stoch=", n_stoch, " CCI=", n_cci, " WPR=", n_wpr, " ADX=", n_adx,
+          " + EMA/MACD/BB + D1 (5) + time/session context + Examples (20)");
    return true;
 }
 
@@ -485,6 +638,20 @@ void RL_DeinitIndicators()
    IndicatorRelease(g_h_d1_ema_slow);
    IndicatorRelease(g_h_d1_atr);
    IndicatorRelease(g_h_d1_adx);
+   IndicatorRelease(g_h_ex_tema);
+   IndicatorRelease(g_h_ex_dema);
+   IndicatorRelease(g_h_ex_ama);
+   IndicatorRelease(g_h_ex_env);
+   IndicatorRelease(g_h_ex_fractals);
+   IndicatorRelease(g_h_ex_rvi);
+   IndicatorRelease(g_h_ex_obv);
+   IndicatorRelease(g_h_ex_mfi);
+   IndicatorRelease(g_h_ex_ac);
+   IndicatorRelease(g_h_ex_adxw);
+   IndicatorRelease(g_h_ex_chv);
+   IndicatorRelease(g_h_ex_pvt);
+   IndicatorRelease(g_h_ex_roc);
+   IndicatorRelease(g_h_ex_wpr);
    if(g_h_candles != INVALID_HANDLE) IndicatorRelease(g_h_candles);
 }
 
@@ -495,7 +662,7 @@ double GetVal(int handle, int buffer_idx, int shift)
 {
    double buf[];
    if(CopyBuffer(handle, buffer_idx, shift, 1, buf) <= 0) return 0;
-   return buf[0];
+   return RL_CleanValue(buf[0]);
 }
 
 //+------------------------------------------------------------------+
@@ -626,6 +793,17 @@ bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
    datetime t = iTime(symbol, tf, shift);
    MqlDateTime dt;
    TimeToStruct(t, dt);
+   double pi = 3.14159265358979323846;
+   double hour_angle = 2.0 * pi * (double)dt.hour / 24.0;
+   double dow_angle = 2.0 * pi * (double)dt.day_of_week / 7.0;
+   double month_angle = 2.0 * pi * (double)(dt.mon - 1) / 12.0;
+   double session_london = RL_HourInRange(dt.hour, SESSION_LONDON_START, SESSION_LONDON_END) ? 1.0 : 0.0;
+   double session_ny = RL_HourInRange(dt.hour, SESSION_NY_START, SESSION_NY_END) ? 1.0 : 0.0;
+   double session_asia = RL_HourInRange(dt.hour, SESSION_ASIA_START, SESSION_ASIA_END) ? 1.0 : 0.0;
+   double session_london_ny_overlap = (session_london > 0.5 && session_ny > 0.5) ? 1.0 : 0.0;
+   double session_active_count = session_asia + session_london + session_ny;
+   double week_start = (dt.day_of_week == 1) ? 1.0 : 0.0;
+   double week_end = (dt.day_of_week == 5) ? 1.0 : 0.0;
 
    double c0 = iClose(symbol, tf, shift);
    double c1 = iClose(symbol, tf, shift + 1);
@@ -759,6 +937,30 @@ bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
       }
    }
 
+   double ex_tema = GetVal(g_h_ex_tema, 0, shift);
+   double ex_dema = GetVal(g_h_ex_dema, 0, shift);
+   double ex_ama = GetVal(g_h_ex_ama, 0, shift);
+   double ex_env_upper = GetVal(g_h_ex_env, 0, shift);
+   double ex_env_lower = GetVal(g_h_ex_env, 1, shift);
+   double ex_env_position = (ex_env_upper - ex_env_lower > 1e-9)
+      ? (c0 - ex_env_lower) / (ex_env_upper - ex_env_lower)
+      : 0.5;
+   int fractal_shift = shift + 2; // Fractals need two later closed bars to confirm.
+   double ex_fractal_up = GetVal(g_h_ex_fractals, 0, fractal_shift);
+   double ex_fractal_down = GetVal(g_h_ex_fractals, 1, fractal_shift);
+   double ex_rvi = GetVal(g_h_ex_rvi, 0, shift);
+   double ex_rvi_signal = GetVal(g_h_ex_rvi, 1, shift);
+   double ex_obv = GetVal(g_h_ex_obv, 0, shift);
+   double ex_mfi = GetVal(g_h_ex_mfi, 0, shift);
+   double ex_ac = GetVal(g_h_ex_ac, 0, shift);
+   double ex_adxw = GetVal(g_h_ex_adxw, 0, shift);
+   double ex_adxw_plus_di = GetVal(g_h_ex_adxw, 1, shift);
+   double ex_adxw_minus_di = GetVal(g_h_ex_adxw, 2, shift);
+   double ex_chv = GetVal(g_h_ex_chv, 0, shift);
+   double ex_pvt = GetVal(g_h_ex_pvt, 0, shift);
+   double ex_roc = GetVal(g_h_ex_roc, 0, shift);
+   double ex_wpr = GetVal(g_h_ex_wpr, 0, shift);
+
    features[out++] = ema_long;
    features[out++] = macd;
    features[out++] = macd_signal;
@@ -766,9 +968,19 @@ bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
    features[out++] = bb_position;
    features[out++] = dt.hour;
    features[out++] = dt.day_of_week;
-   features[out++] = (dt.hour >=  8 && dt.hour < 17) ? 1 : 0;
-   features[out++] = (dt.hour >= 13 && dt.hour < 22) ? 1 : 0;
-   features[out++] = (dt.hour >=  0 && dt.hour <  9) ? 1 : 0;
+   features[out++] = session_london;
+   features[out++] = session_ny;
+   features[out++] = session_asia;
+   features[out++] = MathSin(hour_angle);
+   features[out++] = MathCos(hour_angle);
+   features[out++] = MathSin(dow_angle);
+   features[out++] = MathCos(dow_angle);
+   features[out++] = MathSin(month_angle);
+   features[out++] = MathCos(month_angle);
+   features[out++] = session_london_ny_overlap;
+   features[out++] = session_active_count;
+   features[out++] = week_start;
+   features[out++] = week_end;
    features[out++] = (c1 > 0)  ? (c0 - c1) / c1   : 0;
    features[out++] = (c3 > 0)  ? (c0 - c3) / c3   : 0;
    features[out++] = (c5 > 0)  ? (c0 - c5) / c5   : 0;
@@ -796,6 +1008,26 @@ bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
    features[out++] = range_pos_20;
    features[out++] = (ema50 > 1e-9) ? (c0 - ema50) / ema50 : 0;
    features[out++] = (ema200 > 1e-9) ? (c0 - ema200) / ema200 : 0;
+   features[out++] = ex_tema;
+   features[out++] = ex_dema;
+   features[out++] = ex_ama;
+   features[out++] = ex_env_upper;
+   features[out++] = ex_env_lower;
+   features[out++] = ex_env_position;
+   features[out++] = ex_fractal_up;
+   features[out++] = ex_fractal_down;
+   features[out++] = ex_rvi;
+   features[out++] = ex_rvi_signal;
+   features[out++] = ex_obv;
+   features[out++] = ex_mfi;
+   features[out++] = ex_ac;
+   features[out++] = ex_adxw;
+   features[out++] = ex_adxw_plus_di;
+   features[out++] = ex_adxw_minus_di;
+   features[out++] = ex_chv;
+   features[out++] = ex_pvt;
+   features[out++] = ex_roc;
+   features[out++] = ex_wpr;
 
    if(g_uses_candles && g_h_candles != INVALID_HANDLE) {
       for(int b = 0; b < 10; b++)

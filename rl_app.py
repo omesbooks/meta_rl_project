@@ -27,6 +27,26 @@ from artifact_paths import (
     legacy_final_model_path,
     model_names_from_artifacts,
 )
+from reward_profiles import (
+    DEFAULT_REWARD_PROFILE_CONFIG_DIR,
+    REWARD_PARAM_SPECS,
+    REWARD_PROFILES,
+    REWARD_PROFILE_LABELS,
+    load_reward_profile_json,
+    reward_profile_json_payload,
+    reward_profile_key_from_label,
+)
+from reward_formula import DEFAULT_REWARD_FORMULA, validate_reward_formula
+from action_profiles import (
+    ACTION_PARAM_SPECS,
+    ACTION_PROFILES,
+    ACTION_PROFILE_LABELS,
+    DEFAULT_ACTION_PROFILE_CONFIG_DIR,
+    action_profile_json_payload,
+    action_profile_key_from_label,
+    get_action_profile,
+    load_action_profile_json,
+)
 
 # Force UTF-8 stdout
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -1226,7 +1246,7 @@ class RLTradingStudio(ctk.CTk):
 
         intro = ctk.CTkLabel(
             page,
-            text="Run one flow: dataset -> optional relabel -> train PPO -> backtest -> chart/report.",
+            text="Run one flow: dataset -> train PPO -> OOS backtest -> chart/report.",
             text_color=COLOR_ACCENT,
             font=ctk.CTkFont(size=13),
             wraplength=900,
@@ -1337,12 +1357,76 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(setup, text="Backtest mode", text_color=COLOR_DIM).grid(
             row=4, column=2, sticky="w", padx=18, pady=6)
         self.pipe_bt_mode = ctk.CTkOptionMenu(
-            setup, values=["Agent + SL/TP", "Pure Agent"], width=180)
-        self.pipe_bt_mode.set("Agent + SL/TP")
+            setup, values=["Pure Agent", "Agent + SL/TP"], width=180)
+        self.pipe_bt_mode.set("Pure Agent")
         self.pipe_bt_mode.grid(row=4, column=3, sticky="w", padx=(8, 18), pady=6)
 
+        ctk.CTkLabel(setup, text="Backtest skip % (auto = train pct if same CSV)", text_color=COLOR_DIM).grid(
+            row=5, column=0, sticky="w", padx=18, pady=6)
+        self.pipe_bt_start = ctk.CTkEntry(setup, width=120, placeholder_text="auto")
+        self.pipe_bt_start.insert(0, "auto")
+        self.pipe_bt_start.grid(row=5, column=1, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(setup, text="Risk fraction", text_color=COLOR_DIM).grid(
+            row=5, column=2, sticky="w", padx=18, pady=6)
+        self.pipe_risk = ctk.CTkEntry(setup, width=120)
+        self.pipe_risk.insert(0, "0.01")
+        self.pipe_risk.grid(row=5, column=3, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(setup, text="Max Positions", text_color=COLOR_DIM).grid(
+            row=6, column=0, sticky="w", padx=18, pady=6)
+        self.pipe_max_pos = ctk.CTkEntry(setup, width=120)
+        self.pipe_max_pos.insert(0, "1")
+        self.pipe_max_pos.grid(row=6, column=1, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(setup, text="ATR SL / TP", text_color=COLOR_DIM).grid(
+            row=6, column=2, sticky="w", padx=18, pady=6)
+        pipe_atr_box = ctk.CTkFrame(setup, fg_color="transparent")
+        pipe_atr_box.grid(row=6, column=3, sticky="w", padx=(8, 18), pady=6)
+        self.pipe_sl = ctk.CTkEntry(pipe_atr_box, width=70)
+        self.pipe_sl.insert(0, "2.0")
+        self.pipe_sl.pack(side="left")
+        self.pipe_tp = ctk.CTkEntry(pipe_atr_box, width=70)
+        self.pipe_tp.insert(0, "4.0")
+        self.pipe_tp.pack(side="left", padx=(8, 0))
+
+        ctk.CTkLabel(setup, text="Reward Profile", text_color=COLOR_DIM).grid(
+            row=7, column=0, sticky="w", padx=18, pady=6)
+        self.pipe_reward_profile = ctk.CTkOptionMenu(
+            setup,
+            values=REWARD_PROFILE_LABELS,
+            width=220,
+            fg_color=COLOR_BG_INPUT,
+            button_color=COLOR_BG_INPUT,
+            button_hover_color=COLOR_HOVER,
+        )
+        self.pipe_reward_profile.set(REWARD_PROFILE_LABELS[0])
+        self.pipe_reward_profile.grid(row=7, column=1, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(setup, text="Action Profile", text_color=COLOR_DIM).grid(
+            row=7, column=2, sticky="w", padx=18, pady=6)
+        self.pipe_action_profile = ctk.CTkOptionMenu(
+            setup,
+            values=ACTION_PROFILE_LABELS,
+            width=220,
+            fg_color=COLOR_BG_INPUT,
+            button_color=COLOR_BG_INPUT,
+            button_hover_color=COLOR_HOVER,
+        )
+        self.pipe_action_profile.set(ACTION_PROFILE_LABELS[0])
+        self.pipe_action_profile.grid(row=7, column=3, sticky="w", padx=(8, 18), pady=6)
+
+        ctk.CTkLabel(
+            setup,
+            text="Changing Action Profile changes the model output dimension, so train a new model after changing it.",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=10),
+            anchor="w",
+            justify="left",
+        ).grid(row=8, column=0, columnspan=4, sticky="ew", padx=18, pady=(0, 8))
+
         btns = ctk.CTkFrame(setup, fg_color="transparent")
-        btns.grid(row=5, column=0, columnspan=4, sticky="e", padx=18, pady=(12, 12))
+        btns.grid(row=9, column=0, columnspan=4, sticky="e", padx=18, pady=(8, 12))
         self.pipe_run_btn = ctk.CTkButton(
             btns, text="Run full pipeline", command=self._run_full_pipeline,
             fg_color=COLOR_GREEN, hover_color="#2ea043", width=170)
@@ -1355,7 +1439,7 @@ class RLTradingStudio(ctk.CTk):
         self.pipe_hparam_frame = ctk.CTkFrame(
             setup, fg_color=COLOR_BG_INPUT, corner_radius=8,
             border_width=1, border_color=COLOR_BORDER)
-        self.pipe_hparam_frame.grid(row=6, column=0, columnspan=4, sticky="ew",
+        self.pipe_hparam_frame.grid(row=10, column=0, columnspan=4, sticky="ew",
                                     padx=18, pady=(0, 16))
         for col in range(4):
             self.pipe_hparam_frame.grid_columnconfigure(col, weight=1)
@@ -1442,10 +1526,32 @@ class RLTradingStudio(ctk.CTk):
         self.pipe_reward_mode.pack(side="left")
         ctk.CTkLabel(
             reward_box,
-            text="realized = ให้ reward ตอนปิดไม้ | mtm = ให้ทุกแท่งตาม unrealized P/L",
+            text="เปลี่ยน action แล้วต้อง train model ใหม่",
             text_color=COLOR_DIM,
             font=ctk.CTkFont(size=10),
         ).pack(side="left", padx=(10, 0))
+
+        pipe_json_box = ctk.CTkFrame(self.pipe_hparam_frame, fg_color="transparent")
+        pipe_json_box.grid(row=11, column=0, columnspan=4, sticky="ew", padx=12, pady=(0, 10))
+        for col in range(3):
+            pipe_json_box.grid_columnconfigure(col, weight=1)
+
+        ctk.CTkLabel(pipe_json_box, text="Reward overrides JSON", text_color=COLOR_DIM,
+                     font=ctk.CTkFont(size=11)).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ctk.CTkLabel(pipe_json_box, text="Reward formula (optional)", text_color=COLOR_DIM,
+                     font=ctk.CTkFont(size=11)).grid(row=0, column=1, sticky="w", padx=8)
+        ctk.CTkLabel(pipe_json_box, text="Action params JSON", text_color=COLOR_DIM,
+                     font=ctk.CTkFont(size=11)).grid(row=0, column=2, sticky="w", padx=(8, 0))
+
+        self.pipe_reward_overrides = ctk.CTkEntry(
+            pipe_json_box, placeholder_text='{"trade_penalty":0.01}')
+        self.pipe_reward_overrides.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(2, 0))
+        self.pipe_reward_formula = ctk.CTkEntry(
+            pipe_json_box, placeholder_text="blank = preset reward")
+        self.pipe_reward_formula.grid(row=1, column=1, sticky="ew", padx=8, pady=(2, 0))
+        self.pipe_action_params = ctk.CTkEntry(
+            pipe_json_box, placeholder_text='{"trail_atr_mult":3.5}')
+        self.pipe_action_params.grid(row=1, column=2, sticky="ew", padx=(8, 0), pady=(2, 0))
 
         progress = Card(page, title="2. Progress")
         progress.grid(row=2, column=0, sticky="ew", pady=(0, 12))
@@ -1462,7 +1568,7 @@ class RLTradingStudio(ctk.CTk):
 
         stage_row = ctk.CTkFrame(progress, fg_color="transparent")
         stage_row.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
-        for label in ["Build", "Relabel", "Train PPO", "Backtest", "Chart"]:
+        for label in ["Train PPO", "Backtest", "Chart"]:
             pill = ctk.CTkLabel(
                 stage_row, text=label, height=30, corner_radius=8,
                 fg_color=COLOR_BG_INPUT, text_color=COLOR_DIM,
@@ -1815,6 +1921,43 @@ class RLTradingStudio(ctk.CTk):
         reward_mode = "realized"
         if hasattr(self, "pipe_reward_mode"):
             reward_mode = self.pipe_reward_mode.get().split()[0]
+        reward_profile = "balanced"
+        if hasattr(self, "pipe_reward_profile"):
+            reward_profile = reward_profile_key_from_label(self.pipe_reward_profile.get())
+        action_profile = "basic_4"
+        if hasattr(self, "pipe_action_profile"):
+            action_profile = action_profile_key_from_label(self.pipe_action_profile.get())
+
+        reward_overrides = ""
+        if hasattr(self, "pipe_reward_overrides"):
+            reward_overrides = self.pipe_reward_overrides.get().strip()
+            if reward_overrides:
+                try:
+                    json.loads(reward_overrides)
+                except Exception as exc:
+                    messagebox.showerror("Invalid reward overrides JSON", str(exc))
+                    return None
+
+        reward_formula = ""
+        if hasattr(self, "pipe_reward_formula"):
+            reward_formula = self.pipe_reward_formula.get().strip()
+            if reward_formula:
+                try:
+                    validate_reward_formula(reward_formula)
+                except Exception as exc:
+                    messagebox.showerror("Invalid reward formula", str(exc))
+                    return None
+
+        action_params = ""
+        if hasattr(self, "pipe_action_params"):
+            action_params = self.pipe_action_params.get().strip()
+            if action_params:
+                try:
+                    parsed_action_params = json.loads(action_params)
+                    get_action_profile(action_profile, parsed_action_params)
+                except Exception as exc:
+                    messagebox.showerror("Invalid action params JSON", str(exc))
+                    return None
 
         return {
             "learning_rate": str(floats["learning_rate"]),
@@ -1830,6 +1973,11 @@ class RLTradingStudio(ctk.CTk):
             "ep_len": str(ints["ep_len"]),
             "net_arch": net_arch,
             "reward_mode": reward_mode,
+            "reward_profile": reward_profile,
+            "reward_overrides": reward_overrides,
+            "reward_formula": reward_formula,
+            "action_profile": action_profile,
+            "action_params": action_params,
         }
 
     def _run_full_pipeline(self):
@@ -1867,8 +2015,12 @@ class RLTradingStudio(ctk.CTk):
             window = int(float(self.pipe_window.get().strip() or "10"))
             conf = float(self.pipe_conf.get().strip() or "0")
             train_pct = self._parse_train_pct(self.pipe_train_pct.get(), 0.85)
+            risk = float(self.pipe_risk.get().strip() or "0.01")
+            max_positions = int(float(self.pipe_max_pos.get().strip() or "1"))
+            atr_sl = float(self.pipe_sl.get().strip() or "2.0")
+            atr_tp = float(self.pipe_tp.get().strip() or "4.0")
         except ValueError:
-            messagebox.showerror("Invalid settings", "Steps/window/confidence/train_pct must be numeric.")
+            messagebox.showerror("Invalid settings", "Steps/window/confidence/train_pct/risk/backtest settings must be numeric.")
             return
 
         if steps <= 0 or window <= 0:
@@ -1877,10 +2029,27 @@ class RLTradingStudio(ctk.CTk):
         if not (0 < train_pct <= 1.0):
             messagebox.showerror("Invalid settings", "Train pct must be > 0 and <= 1.0.")
             return
+        if risk < 0 or max_positions <= 0 or atr_sl < 0 or atr_tp < 0:
+            messagebox.showerror("Invalid settings", "Risk must be >= 0, max positions > 0, and ATR settings >= 0.")
+            return
+
+        bt_start_raw = self.pipe_bt_start.get().strip().lower() if hasattr(self, "pipe_bt_start") else "auto"
+        if bt_start_raw in ("", "auto"):
+            bt_start = train_pct if Path(bt_csv).name == Path(csv_name).name else 0.0
+        else:
+            bt_start = self._parse_train_pct(bt_start_raw, 0.0)
+            bt_start = min(max(bt_start, 0.0), 0.99)
 
         hparams = self._get_pipeline_hparams()
         if hparams is None:
             return
+        hparams.update({
+            "bt_start": str(bt_start),
+            "risk": str(risk),
+            "max_positions": str(max_positions),
+            "atr_sl": str(atr_sl),
+            "atr_tp": str(atr_tp),
+        })
 
         existing_model = find_model_path(model_name, "auto")
         if existing_model:
@@ -1958,9 +2127,12 @@ class RLTradingStudio(ctk.CTk):
                 "--window", str(window),
                 "--name", model_name,
                 "--train_pct", str(train_pct),
-                "--eval_csv", bt_csv,
                 "--algo", "ppo",
                 "--reward_mode", hparams["reward_mode"],
+                "--reward_profile", hparams["reward_profile"],
+                "--reward_overrides", hparams.get("reward_overrides", ""),
+                "--action_profile", hparams["action_profile"],
+                "--action_params", hparams.get("action_params", ""),
                 "--max_hold", hparams["max_hold"],
                 "--ep_len", hparams["ep_len"],
                 "--net_arch", hparams["net_arch"],
@@ -1974,13 +2146,23 @@ class RLTradingStudio(ctk.CTk):
                 "--gae_lambda", hparams["gae_lambda"],
                 "--vf_coef", hparams["vf_coef"],
             ]
+            if Path(bt_csv).name != Path(train_csv).name:
+                train_cmd.extend(["--eval_csv", bt_csv])
+            if hparams.get("reward_formula"):
+                train_cmd.extend(["--reward_formula", hparams["reward_formula"]])
             self._pipeline_run_cmd(train_cmd, stage, "Train PPO", stages_total)
             stage += 1
 
             backtest_cmd = [
                 sys.executable, "backtest_live.py", model_name, bt_csv,
                 "--conf", str(conf),
+                "--risk", hparams.get("risk", "0.01"),
+                "--max_positions", hparams.get("max_positions", "1"),
+                "--max_hold", hparams["max_hold"],
+                "--atr_sl", hparams.get("atr_sl", "2.0"),
+                "--atr_tp", hparams.get("atr_tp", "4.0"),
                 "--window", str(window),
+                "--start", hparams.get("bt_start", "0"),
                 "--mode", mode,
             ]
             self._pipeline_run_cmd(backtest_cmd, stage, "Backtest", stages_total)
@@ -4361,7 +4543,37 @@ class RLTradingStudio(ctk.CTk):
         self.train_reward = ctk.CTkOptionMenu(c2,
             values=["realized (recommended)", "mtm"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.train_reward.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.train_reward.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
+
+        ctk.CTkLabel(c2, text="Reward Profile", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
+        self.train_reward_profile = ctk.CTkOptionMenu(c2,
+            values=REWARD_PROFILE_LABELS,
+            command=lambda _v: self._apply_train_reward_profile_defaults(),
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+        self.train_reward_profile.set(REWARD_PROFILE_LABELS[0])
+        self.train_reward_profile.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 4))
+        ctk.CTkLabel(c2,
+            text="Preset นิสัย reward ตอน train; เปลี่ยนแล้วต้อง train model ใหม่",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=10),
+            wraplength=440, justify="left"
+        ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 12))
+
+        ctk.CTkLabel(c2, text="Action Profile", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=8, column=0, sticky="w", padx=18, pady=(0, 4))
+        self.train_action_profile = ctk.CTkOptionMenu(c2,
+            values=ACTION_PROFILE_LABELS,
+            command=lambda _v: self._apply_train_action_profile_defaults(),
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+        self.train_action_profile.set(ACTION_PROFILE_LABELS[0])
+        self.train_action_profile.grid(row=9, column=0, sticky="ew", padx=18, pady=(0, 4))
+        ctk.CTkLabel(c2,
+            text="Preset action space ของ model; เปลี่ยนแล้ว output dim เปลี่ยน ต้อง train ใหม่",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=10),
+            wraplength=440, justify="left"
+        ).grid(row=10, column=0, sticky="w", padx=18, pady=(0, 16))
 
         # Right: Hyperparameters
         c3 = Card(settings, title="🎚️ Hyperparameters")
@@ -4649,9 +4861,183 @@ class RLTradingStudio(ctk.CTk):
             width=100, height=26, font=ctk.CTkFont(size=11)
             ).pack(side="left", padx=2)
 
+        # === Advanced reward settings (collapsible) ===
+        c_reward = Card(page, title="🎛️ Advanced Reward Settings")
+        c_reward.grid(row=3, column=0, sticky="ew", pady=(0, 12))
+        c_reward.grid_columnconfigure(0, weight=1)
+
+        reward_top = ctk.CTkFrame(c_reward, fg_color="transparent")
+        reward_top.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 8))
+        reward_top.grid_columnconfigure(0, weight=1)
+        self.train_reward_profile_json_path = ""
+        self.reward_adv_visible = False
+        self.reward_adv_toggle_btn = ctk.CTkButton(
+            reward_top,
+            text="▶ Show Reward Sliders",
+            command=self._toggle_reward_advanced,
+            fg_color="transparent",
+            hover_color="#2d333b",
+            text_color=COLOR_ACCENT,
+            height=30,
+            anchor="w",
+        )
+        self.reward_adv_toggle_btn.grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(
+            reward_top,
+            text="Reset to profile",
+            command=self._apply_train_reward_profile_defaults,
+            fg_color=COLOR_BG_INPUT,
+            hover_color=COLOR_HOVER,
+            width=130,
+            height=30,
+        ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+        ctk.CTkButton(
+            reward_top,
+            text="Load JSON",
+            command=self._load_train_reward_json,
+            fg_color=COLOR_BG_INPUT,
+            hover_color=COLOR_HOVER,
+            width=105,
+            height=30,
+        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+        ctk.CTkButton(
+            reward_top,
+            text="Save JSON",
+            command=self._save_train_reward_json,
+            fg_color=COLOR_BG_INPUT,
+            hover_color=COLOR_HOVER,
+            width=105,
+            height=30,
+        ).grid(row=0, column=3, sticky="e", padx=(8, 0))
+
+        self.reward_json_hint = ctk.CTkLabel(
+            c_reward,
+            text="Reward JSON: none",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+            justify="left",
+        )
+        self.reward_json_hint.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 8))
+
+        self.reward_formula_enabled = tk.BooleanVar(value=False)
+        self.reward_formula_check = ctk.CTkCheckBox(
+            c_reward,
+            text="Developer Mode: custom reward formula",
+            variable=self.reward_formula_enabled,
+            command=self._toggle_reward_formula_editor,
+            fg_color=COLOR_ACCENT,
+            hover_color=COLOR_HOVER,
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=13),
+        )
+        self.reward_formula_check.grid(row=3, column=0, sticky="w", padx=18, pady=(0, 8))
+
+        self.reward_formula_frame = ctk.CTkFrame(c_reward, fg_color=COLOR_BG_INPUT, corner_radius=8)
+        self.reward_formula_frame.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            self.reward_formula_frame,
+            text="Safe expression only. Allowed helpers: abs, min, max, round, sqrt, log, exp, tanh, clip, sign.",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+            justify="left",
+            wraplength=1100,
+        ).grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 4))
+        self.reward_formula_text = ctk.CTkTextbox(
+            self.reward_formula_frame,
+            height=110,
+            fg_color="#0a0e14",
+            border_width=1,
+            border_color=COLOR_BORDER,
+            font=ctk.CTkFont(size=13, family="Consolas"),
+        )
+        self.reward_formula_text.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+        self.reward_formula_text.insert("1.0", DEFAULT_REWARD_FORMULA)
+        self.reward_formula_status = ctk.CTkLabel(
+            self.reward_formula_frame,
+            text="Formula is validated before training.",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+        )
+        self.reward_formula_status.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self.reward_formula_frame.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 10))
+        self.reward_formula_frame.grid_remove()
+
+        self.reward_adv_frame = ctk.CTkFrame(c_reward, fg_color="transparent")
+        for col in range(3):
+            self.reward_adv_frame.grid_columnconfigure(col, weight=1)
+        self.train_reward_controls = {}
+        self._build_train_reward_controls(self.reward_adv_frame)
+        self._apply_train_reward_profile_defaults()
+
+        # === Action profile parameters ===
+        c_action = Card(page, title="🎮 Action Profile & Parameters")
+        c_action.grid(row=4, column=0, sticky="ew", pady=(0, 12))
+        c_action.grid_columnconfigure(0, weight=1)
+
+        action_top = ctk.CTkFrame(c_action, fg_color="transparent")
+        action_top.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 8))
+        action_top.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            action_top,
+            text="Developer JSON/DSL แบบจำกัด: ใช้เฉพาะ action primitive ที่ train/backtest/EA รองรับ",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+            justify="left",
+        ).grid(row=0, column=0, sticky="ew")
+        self.train_action_profile_json_path = ""
+        ctk.CTkButton(
+            action_top,
+            text="Reset",
+            command=self._apply_train_action_profile_defaults,
+            fg_color=COLOR_BG_INPUT,
+            hover_color=COLOR_HOVER,
+            width=90,
+            height=30,
+        ).grid(row=0, column=1, padx=(8, 0))
+        ctk.CTkButton(
+            action_top,
+            text="Load JSON",
+            command=self._load_train_action_json,
+            fg_color=COLOR_BG_INPUT,
+            hover_color=COLOR_HOVER,
+            width=105,
+            height=30,
+        ).grid(row=0, column=2, padx=(8, 0))
+        ctk.CTkButton(
+            action_top,
+            text="Save JSON",
+            command=self._save_train_action_json,
+            fg_color=COLOR_BG_INPUT,
+            hover_color=COLOR_HOVER,
+            width=105,
+            height=30,
+        ).grid(row=0, column=3, padx=(8, 0))
+
+        self.action_json_hint = ctk.CTkLabel(
+            c_action,
+            text="Action JSON: none",
+            text_color=COLOR_DIM,
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+            justify="left",
+        )
+        self.action_json_hint.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 8))
+
+        self.action_param_frame = ctk.CTkFrame(c_action, fg_color="transparent")
+        self.action_param_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 12))
+        for col in range(3):
+            self.action_param_frame.grid_columnconfigure(col, weight=1)
+        self.train_action_controls = {}
+        self._build_train_action_controls(self.action_param_frame)
+        self._apply_train_action_profile_defaults()
+
         # === Run + Progress + Log ===
         c4 = Card(page, title="🚀 Training")
-        c4.grid(row=3, column=0, sticky="ew")
+        c4.grid(row=5, column=0, sticky="ew")
         c4.grid_columnconfigure(0, weight=1)
 
         btn_row = ctk.CTkFrame(c4, fg_color="transparent")
@@ -4772,6 +5158,478 @@ class RLTradingStudio(ctk.CTk):
             self.adv_frame.grid(row=2, column=0, sticky="ew")
             self.adv_toggle_btn.configure(text="▼ Hide Advanced")
             self.adv_visible = True
+
+    def _toggle_reward_advanced(self):
+        """Show/hide advanced reward slider controls."""
+        if self.reward_adv_visible:
+            self.reward_adv_frame.grid_remove()
+            self.reward_adv_toggle_btn.configure(text="▶ Show Reward Sliders")
+            self.reward_adv_visible = False
+        else:
+            self.reward_adv_frame.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 12))
+            self.reward_adv_toggle_btn.configure(text="▼ Hide Reward Sliders")
+            self.reward_adv_visible = True
+
+    def _toggle_reward_formula_editor(self):
+        if not hasattr(self, "reward_formula_frame"):
+            return
+        if self.reward_formula_enabled.get():
+            self.reward_formula_frame.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 10))
+        else:
+            self.reward_formula_frame.grid_remove()
+
+    def _set_reward_formula_text(self, formula):
+        if not hasattr(self, "reward_formula_text"):
+            return
+        self.reward_formula_text.delete("1.0", "end")
+        self.reward_formula_text.insert("1.0", formula or DEFAULT_REWARD_FORMULA)
+
+    def _get_train_reward_formula(self):
+        if not hasattr(self, "reward_formula_enabled") or not self.reward_formula_enabled.get():
+            return ""
+        formula = self.reward_formula_text.get("1.0", "end").strip()
+        try:
+            validate_reward_formula(formula)
+        except Exception as exc:
+            if hasattr(self, "reward_formula_status"):
+                self.reward_formula_status.configure(text=f"Invalid formula: {exc}", text_color=COLOR_RED)
+            messagebox.showerror("Invalid reward formula", str(exc))
+            return None
+        if hasattr(self, "reward_formula_status"):
+            self.reward_formula_status.configure(text="Formula valid; it will override realized reward shaping.", text_color=COLOR_GREEN)
+        return formula
+
+    def _reward_value_text(self, spec, value):
+        decimals = int(spec.get("decimals", 3))
+        return f"{float(value):.{decimals}f}"
+
+    def _set_reward_entry_text(self, entry, text):
+        entry.delete(0, "end")
+        entry.insert(0, text)
+
+    def _build_train_reward_controls(self, parent):
+        for idx, spec in enumerate(REWARD_PARAM_SPECS):
+            row = idx // 3
+            col = idx % 3
+            key = spec["key"]
+            box = ctk.CTkFrame(parent, fg_color=COLOR_BG_INPUT, corner_radius=8)
+            box.grid(row=row, column=col, sticky="nsew", padx=6, pady=6)
+            box.grid_columnconfigure(0, weight=1)
+
+            top = ctk.CTkFrame(box, fg_color="transparent")
+            top.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 2))
+            top.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(
+                top,
+                text=spec["label"],
+                text_color=COLOR_TEXT,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                anchor="w",
+            ).grid(row=0, column=0, sticky="w")
+            entry = ctk.CTkEntry(
+                top,
+                width=96,
+                height=30,
+                font=ctk.CTkFont(size=13, family="Consolas"),
+            )
+            entry.grid(row=0, column=1, sticky="e")
+
+            slider = ctk.CTkSlider(
+                box,
+                from_=float(spec["min"]),
+                to=float(spec["max"]),
+                number_of_steps=int(spec.get("steps", 100)),
+                command=lambda value, k=key: self._on_reward_slider_change(k, value),
+            )
+            slider.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 4))
+
+            ctk.CTkLabel(
+                box,
+                text=f"{spec['description']} ({spec['min']}..{spec['max']})",
+                text_color=COLOR_DIM,
+                font=ctk.CTkFont(size=12),
+                anchor="w",
+                justify="left",
+                wraplength=340,
+            ).grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 12))
+
+            entry.bind("<FocusOut>", lambda _e, k=key: self._on_reward_entry_change(k))
+            entry.bind("<Return>", lambda _e, k=key: self._on_reward_entry_change(k))
+            self.train_reward_controls[key] = {
+                "spec": spec,
+                "slider": slider,
+                "entry": entry,
+            }
+
+    def _on_reward_slider_change(self, key, value):
+        controls = getattr(self, "train_reward_controls", {})
+        control = controls.get(key)
+        if not control:
+            return
+        text = self._reward_value_text(control["spec"], value)
+        self._set_reward_entry_text(control["entry"], text)
+
+    def _on_reward_entry_change(self, key):
+        controls = getattr(self, "train_reward_controls", {})
+        control = controls.get(key)
+        if not control:
+            return True
+        spec = control["spec"]
+        entry = control["entry"]
+        raw = entry.get().strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            messagebox.showerror("Invalid reward value", f"{spec['label']} must be numeric.")
+            self._apply_train_reward_profile_defaults()
+            return False
+        value = max(float(spec["min"]), min(float(spec["max"]), value))
+        control["slider"].set(value)
+        self._set_reward_entry_text(entry, self._reward_value_text(spec, value))
+        return True
+
+    def _set_reward_json_hint(self, text=None):
+        if not hasattr(self, "reward_json_hint"):
+            return
+        path = getattr(self, "train_reward_profile_json_path", "")
+        label = text if text is not None else (path or "none")
+        self.reward_json_hint.configure(text=f"Reward JSON: {label}")
+
+    def _apply_train_reward_profile_defaults(self, *_args, clear_json=True):
+        if not hasattr(self, "train_reward_controls") or not hasattr(self, "train_reward_profile"):
+            return
+        if clear_json:
+            self.train_reward_profile_json_path = ""
+            self._set_reward_json_hint()
+            if hasattr(self, "reward_formula_enabled"):
+                self.reward_formula_enabled.set(False)
+                self._set_reward_formula_text(DEFAULT_REWARD_FORMULA)
+                self._toggle_reward_formula_editor()
+        profile_key = reward_profile_key_from_label(self.train_reward_profile.get())
+        params = REWARD_PROFILES[profile_key]["params"]
+        for key, control in self.train_reward_controls.items():
+            spec = control["spec"]
+            value = float(params[key])
+            control["slider"].set(value)
+            self._set_reward_entry_text(control["entry"], self._reward_value_text(spec, value))
+
+    def _apply_train_reward_overrides_to_controls(self, overrides):
+        controls = getattr(self, "train_reward_controls", {})
+        for key, value in (overrides or {}).items():
+            control = controls.get(key)
+            if not control:
+                continue
+            spec = control["spec"]
+            value = max(float(spec["min"]), min(float(spec["max"]), float(value)))
+            control["slider"].set(value)
+            self._set_reward_entry_text(control["entry"], self._reward_value_text(spec, value))
+
+    def _collect_train_reward_overrides(self):
+        if not hasattr(self, "train_reward_controls") or not hasattr(self, "train_reward_profile"):
+            return {}
+        profile_key = reward_profile_key_from_label(self.train_reward_profile.get())
+        defaults = REWARD_PROFILES[profile_key]["params"]
+        overrides = {}
+        for key, control in self.train_reward_controls.items():
+            spec = control["spec"]
+            raw = control["entry"].get().strip()
+            try:
+                value = float(raw)
+            except ValueError:
+                messagebox.showerror("Invalid reward value", f"{spec['label']} must be numeric.")
+                return None
+            if value < float(spec["min"]) or value > float(spec["max"]):
+                messagebox.showerror(
+                    "Invalid reward value",
+                    f"{spec['label']} must be between {spec['min']} and {spec['max']}.",
+                )
+                return None
+            baseline = float(defaults[key])
+            if abs(value - baseline) > 10 ** (-(int(spec.get("decimals", 3)) + 1)):
+                overrides[key] = value
+        return overrides
+
+    def _get_train_reward_overrides(self):
+        overrides = self._collect_train_reward_overrides()
+        if overrides is None:
+            return None
+        return json.dumps(overrides, separators=(",", ":"))
+
+    def _load_train_reward_json(self):
+        DEFAULT_REWARD_PROFILE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        path = filedialog.askopenfilename(
+            title="Load Reward Profile JSON",
+            initialdir=str(DEFAULT_REWARD_PROFILE_CONFIG_DIR),
+            filetypes=[("Reward profile JSON", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            loaded = load_reward_profile_json(path)
+        except Exception as exc:
+            messagebox.showerror("Invalid reward JSON", str(exc))
+            return
+
+        base_key = loaded["base_profile"]
+        self.train_reward_profile.set(REWARD_PROFILES[base_key]["label"])
+        self._apply_train_reward_profile_defaults(clear_json=False)
+        self._apply_train_reward_overrides_to_controls(loaded["overrides"])
+        formula = loaded.get("formula", "")
+        if formula:
+            self.reward_formula_enabled.set(True)
+            self._set_reward_formula_text(formula)
+        else:
+            self.reward_formula_enabled.set(False)
+            self._set_reward_formula_text(DEFAULT_REWARD_FORMULA)
+        self._toggle_reward_formula_editor()
+        self.train_reward_profile_json_path = path
+        self._set_reward_json_hint(path)
+        messagebox.showinfo(
+            "Reward JSON loaded",
+            f"Loaded {loaded['name']}\nBase profile: {loaded['base_profile_label']}",
+        )
+
+    def _save_train_reward_json(self):
+        overrides = self._collect_train_reward_overrides()
+        if overrides is None:
+            return
+        formula = self._get_train_reward_formula()
+        if formula is None:
+            return
+        DEFAULT_REWARD_PROFILE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        profile_key = reward_profile_key_from_label(self.train_reward_profile.get())
+        initial_name = f"{profile_key}_custom.json"
+        path = filedialog.asksaveasfilename(
+            title="Save Reward Profile JSON",
+            initialdir=str(DEFAULT_REWARD_PROFILE_CONFIG_DIR),
+            initialfile=initial_name,
+            defaultextension=".json",
+            filetypes=[("Reward profile JSON", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            payload = reward_profile_json_payload(
+                Path(path).stem,
+                profile_key,
+                overrides,
+                formula=formula,
+                notes="Saved from MetaFXClub RL Studio Train page.",
+            )
+            Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            messagebox.showerror("Save failed", str(exc))
+            return
+        self.train_reward_profile_json_path = path
+        self._set_reward_json_hint(path)
+        messagebox.showinfo("Reward JSON saved", f"Saved reward profile:\n{path}")
+
+    def _action_value_text(self, spec, value):
+        decimals = int(spec.get("decimals", 3))
+        if decimals == 0:
+            return str(int(round(float(value))))
+        return f"{float(value):.{decimals}f}"
+
+    def _build_train_action_controls(self, parent):
+        for idx, spec in enumerate(ACTION_PARAM_SPECS):
+            row = idx // 3
+            col = idx % 3
+            key = spec["key"]
+            box = ctk.CTkFrame(parent, fg_color=COLOR_BG_INPUT, corner_radius=8)
+            box.grid(row=row, column=col, sticky="nsew", padx=6, pady=6)
+            box.grid_columnconfigure(0, weight=1)
+
+            top = ctk.CTkFrame(box, fg_color="transparent")
+            top.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 2))
+            top.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(
+                top,
+                text=spec["label"],
+                text_color=COLOR_TEXT,
+                font=ctk.CTkFont(size=13, weight="bold"),
+                anchor="w",
+            ).grid(row=0, column=0, sticky="w")
+            entry = ctk.CTkEntry(
+                top,
+                width=96,
+                height=30,
+                font=ctk.CTkFont(size=13, family="Consolas"),
+            )
+            entry.grid(row=0, column=1, sticky="e")
+
+            slider = ctk.CTkSlider(
+                box,
+                from_=float(spec["min"]),
+                to=float(spec["max"]),
+                number_of_steps=int(spec.get("steps", 100)),
+                command=lambda value, k=key: self._on_action_slider_change(k, value),
+            )
+            slider.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 4))
+
+            unit = spec.get("unit", "")
+            desc_text = f"{spec['description']}\nหน่วย: {unit} | ช่วง: {spec['min']}..{spec['max']}"
+            if not unit:
+                desc_text = f"{spec['description']} ({spec['min']}..{spec['max']})"
+            ctk.CTkLabel(
+                box,
+                text=desc_text,
+                text_color=COLOR_DIM,
+                font=ctk.CTkFont(size=12),
+                anchor="w",
+                justify="left",
+                wraplength=340,
+            ).grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 12))
+
+            entry.bind("<FocusOut>", lambda _e, k=key: self._on_action_entry_change(k))
+            entry.bind("<Return>", lambda _e, k=key: self._on_action_entry_change(k))
+            self.train_action_controls[key] = {
+                "spec": spec,
+                "slider": slider,
+                "entry": entry,
+            }
+
+    def _on_action_slider_change(self, key, value):
+        control = getattr(self, "train_action_controls", {}).get(key)
+        if not control:
+            return
+        self._set_reward_entry_text(control["entry"], self._action_value_text(control["spec"], value))
+
+    def _on_action_entry_change(self, key):
+        control = getattr(self, "train_action_controls", {}).get(key)
+        if not control:
+            return True
+        spec = control["spec"]
+        entry = control["entry"]
+        try:
+            value = float(entry.get().strip())
+        except ValueError:
+            messagebox.showerror("Invalid action value", f"{spec['label']} must be numeric.")
+            self._apply_train_action_profile_defaults()
+            return False
+        value = max(float(spec["min"]), min(float(spec["max"]), value))
+        control["slider"].set(value)
+        self._set_reward_entry_text(entry, self._action_value_text(spec, value))
+        return True
+
+    def _set_action_json_hint(self, text=None):
+        if not hasattr(self, "action_json_hint"):
+            return
+        path = getattr(self, "train_action_profile_json_path", "")
+        label = text if text is not None else (path or "none")
+        self.action_json_hint.configure(text=f"Action JSON: {label}")
+
+    def _apply_train_action_profile_defaults(self, *_args, clear_json=True):
+        if not hasattr(self, "train_action_controls") or not hasattr(self, "train_action_profile"):
+            return
+        if clear_json:
+            self.train_action_profile_json_path = ""
+            self._set_action_json_hint()
+        profile_key = action_profile_key_from_label(self.train_action_profile.get())
+        params = ACTION_PROFILES[profile_key]["params"]
+        for key, control in self.train_action_controls.items():
+            spec = control["spec"]
+            value = float(params[key])
+            control["slider"].set(value)
+            self._set_reward_entry_text(control["entry"], self._action_value_text(spec, value))
+
+    def _apply_train_action_params_to_controls(self, params):
+        _, profile = get_action_profile(action_profile_key_from_label(self.train_action_profile.get()), params)
+        for key, control in getattr(self, "train_action_controls", {}).items():
+            if key not in profile["params"]:
+                continue
+            spec = control["spec"]
+            value = float(profile["params"][key])
+            control["slider"].set(value)
+            self._set_reward_entry_text(control["entry"], self._action_value_text(spec, value))
+
+    def _collect_train_action_params(self):
+        if not hasattr(self, "train_action_controls") or not hasattr(self, "train_action_profile"):
+            return {}
+        profile_key = action_profile_key_from_label(self.train_action_profile.get())
+        defaults = ACTION_PROFILES[profile_key]["params"]
+        overrides = {}
+        for key, control in self.train_action_controls.items():
+            spec = control["spec"]
+            raw = control["entry"].get().strip()
+            try:
+                value = float(raw)
+            except ValueError:
+                messagebox.showerror("Invalid action value", f"{spec['label']} must be numeric.")
+                return None
+            if value < float(spec["min"]) or value > float(spec["max"]):
+                messagebox.showerror(
+                    "Invalid action value",
+                    f"{spec['label']} must be between {spec['min']} and {spec['max']}.",
+                )
+                return None
+            if int(spec.get("decimals", 3)) == 0:
+                value = int(round(value))
+            baseline = float(defaults[key])
+            if abs(float(value) - baseline) > 10 ** (-(int(spec.get("decimals", 3)) + 1)):
+                overrides[key] = value
+        return overrides
+
+    def _get_train_action_params(self):
+        params = self._collect_train_action_params()
+        if params is None:
+            return None
+        return json.dumps(params, separators=(",", ":"))
+
+    def _load_train_action_json(self):
+        DEFAULT_ACTION_PROFILE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        path = filedialog.askopenfilename(
+            title="Load Action Profile JSON",
+            initialdir=str(DEFAULT_ACTION_PROFILE_CONFIG_DIR),
+            filetypes=[("Action profile JSON", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            loaded = load_action_profile_json(path)
+        except Exception as exc:
+            messagebox.showerror("Invalid action JSON", str(exc))
+            return
+
+        base_key = loaded["base_profile"]
+        self.train_action_profile.set(ACTION_PROFILES[base_key]["label"])
+        self._apply_train_action_profile_defaults(clear_json=False)
+        self._apply_train_action_params_to_controls(loaded["params"])
+        self.train_action_profile_json_path = path
+        self._set_action_json_hint(path)
+        messagebox.showinfo(
+            "Action JSON loaded",
+            f"Loaded {loaded['name']}\nBase profile: {loaded['base_profile_label']}",
+        )
+
+    def _save_train_action_json(self):
+        params = self._collect_train_action_params()
+        if params is None:
+            return
+        DEFAULT_ACTION_PROFILE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        profile_key = action_profile_key_from_label(self.train_action_profile.get())
+        path = filedialog.asksaveasfilename(
+            title="Save Action Profile JSON",
+            initialdir=str(DEFAULT_ACTION_PROFILE_CONFIG_DIR),
+            initialfile=f"{profile_key}_custom.json",
+            defaultextension=".json",
+            filetypes=[("Action profile JSON", "*.json"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            payload = action_profile_json_payload(
+                Path(path).stem,
+                profile_key,
+                params=params,
+                notes="Saved from MetaFXClub RL Studio Train page.",
+            )
+            Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            messagebox.showerror("Save failed", str(exc))
+            return
+        self.train_action_profile_json_path = path
+        self._set_action_json_hint(path)
+        messagebox.showinfo("Action JSON saved", f"Saved action profile:\n{path}")
 
     def _apply_preset(self, name: str):
         """Apply hyperparameter preset"""
@@ -5392,6 +6250,17 @@ class RLTradingStudio(ctk.CTk):
         max_hold = self.train_maxhold.get() or "30"
         name = (self.train_name.get() or "rl_prod_v1").strip()
         reward = self.train_reward.get().split()[0]
+        reward_profile = reward_profile_key_from_label(self.train_reward_profile.get())
+        reward_overrides = self._get_train_reward_overrides()
+        if reward_overrides is None:
+            return
+        reward_formula = self._get_train_reward_formula()
+        if reward_formula is None:
+            return
+        action_profile = action_profile_key_from_label(self.train_action_profile.get())
+        action_params = self._get_train_action_params()
+        if action_params is None:
+            return
 
         # Guard against silent overwrite: organized artifacts and legacy root
         # artifacts are both considered the same model name.
@@ -5432,6 +6301,10 @@ class RLTradingStudio(ctk.CTk):
             "--max_hold", max_hold,
             "--train_pct", str(self._parse_train_pct(self.train_pct.get(), 0.85)),
             "--reward_mode", reward,
+            "--reward_profile", reward_profile,
+            "--reward_overrides", reward_overrides,
+            "--action_profile", action_profile,
+            "--action_params", action_params,
             "--algo", algo,
             "--name", name,
             "--learning_rate", lr,
@@ -5444,6 +6317,14 @@ class RLTradingStudio(ctk.CTk):
             "--gae_lambda", gae,
             "--vf_coef", vf,
         ]
+        reward_profile_json_path = getattr(self, "train_reward_profile_json_path", "")
+        if reward_profile_json_path:
+            cmd.extend(["--reward_profile_json", reward_profile_json_path])
+        if reward_formula:
+            cmd.extend(["--reward_formula", reward_formula])
+        action_profile_json_path = getattr(self, "train_action_profile_json_path", "")
+        if action_profile_json_path:
+            cmd.extend(["--action_profile_json", action_profile_json_path])
 
         self._log(self.train_log, f"$ {' '.join(cmd)}", "info")
         self.train_btn.configure(state="disabled")
@@ -5828,10 +6709,33 @@ class RLTradingStudio(ctk.CTk):
             wraplength=1100, justify="left"
         ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 12))
 
+        action_sub = ctk.CTkFrame(c1, fg_color="transparent")
+        action_sub.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 12))
+        action_sub.grid_columnconfigure(0, weight=1)
+        action_sub.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(action_sub, text="Action Profile", text_color=COLOR_DIM
+                      ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(action_sub, text="Action Params JSON (optional)", text_color=COLOR_DIM
+                      ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+        self.wf_action_profile = ctk.CTkOptionMenu(
+            action_sub,
+            values=ACTION_PROFILE_LABELS,
+            fg_color=COLOR_BG_INPUT,
+            button_color=COLOR_BG_INPUT,
+        )
+        self.wf_action_profile.set(ACTION_PROFILE_LABELS[0])
+        self.wf_action_profile.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        self.wf_action_params = ctk.CTkEntry(
+            action_sub,
+            placeholder_text='{"trail_atr_mult":3.5}',
+        )
+        self.wf_action_params.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(2, 0))
+
         ctk.CTkLabel(c1, text="Output Name", text_color=COLOR_DIM
-                      ).grid(row=6, column=0, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 4))
         self.wf_name = ctk.CTkEntry(c1); self.wf_name.insert(0, "wf_prod")
-        self.wf_name.grid(row=7, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.wf_name.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 16))
 
         self.wf_run_btn = ctk.CTkButton(page, text="▶ Start Walk-Forward Retrain (~50 min)",
             command=self._run_walkforward,
@@ -5882,6 +6786,18 @@ class RLTradingStudio(ctk.CTk):
         if csv in ("(none)", ""):
             messagebox.showwarning("Setup", "Please select dataset")
             return
+        action_profile = "basic_4"
+        if hasattr(self, "wf_action_profile"):
+            action_profile = action_profile_key_from_label(self.wf_action_profile.get())
+        action_params = ""
+        if hasattr(self, "wf_action_params"):
+            action_params = self.wf_action_params.get().strip()
+            if action_params:
+                try:
+                    json.loads(action_params)
+                except Exception as exc:
+                    messagebox.showerror("Invalid action params JSON", str(exc))
+                    return
 
         cmd = [
             sys.executable, "rl_walkforward.py", csv,
@@ -5889,7 +6805,10 @@ class RLTradingStudio(ctk.CTk):
             "--steps", self.wf_steps.get() or "50000",
             "--window", self.wf_window.get() or "10",
             "--name", self.wf_name.get() or "wf_prod",
+            "--action_profile", action_profile,
         ]
+        if action_params:
+            cmd.extend(["--action_params", action_params])
 
         self._log(self.wf_log, f"$ {' '.join(cmd)}", "info")
         if hasattr(self, "wf_progress"):

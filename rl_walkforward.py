@@ -27,6 +27,7 @@ Usage:
 import sys
 import io
 import argparse
+import json
 import time
 from pathlib import Path
 import numpy as np
@@ -34,6 +35,12 @@ import pandas as pd
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+from action_profiles import (
+    ACTION_PROFILES,
+    coerce_action_params,
+    get_action_profile,
+    load_action_profile_json,
+)
 from trading_env import TradingEnv
 
 
@@ -91,7 +98,29 @@ def main():
     ap.add_argument("--mode", default="rolling",
                     choices=["rolling", "anchored"],
                     help="rolling=train window slides / anchored=train always from start")
+    ap.add_argument("--action_profile", default="basic_4",
+                    choices=list(ACTION_PROFILES.keys()),
+                    help="action profile used for every retrained window")
+    ap.add_argument("--action_params", default="",
+                    help="JSON object of safe action parameter overrides")
+    ap.add_argument("--action_profile_json", default="",
+                    help="path to limited action profile JSON recipe")
     args = ap.parse_args()
+    try:
+        action_params = {}
+        action_profile_json_meta = None
+        action_profile_value = args.action_profile
+        if args.action_profile_json.strip():
+            action_profile_json_meta = load_action_profile_json(args.action_profile_json.strip())
+            action_profile_value = action_profile_json_meta["profile"]
+            action_params.update(action_profile_json_meta["params"])
+        if args.action_params.strip():
+            action_params.update(coerce_action_params(json.loads(args.action_params)))
+        action_profile_key, action_profile_cfg = get_action_profile(action_profile_value, action_params)
+    except Exception as exc:
+        print(f"ERROR: invalid action profile: {exc}")
+        return 1
+    args.action_profile = action_profile_key
 
     # =================================================================
     # Load data
@@ -118,6 +147,9 @@ def main():
     print(f"  features: {len(feature_cols)}")
     print(f"  windows: {args.windows} ({args.mode})")
     print(f"  steps/window: {args.steps:,}")
+    print(f"  action profile: {action_profile_cfg['label']} ({len(action_profile_cfg['actions'])} actions)")
+    if action_profile_json_meta:
+        print(f"  action json: {action_profile_json_meta['path']}")
 
     n = len(df)
     if args.windows <= 0:
@@ -253,6 +285,7 @@ def main():
                 window_size=args.window,
                 max_steps=ep,
                 reward_mode="realized",
+                action_profile=action_profile_cfg,
                 max_hold_bars=args.max_hold,
             ))
 
@@ -290,6 +323,7 @@ def main():
             window_size=args.window,
             max_steps=eval_max_steps,
             reward_mode="realized",
+            action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
         )
         obs, _ = test_env_raw.reset()

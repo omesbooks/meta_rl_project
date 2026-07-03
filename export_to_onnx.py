@@ -36,7 +36,7 @@ Examples:
     # Custom deploy name and output dir
     python export_to_onnx.py rl_prod_v10_enriched --name rl_v10
 """
-import sys, io, argparse, shutil
+import sys, io, argparse, shutil, json
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -50,7 +50,9 @@ from artifact_paths import (
     find_params_path,
     legacy_best_model_path,
     legacy_final_model_path,
+    train_meta_path,
 )
+from action_profiles import ACTION_PRIMITIVES, action_ids_by_name, get_action_profile, profile_for_action_count
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
@@ -153,6 +155,26 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     n_actions = int(model.policy.action_space.n)
     print(f"  Input dim:  {obs_dim}")
     print(f"  Actions:    {n_actions}")
+    try:
+        train_meta = train_meta_path(model_name)
+        action_profile_value = None
+        if train_meta.exists():
+            meta = json.loads(train_meta.read_text(encoding="utf-8-sig"))
+            hparams = meta.get("hyperparameters", {})
+            action_profile_value = hparams.get("action_profile_config") or hparams.get("action_profile")
+        if action_profile_value is None:
+            action_profile_key, action_profile_cfg = profile_for_action_count(n_actions)
+        else:
+            action_profile_key, action_profile_cfg = get_action_profile(action_profile_value)
+        if len(action_profile_cfg["actions"]) != n_actions:
+            raise ValueError(
+                f"action profile has {len(action_profile_cfg['actions'])} actions, "
+                f"model has {n_actions}"
+            )
+    except Exception as exc:
+        print(f"❌ Action profile mismatch: {exc}")
+        return 1
+    print(f"  Action profile: {action_profile_cfg['label']}")
 
     # === Wrap policy ===
     wrapped = PolicyWrapper(model.policy)
@@ -260,6 +282,18 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     mqh.append(f"#define RL_WINDOW_SIZE   {window}")
     mqh.append(f"#define RL_FEATURE_COUNT {feat_count}")
     mqh.append("")
+    mqh.append("// Action profile")
+    mqh.append(f"#define RL_ACTION_PROFILE \"{action_profile_cfg['label']}\"")
+    action_id_map = action_ids_by_name(action_profile_cfg)
+    for primitive_name, primitive in ACTION_PRIMITIVES.items():
+        macro = "RL_ACTION_" + primitive_name.upper()
+        mqh.append(f"#define {macro:<32} {action_id_map.get(primitive_name, -1)}")
+    params = action_profile_cfg["params"]
+    mqh.append(f"#define RL_ACTION_BREAKEVEN_MIN_PROFIT {float(params['breakeven_min_profit']):.8f}")
+    mqh.append(f"#define RL_ACTION_TRAIL_ATR_PERIOD     {int(params['trail_atr_period'])}")
+    mqh.append(f"#define RL_ACTION_TRAIL_ATR_MULT       {float(params['trail_atr_mult']):.8f}")
+    mqh.append(f"#define RL_ACTION_TRAIL_MIN_PROFIT     {float(params['trail_min_profit']):.8f}")
+    mqh.append("")
     mqh.append("// Feature names (ordered)")
     mqh.append(f"const string RL_FEATURE_NAMES[{feat_count}] = {{")
     for i, name in enumerate(feat_names):
@@ -292,7 +326,10 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
             mqh.append(f"// Embedded from {params_file.name} — applied via")
             mqh.append("// RL_ApplyDataCollectorConfig() (call in OnInit before RL_InitIndicators).")
             mqh.append("")
-            INT_KEYS = ("PMIN", "PMAX", "PSTEP", "PERIOD", "WINDOW", "FAST", "SLOW", "SIGNAL", "_P")
+            INT_KEYS = (
+                "PMIN", "PMAX", "PSTEP", "PERIOD", "WINDOW", "FAST", "SLOW",
+                "SIGNAL", "_P", "START", "END", "TYPE", "METHOD", "PRICE"
+            )
             BOOL_KEYS = ("CP_Hammer", "CP_Engulfing", "CP_Inside", "CP_Outside",
                          "CP_Star", "CP_Soldiers", "CP_Marubozu", "CP_Harami",
                          "CP_Piercing", "CP_MatHold",

@@ -37,6 +37,21 @@ from artifact_paths import (
     params_path as artifact_params_path,
     train_meta_path,
 )
+from reward_profiles import (
+    REWARD_PROFILES,
+    coerce_reward_overrides,
+    get_reward_profile,
+    load_reward_profile_json,
+    reward_profile_label,
+)
+from reward_formula import validate_reward_formula
+from action_profiles import (
+    ACTION_PROFILES,
+    action_profile_label,
+    coerce_action_params,
+    get_action_profile,
+    load_action_profile_json,
+)
 from trading_env import TradingEnv
 
 
@@ -79,6 +94,22 @@ def main():
     ap.add_argument("--reward_mode", default="realized",
                     choices=["realized", "mtm"],
                     help="realized=ปิดแล้วถึงให้ reward (แนะนำ), mtm=ทุก step (buy-hold trap)")
+    ap.add_argument("--reward_profile", default="balanced",
+                    choices=list(REWARD_PROFILES.keys()),
+                    help="reward preset: balanced, anti_overtrade, low_drawdown, trend_follower, scalper")
+    ap.add_argument("--reward_overrides", default="",
+                    help="JSON object of safe reward slider overrides, e.g. '{\"trade_penalty\":0.008}'")
+    ap.add_argument("--reward_profile_json", default="",
+                    help="path to reward profile JSON recipe; CLI overrides win if both are provided")
+    ap.add_argument("--reward_formula", default="",
+                    help="developer mode safe reward expression; only used with reward_mode=realized")
+    ap.add_argument("--action_profile", default="basic_4",
+                    choices=list(ACTION_PROFILES.keys()),
+                    help="action preset: basic_4 or manage_6")
+    ap.add_argument("--action_params", default="",
+                    help="JSON object of safe action parameter overrides, e.g. '{\"trail_atr_mult\":2.5}'")
+    ap.add_argument("--action_profile_json", default="",
+                    help="path to limited action profile JSON recipe; CLI action_params win")
     ap.add_argument("--max_hold", type=int, default=30,
                     help="บังคับปิด position ถ้าถือเกินกี่ bars")
     ap.add_argument("--net_arch", default="auto",
@@ -105,6 +136,43 @@ def main():
     ap.add_argument("--vf_coef", type=float, default=0.5,
                     help="value function loss coefficient (default 0.5)")
     args = ap.parse_args()
+    try:
+        reward_overrides = {}
+        reward_profile_json_meta = None
+        cli_reward_formula = args.reward_formula.strip()
+        if args.reward_profile_json.strip():
+            reward_profile_json_meta = load_reward_profile_json(args.reward_profile_json.strip())
+            args.reward_profile = reward_profile_json_meta["base_profile"]
+            reward_overrides.update(reward_profile_json_meta["overrides"])
+            if reward_profile_json_meta.get("formula") and not cli_reward_formula:
+                args.reward_formula = reward_profile_json_meta["formula"]
+        if cli_reward_formula:
+            args.reward_formula = cli_reward_formula
+        if args.reward_overrides.strip():
+            reward_overrides.update(coerce_reward_overrides(json.loads(args.reward_overrides)))
+        if args.reward_formula.strip():
+            validate_reward_formula(args.reward_formula.strip())
+        reward_profile_key, reward_profile_cfg = get_reward_profile(args.reward_profile, reward_overrides)
+    except Exception as exc:
+        print(f"ERROR: invalid reward overrides: {exc}")
+        sys.exit(1)
+    args.reward_profile = reward_profile_key
+
+    try:
+        action_params = {}
+        action_profile_json_meta = None
+        action_profile_value = args.action_profile
+        if args.action_profile_json.strip():
+            action_profile_json_meta = load_action_profile_json(args.action_profile_json.strip())
+            action_profile_value = action_profile_json_meta["profile"]
+            action_params.update(action_profile_json_meta["params"])
+        if args.action_params.strip():
+            action_params.update(coerce_action_params(json.loads(args.action_params)))
+        action_profile_key, action_profile_cfg = get_action_profile(action_profile_value, action_params)
+    except Exception as exc:
+        print(f"ERROR: invalid action profile: {exc}")
+        sys.exit(1)
+    args.action_profile = action_profile_key
     model_root = ensure_model_dirs(args.name)
 
     # Auto-scale NN by window size
@@ -252,6 +320,17 @@ def main():
             "ep_len": args.ep_len,
             "algo": args.algo,
             "reward_mode": args.reward_mode,
+            "reward_profile": args.reward_profile,
+            "reward_profile_label": reward_profile_label(args.reward_profile),
+            "reward_profile_json": reward_profile_json_meta,
+            "reward_profile_overrides": reward_overrides,
+            "reward_profile_config": reward_profile_cfg,
+            "reward_formula": args.reward_formula.strip(),
+            "action_profile": args.action_profile,
+            "action_profile_label": action_profile_cfg["label"] if args.action_profile == "custom" else action_profile_label(args.action_profile),
+            "action_profile_json": action_profile_json_meta,
+            "action_profile_params": action_profile_cfg["params"],
+            "action_profile_config": action_profile_cfg,
             "max_hold": args.max_hold,
             "net_arch": net_arch,
             "learning_rate": args.learning_rate,
@@ -279,6 +358,9 @@ def main():
             window_size=args.window,
             max_steps=args.ep_len,
             reward_mode=args.reward_mode,
+            reward_profile=args.reward_profile,
+            reward_formula=args.reward_formula,
+            action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
         ))
 
@@ -288,6 +370,9 @@ def main():
             window_size=args.window,
             max_steps=len(test_df) - args.window - 2,
             reward_mode=args.reward_mode,
+            reward_profile=args.reward_profile,
+            reward_formula=args.reward_formula,
+            action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
         ))
 
@@ -296,6 +381,10 @@ def main():
 
     # ---------- create model ----------
     print(f"\n[model] {args.algo.upper()}")
+    print(f"[reward] mode={args.reward_mode} | profile={reward_profile_label(args.reward_profile)}")
+    print(f"[action] profile={action_profile_cfg['label']} | actions={len(action_profile_cfg['actions'])}")
+    if args.reward_formula.strip():
+        print("[reward] developer formula enabled")
     log_dir = str(logs_dir(args.name))
 
     if args.algo == "ppo":
@@ -368,6 +457,9 @@ def main():
     test_env_raw = TradingEnv(test_df, feature_cols, window_size=args.window,
                               max_steps=len(test_df) - args.window - 2,
                               reward_mode=args.reward_mode,
+                              reward_profile=args.reward_profile,
+                              reward_formula=args.reward_formula,
+                              action_profile=action_profile_cfg,
                               max_hold_bars=args.max_hold)
     obs, _ = test_env_raw.reset()
     done = False

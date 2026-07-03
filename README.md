@@ -86,6 +86,8 @@ To update an existing local checkout, open the project folder in Codex and paste
 ```
 
 The same update prompt is also kept in `docs\codex_git_update_prompts.md`.
+Prompts for asking Codex to add or change RL actions are kept in
+`docs\codex_custom_action_prompts.md`.
 
 ## What Users Need Locally
 
@@ -137,6 +139,7 @@ Start with:
 - `01_dashboard_user_flow_guide.html`
 - `02_data_prep_import_detail.html`
 - `07_custom_feature_guide.html` for users who want to design custom dataset features, keep EA feature parity, and copy a Codex prompt for adding new features
+- `docs\codex_custom_action_prompts.md` for users who want to ask Codex to add or change RL Action Profiles safely across train/backtest/export/EA live
 
 Reference/background explainers are separated in:
 

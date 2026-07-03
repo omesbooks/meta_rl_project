@@ -32,6 +32,13 @@
    - บทละเอียดสำหรับผู้ใช้ที่ต้องการออกแบบ feature / indicator / dataset schema ของตัวเอง
    - ครอบคลุม feature contract, `.params.json`, min/max/step, การเพิ่ม feature ใน `RL_Indicators.mqh`, และ checklist ให้ flow `dataset -> train -> export -> EA live` ไม่หลุด parity
 
+## Codex Prompt Files
+
+- [Codex Git Update Prompt](../codex_git_update_prompts.md)
+  - prompt สำหรับสั่ง Codex ดึงอัปเดตจาก GitHub และติดตั้ง dependencies ล่าสุดแบบปลอดภัย
+- [Codex Custom Action Prompts](../codex_custom_action_prompts.md)
+  - prompt สำหรับสั่ง Codex เพิ่มหรือปรับ RL Action Profile ให้ครบ train/backtest/fine-tune/walk-forward/full pipeline/export/EA live
+
 ## Reference Files
 
 ไฟล์ explainer เก่าที่เป็น background หรือเอกสารเฉพาะเรื่องถูกแยกไว้ที่ `../explainers/` แล้ว เพื่อไม่ให้ปนกับชุดคู่มือ flow นี้

@@ -1,0 +1,116 @@
+{
+  "model": "rl_uj_extra",
+  "created_at": "2026-07-05T01:51:25",
+  "data_csv": "uj_h4_extra_features.csv",
+  "data_rows_before_start": 8493,
+  "data_period_before_start": {
+    "start": "2020-12-31T20:00:00",
+    "end": "2026-06-12T16:00:00"
+  },
+  "start_fraction": 0.0,
+  "start_index": 0,
+  "backtest_rows": 8493,
+  "backtest_period": {
+    "start": "2020-12-31T20:00:00",
+    "end": "2026-06-12T16:00:00"
+  },
+  "feature_count": 183,
+  "model_path": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_uj_extra\\rl_uj_extra.zip",
+  "norm_path": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_uj_extra\\rl_uj_extra_norm.csv",
+  "artifacts_dir": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_uj_extra\\backtests",
+  "artifacts": {
+    "trades": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_uj_extra\\backtests\\rl_uj_extra_live_bt_trades.csv",
+    "equity": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_uj_extra\\backtests\\rl_uj_extra_live_bt_equity.png",
+    "backtest_meta": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_uj_extra\\backtests\\rl_uj_extra_live_bt.meta.json"
+  },
+  "settings": {
+    "conf": 0.0,
+    "risk": 0.01,
+    "max_positions": 1,
+    "max_hold": 30,
+    "hard_dd": 0.15,
+    "atr_sl": 2.0,
+    "atr_tp": 4.0,
+    "mode": "pure_agent",
+    "balance": 10000,
+    "spread": 0.0002,
+    "commission": 0.0001,
+    "window": 0,
+    "action_profile": "custom",
+    "action_profile_label": "Basic 4 (Hold/Buy/Sell/Close)",
+    "action_profile_json": null,
+    "action_profile_params": {
+      "breakeven_min_profit": 0.001,
+      "trail_atr_period": 14,
+      "trail_atr_mult": 2.0,
+      "trail_min_profit": 0.001,
+      "management_action_penalty": 0.0002,
+      "invalid_action_penalty": 0.001
+    },
+    "action_profile_actions": [
+      {
+        "id": 0,
+        "label": "Hold",
+        "description": "Do nothing.",
+        "role": "hold",
+        "name": "hold"
+      },
+      {
+        "id": 1,
+        "label": "Buy",
+        "description": "Open a long position when flat.",
+        "role": "entry",
+        "name": "buy"
+      },
+      {
+        "id": 2,
+        "label": "Sell",
+        "description": "Open a short position when flat.",
+        "role": "entry",
+        "name": "sell"
+      },
+      {
+        "id": 3,
+        "label": "Close",
+        "description": "Close current position.",
+        "role": "exit",
+        "name": "close"
+      }
+    ]
+  },
+  "status": "complete",
+  "result": {
+    "total_trades": 928,
+    "long_trades": 551,
+    "short_trades": 377,
+    "win_rate": 0.5905172413793104,
+    "profit_factor": 2.1227596074595922,
+    "avg_win": 0.005082248609593828,
+    "avg_loss": -0.00345264600043115,
+    "total_pnl": 32753.299768350767,
+    "final_balance": 42753.299768350866,
+    "return_pct": 3.2753299768350868,
+    "max_drawdown": -0.08107215087334783,
+    "sharpe": 19.20889674597718,
+    "exit_reasons": {
+      "signal": 910,
+      "max_hold": 17,
+      "end": 1
+    },
+    "signals": {
+      "0": 2406,
+      "1": 2608,
+      "2": 1744,
+      "3": 1714
+    },
+    "executed": {
+      "1": 551,
+      "2": 377,
+      "3": 910
+    },
+    "skipped_low_confidence": 0,
+    "skipped_max_positions": 3424,
+    "force_closed_max_hold": 17,
+    "hard_stops": 0
+  }
+}

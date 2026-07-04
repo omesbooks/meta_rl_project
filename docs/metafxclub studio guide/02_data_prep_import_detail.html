@@ -270,6 +270,7 @@
       </p>
       <nav>
         <a href="#big-picture">ภาพรวม</a>
+        <a href="#collector-how-it-works">DataCollector_RL ทำงานยังไง</a>
         <a href="#dashboard-steps">ขั้นตอนใน Dashboard</a>
         <a href="#process-files">ไฟล์ตาม Process</a>
         <a href="#what-files">ไฟล์ที่ต้องมี</a>
@@ -320,6 +321,114 @@
         เพื่อ compile/run ใน MT5 แต่ไฟล์ output ที่ collector สร้างจะอยู่ใน
         <code>MetaQuotes\Terminal\Common\Files</code> ซึ่งเป็นโฟลเดอร์กลางคนละที่กับ
         <code>MQL5\Files</code>
+      </div>
+    </section>
+
+    <section id="collector-how-it-works">
+      <h2>DataCollector_RL ทำงานยังไง</h2>
+      <p>
+        <code>DataCollector_RL.mq5</code> คือ EA สำหรับเก็บ dataset ไม่ใช่ EA สำหรับเทรดจริง
+        หน้าที่ของมันคืออ่านแท่งราคาจาก MT5 แล้วสร้าง feature ชุดเดียวกับที่ EA live จะใช้ตอนส่งข้อมูลเข้าโมเดล
+        เพื่อให้ flow <code>dataset -> train -> export -> EA live</code> ใช้ feature ชุดเดียวกันมากที่สุด
+      </p>
+
+      <div class="grid">
+        <div class="card">
+          <h3>1. ใช้ feature library เดียวกับ EA live</h3>
+          <p>
+            DataCollector_RL เรียก <code>RL_Indicators.mqh</code> และ
+            <code>RL_BuildAllFeatures()</code> เพื่อสร้าง feature ตามชื่อและลำดับเดียวกับที่ export EA ใช้
+            ดังนั้น column ใน CSV คือ contract ระหว่าง dataset, model และ EA
+          </p>
+        </div>
+        <div class="card">
+          <h3>2. เก็บจากแท่งที่ปิดแล้วเท่านั้น</h3>
+          <p>
+            ตอนเกิดแท่งใหม่ collector จะคำนวณจาก bar shift <code>1</code> หรือแท่งล่าสุดที่ปิดแล้ว
+            ทำให้ข้อมูลไม่แอบใช้ future data จากแท่งที่ยังวิ่งอยู่ และเหมาะกับการ train/backtest แบบไม่ look-ahead
+          </p>
+        </div>
+        <div class="card">
+          <h3>3. เขียน CSV พร้อม .params.json</h3>
+          <p>
+            ไฟล์ CSV ถูกเขียนไว้ที่ <code>MetaQuotes\Terminal\Common\Files</code>
+            และตอนจบการรันจะมีไฟล์ <code>.params.json</code> คู่กันเพื่อบันทึก period, step,
+            session window และ parameter อื่น ๆ ที่ใช้สร้าง feature ชุดนั้น
+          </p>
+        </div>
+      </div>
+
+      <h3>ข้อมูลที่ถูกเก็บลง CSV</h3>
+      <p>
+        แถวแรกของไฟล์คือ header ส่วนแต่ละแถวหลังจากนั้นคือ 1 แท่งราคาที่ปิดแล้ว
+        โดยเริ่มจากข้อมูลราคาเบื้องต้น แล้วตามด้วย feature จาก <code>RL_Indicators.mqh</code>
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>กลุ่มข้อมูล</th>
+            <th>ตัวอย่าง column</th>
+            <th>ใช้ทำอะไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ราคาและ volume พื้นฐาน</td>
+            <td><code>timestamp</code>, <code>open</code>, <code>high</code>, <code>low</code>, <code>close</code>, <code>volume</code></td>
+            <td>เป็นข้อมูลแท่งราคาหลักที่ใช้เรียงเวลา, ทำ chart, backtest และคำนวณ P/L</td>
+          </tr>
+          <tr>
+            <td>Indicator แบบ period range</td>
+            <td><code>rsi_4</code>, <code>rsi_8</code>, <code>atr_14</code>, <code>adx_30</code></td>
+            <td>
+              ใช้ค่า Min/Max/Step จาก DataCollector_RL เพื่อสร้าง column ไล่ตาม period จริง
+              เช่น RSI 4 ถึง 30 step 2 จะได้หลาย column ไม่ใช่แค่ min/max สองค่า
+            </td>
+          </tr>
+          <tr>
+            <td>Indicator ค่าคงที่</td>
+            <td><code>ema_20</code>, <code>ema_50</code>, <code>ema_100</code>, <code>ema_200</code>, <code>macd</code>, <code>bb_position</code></td>
+            <td>ช่วยให้โมเดลเห็น trend, momentum และตำแหน่งราคาเทียบกับ Bollinger Band</td>
+          </tr>
+          <tr>
+            <td>Time/session context</td>
+            <td><code>hour</code>, <code>dow</code>, <code>hour_sin</code>, <code>session_london</code>, <code>session_ny</code>, <code>week_end</code></td>
+            <td>บอกบริบทเวลา เช่น ชั่วโมง, วันในสัปดาห์, session ตลาด และช่วง session overlap</td>
+          </tr>
+          <tr>
+            <td>Return/stat/range</td>
+            <td><code>ret_1</code>, <code>ret_5</code>, <code>ret_20</code>, <code>close_zscore</code>, <code>pct_rank</code>, <code>sharpe_20</code>, <code>body_size</code></td>
+            <td>ช่วยให้โมเดลเห็นแรงเคลื่อนระยะสั้น, ความสุดโต่งของราคา และสภาพ candle/range</td>
+          </tr>
+          <tr>
+            <td>Multi-timeframe D1</td>
+            <td><code>d1_rsi</code>, <code>d1_ema_fast</code>, <code>d1_ema_slow</code>, <code>d1_trend_dir</code>, <code>d1_atr</code>, <code>d1_alignment</code></td>
+            <td>ให้บริบทภาพใหญ่จาก D1 เพื่อช่วยลดการตัดสินใจจาก H1/H4 แบบโดด ๆ</td>
+          </tr>
+          <tr>
+            <td>Volatility/trend/range context</td>
+            <td><code>atr_percentile_100</code>, <code>atr_zscore_100</code>, <code>vol_state</code>, <code>adx_trending</code>, <code>range_pos_50</code>, <code>dist_ema200</code></td>
+            <td>บอก regime ย่อย เช่น volatility สูง/ต่ำ, ตลาดมี trend แค่ไหน และราคาอยู่ตรงไหนใน range</td>
+          </tr>
+          <tr>
+            <td>MT5 Examples indicators</td>
+            <td><code>ex_tema</code>, <code>ex_dema</code>, <code>ex_ama</code>, <code>ex_rvi</code>, <code>ex_mfi</code>, <code>ex_adxw</code>, <code>ex_roc</code></td>
+            <td>เพิ่ม feature จาก indicator ตัวอย่างที่มากับ MT5 เช่น TEMA, DEMA, AMA, RVI, MFI, ADX Wilder, ROC</td>
+          </tr>
+          <tr>
+            <td>Candlestick patterns</td>
+            <td><code>candle_hammer</code>, <code>candle_engulfing</code>, <code>candle_inside</code>, <code>candle_star</code>, <code>candle_piercing</code></td>
+            <td>เข้ารหัส pattern เป็นตัวเลขเพื่อให้โมเดลเห็น context ของรูปแบบแท่งเทียน</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <strong>จุดสำคัญเรื่อง parity:</strong>
+        ถ้าเปลี่ยน input ของ DataCollector_RL เช่น period min/max/step, session, indicator examples
+        หรือใช้ไฟล์ clean ที่ตัด feature ออก ต้องใช้ <code>.params.json</code> ที่ตรงกับ CSV นั้นด้วย
+        เพราะตอน export EA จะเอา parameter และรายชื่อ feature จากโมเดลไปสร้าง config ให้ EA ส่ง feature เข้า ONNX ตามจำนวนและลำดับที่โมเดลถูก train มา
       </div>
     </section>
 

@@ -1230,6 +1230,19 @@ class RLTradingStudio(ctk.CTk):
     def _is_process_busy(self):
         return self.runner.is_running() or getattr(self, "pipeline_running", False)
 
+    def _start_runner(self, cmd, page=None):
+        """Start the shared subprocess runner and remember which page owns it.
+
+        Long-running jobs keep streaming output even if the user navigates away.
+        Route those lines/done events back to the page that started the job,
+        not whichever page is currently visible when the event arrives.
+        """
+        self._active_runner_page = page or self.current_page
+        started = self.runner.start(cmd)
+        if not started:
+            self._active_runner_page = None
+        return started
+
     # --------------------------------------------------------
     # PAGE: FULL PIPELINE
     # --------------------------------------------------------
@@ -6335,7 +6348,7 @@ class RLTradingStudio(ctk.CTk):
         self._train_steps_total = int(steps)
         # ⭐ reset reward graph + threshold tracker for new run
         self._reset_reward_tracking()
-        self.runner.start(cmd)
+        self._start_runner(cmd, "train")
 
     def _stop_training(self):
         if self._is_process_busy():
@@ -6581,7 +6594,7 @@ class RLTradingStudio(ctk.CTk):
         self.status_label.configure(text="● Generating chart...", text_color=COLOR_PURPLE)
 
         # Run subprocess (no metric parsing needed for this)
-        self.runner.start(cmd)
+        self._start_runner(cmd, "backtest")
 
     def _open_chart(self):
         """Open chart HTML in default browser"""
@@ -6633,7 +6646,7 @@ class RLTradingStudio(ctk.CTk):
         self.bt_run_btn.configure(state="disabled")
         self.status_label.configure(text="● Backtesting...", text_color=COLOR_ACCENT)
 
-        self.runner.start(cmd)
+        self._start_runner(cmd, "backtest")
 
     # --------------------------------------------------------
     # PAGE: WALK-FORWARD
@@ -6823,7 +6836,7 @@ class RLTradingStudio(ctk.CTk):
             self.wf_verdict_sub.configure(text="")
         self.wf_run_btn.configure(state="disabled")
         self.status_label.configure(text="● Walk-Forward...", text_color=COLOR_PURPLE)
-        self.runner.start(cmd)
+        self._start_runner(cmd, "walkfwd")
 
     # --------------------------------------------------------
     # PAGE: FINE-TUNE
@@ -6926,7 +6939,7 @@ class RLTradingStudio(ctk.CTk):
         self._log(self.ft_log, f"$ {' '.join(cmd)}", "info")
         self.ft_run_btn.configure(state="disabled")
         self.status_label.configure(text="● Fine-tuning...", text_color=COLOR_YELLOW)
-        self.runner.start(cmd)
+        self._start_runner(cmd, "finetune")
 
     # --------------------------------------------------------
     # PAGE: ANALYZE
@@ -6989,7 +7002,7 @@ class RLTradingStudio(ctk.CTk):
         cmd = [sys.executable, "rl_analyze.py", model, csv]
         self._log(self.an_log, f"$ {' '.join(cmd)}", "info")
         self.status_label.configure(text="● Analyzing...", text_color=COLOR_ACCENT)
-        self.runner.start(cmd)
+        self._start_runner(cmd, "analyze")
 
     # --------------------------------------------------------
     # PAGE: REGIME CHECK
@@ -7318,7 +7331,7 @@ class RLTradingStudio(ctk.CTk):
 
         self._log(self.regime_log, f"$ {' '.join(cmd)}", "info")
         self.status_label.configure(text="● Detecting regime...", text_color=COLOR_ACCENT)
-        self.runner.start(cmd)
+        self._start_runner(cmd, "regime")
 
     def _open_regime_chart(self):
         chart = WORK_DIR / "regime_single.html"
@@ -7387,7 +7400,7 @@ class RLTradingStudio(ctk.CTk):
         self._log(self.regime_log, f"$ {' '.join(masked)}", "info")
         self.status_label.configure(text="● Labeling with Gemini...",
             text_color=COLOR_ACCENT)
-        self.runner.start(cmd)
+        self._start_runner(cmd, "regime")
 
     def _load_regime_results(self):
         """Read regime_single_data.json after subprocess finishes,
@@ -8300,16 +8313,18 @@ Built with: CustomTkinter + stable-baselines3
         try:
             while True:
                 kind, data = self.runner.q.get_nowait()
+                page = getattr(self, "_active_runner_page", None) or self.current_page
                 if kind == 'line':
-                    self._handle_log_line(data)
+                    self._handle_log_line(data, page=page)
                 elif kind == 'done':
-                    self._handle_done(data)
+                    self._handle_done(data, page=page)
+                    self._active_runner_page = None
         except queue.Empty:
             pass
         self.after(100, self._poll_queue)
 
-    def _handle_log_line(self, line):
-        page = self.current_page
+    def _handle_log_line(self, line, page=None):
+        page = page or self.current_page
         log_widget = {
             'train': getattr(self, 'train_log', None),
             'backtest': getattr(self, 'bt_log', None),
@@ -8415,7 +8430,8 @@ Built with: CustomTkinter + stable-baselines3
                     return old_card
         return old_card
 
-    def _handle_done(self, rc):
+    def _handle_done(self, rc, page=None):
+        page = page or self.current_page
         if rc == 0:
             msg = "✓ Done"
             color = COLOR_GREEN
@@ -8434,7 +8450,6 @@ Built with: CustomTkinter + stable-baselines3
         self.status_label.configure(text="● Idle", text_color=COLOR_DIM)
 
         # Log
-        page = self.current_page
         log_widget = {
             'train': getattr(self, 'train_log', None),
             'backtest': getattr(self, 'bt_log', None),

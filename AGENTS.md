@@ -1,27 +1,35 @@
 # AGENTS.md — Meta RL Trading Project
 
 > Guide for AI agents (Claude Code, Codex, Cursor) working on this codebase.
-> Last updated: 2026-05-31
-> For a full dependency map see `graphify-out/GRAPH_REPORT.md` (1,257 nodes, 1,761 edges, 75 communities).
+> Last updated: 2026-07-06
+> For a full dependency map see `graphify-out/GRAPH_REPORT.md`.
+>
+> **Repo was reorganized (2026-06/07):** supporting scripts moved under `tools/`,
+> old PyCaret/MQL files under `legacy/`, generated model+backtest output under
+> `artifacts/models/<name>/`, and docs under `docs/`. RL actions and rewards are
+> now **configurable profiles** (see §4 "Action & Reward profiles" and §5). Paths
+> below reflect the new layout.
 
 ---
 
 ## 1. What This Is
 
-End-to-end **Reinforcement Learning (PPO)** trading system for forex/gold (EUR/USD, XAUUSD).
+End-to-end **Reinforcement Learning (PPO)** trading system for forex/gold. Datasets in
+active use: EUR/USD, GBP/USD (GU), USD/JPY (UJ), AUD/USD (AU) — mostly H4 — plus XAUUSD.
 Pipeline: MT5 historical data → train RL agent → backtest → deploy to MetaTrader 5.
 
 The active system is **`rl_app.py`** (class `RLTradingStudio`) — a CustomTkinter GUI
 that orchestrates the whole workflow through subprocess calls to CLI scripts.
 
-> **Legacy note:** `app.py` (`TrainerApp`) is an older **PyCaret supervised** trainer.
-> It is NOT part of the RL workflow. Ignore it unless explicitly asked.
+> **Legacy note:** `legacy/pycaret/app.py` (`TrainerApp`) is an older **PyCaret supervised**
+> trainer. It is NOT part of the RL workflow. Everything under `legacy/` (old PyCaret
+> scripts + old MQL collectors/EAs) is kept for reference only — ignore unless asked.
 
 ### Two deployment paths (both valid)
 1. **ONNX → MT5 EA** — `export_to_onnx.py` converts the PPO `.zip` to `.onnx`, embeds it
    in a generated `.mq5` Expert Advisor (via `#resource`), runs inside MT5 / Strategy Tester.
-2. **Python live bot** — `live_trader.py` runs a loop using the MetaTrader5 Python API
-   directly, logging trades to SQLite. No MQL5 compile needed.
+2. **Python live bot** — `tools/mt5/live_trader.py` runs a loop using the MetaTrader5 Python
+   API directly, logging trades to SQLite. No MQL5 compile needed.
 
 ---
 
@@ -42,43 +50,80 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Task | Command |
 |------|---------|
 | Launch GUI | `run_rl_app.bat` or `.venv/Scripts/python.exe rl_app.py` |
-| Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--eval_csv <csv>]` |
+| Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--reward_profile balanced] [--action_profile basic_4] [--eval_csv <csv>]` |
 | Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent` |
 | Backtest chart | `python backtest_chart.py <model> <csv> --limit 5000` |
 | Walk-forward | `python rl_walkforward.py <csv> --windows 5 --steps 50000` |
 | Export to ONNX | `python export_to_onnx.py <model> [--name <deploy>]` |
 | Fine-tune | `python rl_finetune.py <base> --old_csv X --new_csv Y --steps 50000 --name <new>` |
 | Relabel targets | `python relabel.py <csv> --mode quantile` |
-| Feature engineering | `python feature_engineer.py <csv> [--target_tf D1]` |
-| Pull MT5 data | `python pull_mt5_data.py --start 2010-01-01 --end 2020-12-31 --name <out>` |
-| Quarterly cycle | `python quarterly_update.py [--auto-deploy] [--dry-run]` |
-| Live trading | `python live_trader.py [--demo|--live|--paper]` |
+| Feature engineering | `python tools/data/feature_engineer.py <csv> [--target_tf D1]` |
+| Pull MT5 data | `python tools/mt5/pull_mt5_data.py --start 2010-01-01 --end 2020-12-31 --name <out>` |
+| Quarterly cycle | `python tools/automation/quarterly_update.py [--auto-deploy] [--dry-run]` |
+| Live trading | `python tools/mt5/live_trader.py [--demo|--live|--paper]` |
 | Regime detection (single method) | `python regime_compare.py <csv> --method {hmm,kmeans,pelt} [--n-states N] [--k K] [--penalty P]` |
 | Regime detection (compare 6 methods) | `python regime_compare.py <csv> --method all` |
 | Auto-label price shocks with Gemini | `python gemini_labeler.py <csv> --symbol GBPUSD --top-k 15 --api-key $env:GEMINI_API_KEY` |
+
+> Scripts under `tools/` use `Path(__file__)`-relative or repo-root-relative imports;
+> run them from the repo root (CWD = project root) so `import action_profiles` etc. resolve.
 
 ---
 
 ## 4. File Map (RL system)
 
-### Core engine
+### Repo layout (post-reorg)
+```
+<root>/                RL engine + profiles kept at root (imported by tools/ and rl_app)
+  action_profiles.py   reward_profiles.py  reward_formula.py  artifact_paths.py
+  rl_train.py  trading_env.py  backtest_live.py  backtest_chart.py
+  rl_walkforward.py  rl_finetune.py  export_to_onnx.py  relabel.py  rl_analyze.py
+  regime_compare.py  gemini_labeler.py  build_training_from_collector.py
+tools/
+  analysis/    grid_search, rl_backtest, rl_backtest_filtered, analyze_confidence, compare_features
+  automation/  quarterly_update, trigger_finetune
+  data/        feature_engineer, fix_csv_header
+  mt5/         mt5_connector, features, live_trader, pull_mt5_data
+  generators/  pptx/docx slide+doc generators
+legacy/
+  pycaret/     app.py, backtest.py, predict.py, add_lag_features.py, signal_server.py, run.bat
+  mql/         old MQL4/5 collectors + GA/RL bridge EAs
+artifacts/models/<name>/   generated model + backtest output (see §6)
+reward_profile_configs/    example reward-profile JSON presets
+mt5_files/MQL5/            indicators, DataCollector_RL, EA template, RL_Indicators.mqh
+docs/                      metafxclub studio guide/ (flow) + explainers/ (background)
+reference/                 MIT-Quant-Bible.md, ml4t/  (quant theory)
+```
+
+### Core engine (root)
 | File | Role |
 |------|------|
-| `rl_app.py` | **Main GUI** (`RLTradingStudio`, ~6000 lines). Pages: Train, Pipeline, Backtest, Walk-forward, Fine-tune, Analyze, **Regime Check** (new), Models, Tools, Settings. Drives everything via subprocess. |
-| `trading_env.py` | Gymnasium env (`TradingEnv`). 4 actions, V4 reward, random episode start. The single source of truth for env behavior. |
-| `rl_train.py` | PPO trainer CLI. Loads CSV → time-sorted split → **train-only** z-score normalize → train → save `.zip` + `_norm.csv` + forwards `<input>.params.json` sidecar → `<model>.params.json`. Accepts `--train_pct` (decimal or percentage). |
-| `backtest_live.py` | Production-grade backtest (`run_backtest_live`, `SimAccount`). Matches `live_trader.py` logic exactly. Confidence filter + 3-layer risk. Window auto-detected from `model.observation_space.shape`. |
+| `rl_app.py` | **Main GUI** (`RLTradingStudio`, ~8000 lines). Pages: Train, Pipeline, Backtest, Walk-forward, Fine-tune, Analyze, **Regime Check**, Models, Tools, Settings. Drives everything via subprocess. Train page exposes **Reward Profile** + **Action Profile** pickers. |
+| `trading_env.py` | Gymnasium env (`TradingEnv`). Action space + reward are **profile-driven**: `action_profile` (default `basic_4`) sets `spaces.Discrete(len(actions))`; `reward_profile` (default `balanced`) sets the reward weights. Imports `get_reward_profile` + `get_action_profile`. Single source of truth for env behavior. |
+| `rl_train.py` | PPO trainer CLI. Loads CSV → time-sorted split → **train-only** z-score normalize → train → saves under `artifacts/models/<name>/` (`.zip` + `_norm.csv` + `.params.json` + `.train.json` run metadata) via `artifact_paths`. Accepts `--train_pct`, `--reward_profile`/`--reward_overrides`/`--reward_profile_json`/`--reward_formula`, `--action_profile`/`--action_params`/`--action_profile_json`. Forwards the input CSV's `.params.json` sidecar. |
+| `backtest_live.py` | Production-grade backtest (`run_backtest_live`, `SimAccount`). Matches `tools/mt5/live_trader.py` logic. Confidence filter + 3-layer risk. Window auto-detected from `model.observation_space.shape`. Defaults: `--conf 0`, max 1 position. |
 | `export_to_onnx.py` | PPO `.zip` → `.onnx` + `_config.mqh` + `_EA.mq5` (from template). Embeds `<model>.params.json` → emits `RL_ApplyDataCollectorConfig()` in the `.mqh` so the EA reproduces the collector's exact indicator periods. `PolicyWrapper` adds softmax. |
+
+### Action & Reward profiles (root) — configurable RL behavior
+| File | Role |
+|------|------|
+| `action_profiles.py` | Presets for **what the model may do**. `ACTION_PROFILES`: `basic_4` (Hold/Buy/Sell/Close, 4 actions) and `manage_6` (+ Break-Even / Trailing, 6 actions). Changing the profile changes the **model output dimension** → a model trained under one profile CANNOT be reused under another. Consumed by `trading_env`, `backtest_live`, and the EA export. JSON presets loadable via `load_action_profile_json` (schema `metafxclub.action_profile.v1`). |
+| `reward_profiles.py` | Presets for **how the agent is rewarded during training** (does not affect execution after training). `REWARD_PROFILES`: `balanced` (the V4 honest reward — default), `anti_overtrade`, `low_drawdown`, `trend_follower`, `scalper`. Each is a weight dict (`close_pnl_mult`, `trade_penalty`, `giveback_*`, `time_decay_*`, …). Overridable per-run and via `reward_profile_configs/*.json`. |
+| `reward_formula.py` | **Developer mode**: lets a reward profile carry a custom formula string, parsed by a safe AST evaluator (whitelisted vars + `abs/min/max/round/sqrt/log/exp/tanh/clip/sign`). `DEFAULT_REWARD_FORMULA` reproduces the balanced reward. `validate_reward_formula` rejects unsafe/unknown tokens. |
+| `artifact_paths.py` | Central path helpers for `artifacts/models/<name>/` (`model_dir`, `backtests_dir`, `logs_dir`, `best_dir`, `final_model_path`, `ensure_model_dirs`). Legacy root-level artifacts stay discoverable so old runs still load. |
+| `reward_profile_configs/` | Example JSON presets: `balanced_custom_1.json`, `anti_overtrade_example.json`, `developer_formula_example.json` (+ README). |
 
 ### Validation & tuning
 | File | Role |
 |------|------|
-| `rl_walkforward.py` | 5-window rolling train/test. Robustness gate (PF > 1.0 every window). |
-| `rl_finetune.py` | Smart fine-tune: mix old(30%) + new(70%), lower LR (1e-4), ~50k steps. Prevents catastrophic forgetting. |
-| `grid_search.py` | Sweep `conf × atr_sl × atr_tp` over `backtest_live.py`, report best PF. |
-| `rl_backtest.py` | Quick env-based backtest + equity curve. |
-| `rl_backtest_filtered.py` | Backtest that skips low-confidence trades (simulate selective entry). |
-| `rl_analyze.py` / `analyze_confidence.py` | Confidence → accuracy analysis (is there a usable threshold?). |
+| `rl_walkforward.py` (root) | 5-window rolling train/test. Robustness gate (PF > 1.0 every window). Validates the training *recipe*, not a saved model file (retrains per window). |
+| `rl_finetune.py` (root) | Smart fine-tune: mix old(30%) + new(70%), lower LR (1e-4), ~50k steps. Prevents catastrophic forgetting. |
+| `rl_analyze.py` (root) | Confidence → accuracy analysis (is there a usable threshold?). |
+| `tools/analysis/grid_search.py` | Sweep `conf × atr_sl × atr_tp` over `backtest_live.py`, report best PF. |
+| `tools/analysis/rl_backtest.py` | Quick env-based backtest + equity curve. |
+| `tools/analysis/rl_backtest_filtered.py` | Backtest that skips low-confidence trades (simulate selective entry). |
+| `tools/analysis/analyze_confidence.py` | Older confidence-vs-accuracy analysis. |
+| `tools/analysis/compare_features.py` | Diff MT5 live features vs training CSV per feature (parity debugging). |
 
 ### Regime detection & event labeling (new)
 | File | Role |
@@ -91,19 +136,21 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 ### Data layer
 | File | Role |
 |------|------|
-| `pull_mt5_data.py` | Pull bars from MT5 + compute features + label → CSV. |
-| `mt5_connector.py` | MT5 API wrapper (`MT5Connector`): connect, get_rates, send_buy/sell, close_all. Default symbol `XAUUSDm`. |
-| `features.py` | Python feature engine (`calc_features`), mirrors `DataCollector_v2.mq4`. Used by `live_trader.py`. |
-| `feature_engineer.py` | Phase A features: multi-TF, volatility regime, range/trend → `<input>_enriched.csv`. |
-| `relabel.py` | Re-label `future_return` → target (quantile / fixed / binary). |
-| `add_lag_features.py` | Add lag features (memory) for supervised models. |
-| `fix_csv_header.py` | Repair DataCollector CSV (header + BOM). |
+| `build_training_from_collector.py` (root) | Collector CSV → training CSV (adds/forwards the feature set + `.params.json`). First step after importing a DataCollector_RL dump. |
+| `relabel.py` (root) | Re-label `future_return` → target (quantile / fixed / binary). Legacy supervised concept; RL does not need targets. |
+| `tools/mt5/pull_mt5_data.py` | Pull bars from MT5 + compute features + label → CSV. |
+| `tools/mt5/mt5_connector.py` | MT5 API wrapper (`MT5Connector`): connect, get_rates, send_buy/sell, close_all. Default symbol `XAUUSDm`. |
+| `tools/mt5/features.py` | Python feature engine (`calc_features`), mirrors the MQL collector. Used by `tools/mt5/live_trader.py`. |
+| `tools/data/feature_engineer.py` | Phase A features: multi-TF, volatility regime, range/trend → `<input>_enriched.csv`. |
+| `tools/data/fix_csv_header.py` | Repair DataCollector CSV (header + BOM). |
+| `legacy/pycaret/add_lag_features.py` | Add lag features (memory) for the old supervised models. |
 
 ### Deployment & orchestration
 | File | Role |
 |------|------|
-| `live_trader.py` | Production Python live bot. MT5 API loop + SQLite (`live_trades.db`). Edit CONFIG block at top. |
-| `quarterly_update.py` | Full cycle orchestrator: pull → features → fine-tune → walk-forward → decision gate → (optional) deploy → notify. |
+| `tools/mt5/live_trader.py` | Production Python live bot. MT5 API loop + SQLite (`live_trades.db`). Edit CONFIG block at top. |
+| `tools/automation/quarterly_update.py` | Full cycle orchestrator: pull → features → fine-tune → walk-forward → decision gate → (optional) deploy → notify. |
+| `tools/automation/trigger_finetune.py` | Trigger-based fine-tune orchestrator (checks data-drift / schedule, kicks off `rl_finetune`). |
 
 ### MQL5 (mt5_files/MQL5/)
 | File | Role |
@@ -118,11 +165,18 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 
 ## 5. Core Concepts
 
-### Actions (Discrete(4) — `trading_env.py`)
-`0 = Hold` · `1 = Buy` (open long) · `2 = Sell` (open short) · `3 = Close` (close position)
+### Actions (profile-driven — `action_profiles.py`)
+The action space is chosen by an **action profile**, not hardcoded:
+- `basic_4` (default): `0 = Hold` · `1 = Buy` · `2 = Sell` · `3 = Close`
+- `manage_6`: adds Break-Even and Trailing-stop management actions (6 total)
 
-### V4 Reward (the "Honest" reward)
+`trading_env` builds `spaces.Discrete(len(profile["actions"]))`. **Switching profile
+changes the model's output dimension** — a model trained on `basic_4` cannot load under
+`manage_6` and vice-versa. The profile must match across train → backtest → export → EA.
+
+### Reward profiles (`reward_profiles.py`) — default `balanced` = the V4 "Honest" reward
 ```
+balanced (default V4):
 + Net-PnL × 50         on close          (real $ dominates)
 + 0.01 bonus           if net pnl > 0.5% (meaningful win)
 + unrealized × 0.1                        (small direction hint)
@@ -131,6 +185,10 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 - hold idle penalty -0.0001 / bar         (while flat)
 - time-decay        -0.0002               (held > 70% of max_hold)
 → Break-even win-rate ~53% (matches real-$ break-even)
+
+Other presets: anti_overtrade, low_drawdown, trend_follower, scalper — each re-weights
+the same terms. Developer mode (reward_formula.py) allows a custom safe-expression formula.
+The reward profile only affects TRAINING; it does not change backtest/live execution.
 ```
 
 ### Confidence filter (execution gate, not train logic)
@@ -152,14 +210,26 @@ flat for 10–50k steps→stop, train PF≫test PF→overfit.
 
 ## 6. DO NOT TOUCH (generated / templates)
 
+Generated model + backtest output now lives under **`artifacts/models/<name>/`**:
+```
+artifacts/models/<name>/
+  <name>.zip  <name>_norm.csv  <name>.params.json  <name>.train.json
+  backtests/  (<name>_backtest_chart.html, _live_bt_equity.png, _live_bt_trades.csv, _live_bt.meta.json)
+  logs/       (tensorboard events, evaluations.npz)
+  best/       (best_model.zip)
+```
+A few sample models (`rl_uj_h4`, `rl_au_h4`, `rl_uj_extra`) are committed so the Backtest
+page works out-of-the-box; everything else here is gitignored.
+
 | Pattern | Why |
 |---------|-----|
 | `mt5_files/MQL5/Experts/*_template.mq5` | Template with placeholders; edited only by `export_to_onnx.py`. |
+| `mt5_files/MQL5/**/*.ex5` | Compiled MQL5 binaries — rebuilt from the `.mq5`/`.mqh` sources in MetaEditor, don't hand-edit. |
 | `*_config.mqh` | Auto-generated per model (feature list + norm mean/std). Regenerate via export, never hand-edit. |
 | `*_EA.mq5` (non-template) | Generated from template (gitignored per deployment). |
-| `*.onnx`, `*.zip`, `*_norm.csv`, `*_logs/`, `*_best/` | Model artifacts (gitignored). |
-| `*_live_bt_trades.csv`, `*_equity.png`, `*_chart.html` | Backtest outputs (gitignored). |
-| `branding_config.json` | Per-user GUI branding override (gitignored). |
+| `artifacts/models/<name>/` | Generated model + backtest output. Managed by `artifact_paths` — don't hand-edit (except the curated samples). |
+| `*.onnx`, `*.zip`, `*_norm.csv`, `logs/`, `best/` | Model artifacts (mostly gitignored). |
+| `branding_config.json`, `api_keys.json`, `known_events.json` | Per-user runtime files (gitignored). |
 | `graphify-out/` | Knowledge-graph cache. |
 
 ---
@@ -247,26 +317,36 @@ the post-Brexit subset removes the distribution shift.
 | Gemini run misses Brexit despite z=7.0 being highest | `detect_shocks` used to take top-K*5 candidates, **sort by date**, then iterate front-to-back — once early-year clustered shocks filled K slots, later high-z events were dropped. Now iterates *descending z-score* with a global min-gap check. |
 | Gemini API rate-limit errors | Free-tier limit is 15 req/min. `gemini_labeler.py` sleeps `RATE_LIMIT_SLEEP = 4.5s` between calls so a 15-event refresh fits under the limit. |
 | Looking up Gemini key in code | Never hardcode. Stored in gitignored `api_keys.json`, accessed via `_load_api_keys()`. The Settings page UI saves/loads it; the masked entry shows `Show` toggle for visibility. |
+| Model "size mismatch" / obs or action-dim error on load | The saved model's **action profile** or **window/feature count** differs from the current run. An action profile change (`basic_4`↔`manage_6`) changes the output dim; you must retrain, not reload. Keep the profile consistent across train → backtest → export → EA. |
+| Reward change had no effect on backtest | Reward profiles only shape **training**. Backtest/live execution is unaffected — you must retrain to see a reward-profile change. |
+| Import error running a `tools/` script | Run from the repo root so root-level imports (`action_profiles`, `artifact_paths`, …) resolve. `cd` into `tools/…` and it breaks. |
+| Log/metrics show up on the wrong GUI page | Fixed (`8925489`): the process runner now routes stdout/`done` to the **page that started the run** (owner page), not just `current_page`. |
+| Old model artifacts not found after reorg | `artifact_paths` still checks legacy root-level paths as a fallback, so pre-reorg `.zip`/`_norm.csv` at the repo root remain loadable. New runs write under `artifacts/models/<name>/`. |
 
 ---
 
 ## 10. Reference Documents
 
-- `README.md` — project overview + architecture diagram.
-- `PRODUCTION_README.md` — full 5-step production deployment guide (pull → train → WF → gate → deploy).
+- `README.md` — project overview, install, Codex workflow, sample models.
+- `docs/metafxclub studio guide/` — **current user flow guide** (start at `00_reading_order.md`):
+  dashboard flow → data prep → quality/regime check → train → backtest → walk-forward →
+  custom feature guide → project folder map. HTML deep-dives, one per dashboard step.
+- `docs/codex_git_update_prompts.md` — safe "pull + reinstall deps" prompt for Codex.
+- `docs/codex_custom_action_prompts.md` — prompt for asking Codex to add/change an Action
+  Profile across train/backtest/fine-tune/walk-forward/export/EA consistently.
+- `docs/explainers/11_production_readme.md` — full 5-step production deployment guide.
 - `mt5_files/README_ONNX_Setup.md` — MT5 ONNX setup.
-- `docs/metafxclub studio guide/02_data_prep_import_detail.html` — DataCollector_RL import workflow.
 - `mt5_files/MQL5/Indicators/README_CandlePatterns.md` — candle pattern reference.
 - `graphify-out/GRAPH_REPORT.md` — knowledge graph (god nodes, communities, gaps). Regenerate with `/graphify` or `/graphify . --update`.
 - `graphify-out/graph.html` — interactive Pyvis visualization. Open in any browser, no server needed.
 
-### Project HTML explainers (open in browser)
-- `gbpusd_regimes.html` — chart of the 3 GBP/USD regimes (pre-Crisis, Crisis/QE, Brexit Era) with regime-mean overlays.
-- `regime_compare.html` — side-by-side comparison of all six regime-detection methods on the same series.
-- `regime_single.html` — single-method result (regenerated on each Regime Check run).
-- `ParityConfig_explained.html` — why `.params.json` sidecars exist and how `RL_ApplyDataCollectorConfig` works.
-- `docs/explainers/05_data_collector_v4_explained.html` — legacy explainer for the old v4 collector; current workflow uses `DataCollector_RL.mq5`.
-- `ClassImbalance_explained.html` — UP/DOWN/FLAT class-balance handling in `relabel.py`.
+### Background explainers (`docs/explainers/`, open in browser)
+- `07_rl_reward_explained.html` — the reward terms + how reward profiles re-weight them.
+- `04_data_tools_modules_explained.html` — the Data Tools page modules.
+- `06_parity_config_explained.html` — why `.params.json` sidecars exist and how `RL_ApplyDataCollectorConfig` works.
+- `05_data_collector_v4_explained.html` — legacy v4 collector; current workflow uses `DataCollector_RL.mq5`.
+- `13_class_imbalance_explained.html` — UP/DOWN/FLAT class-balance handling in `relabel.py` (legacy supervised).
+- `regime_single.html` (root) — single-method regime result, regenerated on each Regime Check run.
 
 ### Knowledge Base (quant theory)
 - `reference/MIT-Quant-Bible.md` — MIT Sloan Quant Bible (converted from PDF, 51 pages).

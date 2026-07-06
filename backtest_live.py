@@ -134,13 +134,24 @@ def _resolve_action_profile(args, model):
 class SimAccount:
     """จำลอง broker account สำหรับ backtest"""
 
-    def __init__(self, initial_balance=10000.0, spread_pct=0.0002, commission=0.0001):
+    def __init__(self, initial_balance=10000.0, spread_pct=0.0002, commission=0.0001,
+                 intrabar="pessimistic", stop_slippage=0.0):
         self.initial = initial_balance
         self.balance = initial_balance
         self.equity = initial_balance
         self.peak = initial_balance
         self.spread = spread_pct
         self.commission = commission
+        # Intrabar assumption when BOTH SL and TP fall inside one bar's range:
+        # OHLC alone cannot tell which was hit first.
+        #   pessimistic (default) -> assume SL first  (worst case)
+        #   optimistic            -> assume TP first  (best case)
+        # Run both modes to bracket the true result.
+        self.intrabar = intrabar
+        # Extra adverse fill on STOP orders only (stops fill at market when
+        # triggered -> slip past the level; limits/TP fill at price or better).
+        self.stop_slippage = stop_slippage
+        self.ambiguous_fills = 0   # exits where both SL & TP were inside the bar
         self.positions = []  # list of dicts
         self.trade_history = []
         self.equity_curve = [initial_balance]
@@ -223,6 +234,7 @@ class SimAccount:
             'pnl_pct': net_pnl_pct,
             'pnl_dollars': pnl_dollars,
             'reason': reason,
+            'ambiguous': False,  # set True by check_sl_tp when SL & TP shared the bar
         }
         self.trade_history.append(trade)
         del self.positions[idx]
@@ -249,22 +261,45 @@ class SimAccount:
     def drawdown_pct(self):
         return (self.equity - self.peak) / self.peak
 
+    def _stop_fill_price(self, p):
+        """SL fill price incl. stop slippage (stops fill worse than the level)."""
+        if p['side'] == 'long':
+            return p['sl'] * (1 - self.stop_slippage)
+        return p['sl'] * (1 + self.stop_slippage)
+
     def check_sl_tp(self, bar_high: float, bar_low: float, bar_idx: int, bar_time):
-        """Check if any position hit SL/TP within this bar"""
+        """Check if any position hit SL/TP within this bar.
+
+        When both levels are inside the bar's range the true order is unknown
+        from OHLC -> resolve by self.intrabar mode and count it, so reports can
+        show how much of the result depends on this assumption.
+        """
         for i in range(len(self.positions) - 1, -1, -1):
             p = self.positions[i]
             if p['side'] == 'long':
-                # Long: SL below, TP above
-                if p['sl'] > 0 and bar_low <= p['sl']:
-                    self.close_position(i, p['sl'], bar_idx, bar_time, "SL")
-                elif p['tp'] > 0 and bar_high >= p['tp']:
-                    self.close_position(i, p['tp'], bar_idx, bar_time, "TP")
+                sl_hit = p['sl'] > 0 and bar_low <= p['sl']
+                tp_hit = p['tp'] > 0 and bar_high >= p['tp']
             else:
-                # Short: SL above, TP below
-                if p['sl'] > 0 and bar_high >= p['sl']:
-                    self.close_position(i, p['sl'], bar_idx, bar_time, "SL")
-                elif p['tp'] > 0 and bar_low <= p['tp']:
-                    self.close_position(i, p['tp'], bar_idx, bar_time, "TP")
+                sl_hit = p['sl'] > 0 and bar_high >= p['sl']
+                tp_hit = p['tp'] > 0 and bar_low <= p['tp']
+
+            if not sl_hit and not tp_hit:
+                continue
+
+            ambiguous = sl_hit and tp_hit
+            if ambiguous:
+                self.ambiguous_fills += 1
+                take_sl = (self.intrabar == "pessimistic")
+            else:
+                take_sl = sl_hit
+
+            if take_sl:
+                trade = self.close_position(i, self._stop_fill_price(p),
+                                            bar_idx, bar_time, "SL")
+            else:
+                trade = self.close_position(i, p['tp'], bar_idx, bar_time, "TP")
+            if trade is not None:
+                trade['ambiguous'] = ambiguous
 
     def move_sl_breakeven(self, current_price, min_profit_pct=0.001):
         """Move SL to entry for positions that already have enough floating profit."""
@@ -314,6 +349,8 @@ def run_backtest_live(args):
     print(f"  Max positions: {args.max_positions}")
     print(f"  Max hold    : {args.max_hold} bars")
     print(f"  Hard DD     : {args.hard_dd:.0%}")
+    print(f"  Intrabar    : {getattr(args, 'intrabar', 'pessimistic')}"
+          f" | stop slippage {getattr(args, 'stop_slippage', 0.0):.4%}")
     print("=" * 60)
 
     # Load data
@@ -389,6 +426,8 @@ def run_backtest_live(args):
             "balance": args.balance,
             "spread": args.spread,
             "commission": args.commission,
+            "intrabar": getattr(args, 'intrabar', 'pessimistic'),
+            "stop_slippage": getattr(args, 'stop_slippage', 0.0),
             "window": args.window,
         },
     }
@@ -429,7 +468,9 @@ def run_backtest_live(args):
     # Setup account
     account = SimAccount(initial_balance=args.balance,
                           spread_pct=args.spread,
-                          commission=args.commission)
+                          commission=args.commission,
+                          intrabar=getattr(args, 'intrabar', 'pessimistic'),
+                          stop_slippage=getattr(args, 'stop_slippage', 0.0))
 
     # Stats counters
     n_signals = {int(action["id"]): 0 for action in action_profile_cfg["actions"]}
@@ -697,6 +738,19 @@ def run_backtest_live(args):
     print(f"    Skipped (max positions) : {n_skipped_pos:,}")
     print(f"    Force closed (max hold) : {n_force_close:,}")
     print(f"    Hard stops triggered    : {n_hard_stop:,}")
+
+    # Intrabar ambiguity: exits where SL & TP were both inside one bar.
+    # These were resolved by assumption, not data — the bigger this share,
+    # the wider the gap between pessimistic and optimistic runs.
+    sl_tp_exits = sum(1 for t in trades if t['reason'] in ('SL', 'TP'))
+    amb = account.ambiguous_fills
+    amb_share = amb / sl_tp_exits if sl_tp_exits else 0.0
+    print(f"\n  Execution realism ({account.intrabar} mode):")
+    print(f"    Ambiguous SL/TP bars    : {amb:,} of {sl_tp_exits:,} SL/TP exits ({amb_share:.1%})")
+    if amb_share > 0.10:
+        print(f"    [warn] >10% of exits rely on the intrabar assumption —")
+        print(f"           re-run with --intrabar optimistic to bracket the result,")
+        print(f"           and treat live results as somewhere in between.")
     print("=" * 60)
 
     # Save trades + equity curve
@@ -721,6 +775,9 @@ def run_backtest_live(args):
         "skipped_max_positions": n_skipped_pos,
         "force_closed_max_hold": n_force_close,
         "hard_stops": n_hard_stop,
+        "intrabar_mode": account.intrabar,
+        "ambiguous_fills": amb,
+        "ambiguous_share_of_sl_tp": amb_share,
     }
     if args.save:
         out_csv = artifact_trades_path(args.model)
@@ -800,6 +857,16 @@ def main():
     ap.add_argument("--spread", type=float, default=0.0002,
                     help="spread %% (0.02%% default)")
     ap.add_argument("--commission", type=float, default=0.0001)
+
+    # Execution realism
+    ap.add_argument("--intrabar", default="pessimistic",
+                    choices=["pessimistic", "optimistic"],
+                    help="when SL & TP fall inside one bar: pessimistic=SL first "
+                         "(default), optimistic=TP first. Run both to bracket "
+                         "the true result")
+    ap.add_argument("--stop_slippage", type=float, default=0.0,
+                    help="extra adverse fill on SL stop orders, as price fraction "
+                         "(e.g. 0.0001 = 0.01%%). TP/limit fills are not slipped")
 
     # Data split
     ap.add_argument("--start", type=float, default=0.0,

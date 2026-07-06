@@ -6460,12 +6460,31 @@ class RLTradingStudio(ctk.CTk):
         self.bt_tp = ctk.CTkEntry(risk); self.bt_tp.insert(0, "4.0")
         self.bt_tp.grid(row=4, column=1, sticky="ew", padx=18, pady=(0, 16))
 
+        # Execution realism: intrabar assumption + stop slippage
+        ctk.CTkLabel(risk, text="Intrabar Fill", text_color=COLOR_DIM
+                      ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
+        ctk.CTkLabel(risk, text="Stop Slippage %", text_color=COLOR_DIM
+                      ).grid(row=5, column=1, sticky="w", padx=18, pady=(0, 4))
+        self.bt_intrabar = ctk.CTkOptionMenu(risk,
+            values=["pessimistic (SL first) ⭐", "optimistic (TP first)"],
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+        self.bt_intrabar.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 4))
+        self.bt_stop_slip = ctk.CTkEntry(risk, placeholder_text="0.01")
+        self.bt_stop_slip.insert(0, "0.01")
+        self.bt_stop_slip.grid(row=6, column=1, sticky="ew", padx=18, pady=(0, 4))
+        ctk.CTkLabel(risk,
+            text="ถ้า SL+TP อยู่ใน bar เดียว OHLC บอกไม่ได้ว่าโดนอะไรก่อน → รันทั้ง 2 โหมด"
+                 "เพื่อดูช่วงผลจริง · slippage คิดเฉพาะ SL (stop order)",
+            font=ctk.CTkFont(size=10), text_color=COLOR_DIM,
+            wraplength=380, justify="left"
+            ).grid(row=7, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 12))
+
         # Window size — auto-detected from the model; leave blank
         ctk.CTkLabel(risk, text="Window Size (auto-detected — leave blank)",
                       text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
-                      ).grid(row=5, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=8, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 4))
         self.bt_window = ctk.CTkEntry(risk, placeholder_text="auto (from model)")
-        self.bt_window.grid(row=6, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 16))
+        self.bt_window.grid(row=9, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 16))
 
         # Run button + stats
         run_row = ctk.CTkFrame(page, fg_color="transparent")
@@ -6629,6 +6648,14 @@ class RLTradingStudio(ctk.CTk):
         mode_label = self.bt_mode.get()
         mode = "pure_agent" if "Pure" in mode_label else "agent_sltp"
 
+        # Intrabar assumption + stop slippage (Execution realism)
+        intrabar = "optimistic" if "optimistic" in self.bt_intrabar.get() else "pessimistic"
+        # UI takes percent (0.01 = 0.01%); CLI takes price fraction
+        try:
+            stop_slip = float(self.bt_stop_slip.get().strip() or "0") / 100.0
+        except ValueError:
+            stop_slip = 0.0
+
         # Use backtest_live.py for realistic results
         cmd = [
             sys.executable, "backtest_live.py", model, csv,
@@ -6640,6 +6667,8 @@ class RLTradingStudio(ctk.CTk):
             "--window", self.bt_window.get().strip() or "0",  # 0 = auto-detect from model
             "--start", str(self._parse_train_pct(self.bt_start.get(), 0.0)),  # skip frac
             "--mode", mode,
+            "--intrabar", intrabar,
+            "--stop_slippage", str(stop_slip),
         ]
 
         self._log(self.bt_log, f"$ {' '.join(cmd)}", "info")

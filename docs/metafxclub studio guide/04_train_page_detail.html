@@ -184,7 +184,10 @@
         <a href="#inputs">ไฟล์ที่ต้องใช้</a>
         <a href="#settings">ค่าหลัก</a>
         <a href="#suggested-steps">Suggested Steps</a>
+        <a href="#advanced-cards">กล่อง Advanced</a>
+        <a href="#reward-profile">Reward Settings</a>
         <a href="#action-profile">Action Profile</a>
+        <a href="#custom-action-flow">เพิ่ม Action ใหม่</a>
         <a href="#confidence">Confidence Filter</a>
         <a href="#advanced">Advanced PPO</a>
         <a href="#logs">อ่าน Log</a>
@@ -489,6 +492,50 @@
       </div>
     </section>
 
+    <section id="advanced-cards">
+      <h2>3 กล่อง Advanced ในหน้า Train</h2>
+      <p>
+        กล่องในรูปเป็นส่วนที่เปลี่ยน “วิธีที่ agent เรียนรู้” และ “สิ่งที่ agent ทำได้”
+        ไม่ใช่แค่หน้าตา UI ดังนั้นควรปรับแบบมีสมมติฐาน ทดลองทีละชุด และเทียบผลด้วย Backtest/Walk-Forward
+        หลังจาก train ใหม่ทุกครั้ง
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>กล่องในหน้า Train</th>
+            <th>ควบคุมอะไร</th>
+            <th>ส่งผลกับไฟล์/ขั้นตอนไหน</th>
+            <th>ควรแตะเมื่อไหร่</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Advanced PPO Settings</strong></td>
+            <td>hyperparameters ของ PPO เช่น learning rate, rollout, batch, discount และ critic loss</td>
+            <td>ส่งเข้า <code>rl_train.py</code> แล้วบันทึกใน <code>&lt;model&gt;.train.json</code></td>
+            <td>เมื่อ metric เช่น <code>approx_kl</code>, <code>clip_fraction</code>, <code>value_loss</code> บอกว่า train ไม่เสถียร</td>
+          </tr>
+          <tr>
+            <td><strong>Advanced Reward Settings</strong></td>
+            <td>น้ำหนัก reward ที่ใช้สอน agent เช่น ให้รางวัลกำไรจริง, ลงโทษ overtrade, time decay, give-back</td>
+            <td>ส่งเป็น <code>reward_profile</code>, <code>reward_overrides</code> หรือ <code>reward_profile_json</code> ตอน train</td>
+            <td>เมื่ออยากเปลี่ยนนิสัยของ agent เช่น ให้เข้าไม้น้อยลง, ลด drawdown, ถือ trend นานขึ้น หรือถือสั้นลง</td>
+          </tr>
+          <tr>
+            <td><strong>Action Profile &amp; Parameters</strong></td>
+            <td>ชุด action ที่โมเดล output ได้ เช่น 4 action พื้นฐาน หรือเพิ่ม action จัดการ SL</td>
+            <td>เปลี่ยน <code>action_space</code>, output dimension ของ PPO, backtest, export และ EA live</td>
+            <td>เมื่ออยากให้โมเดลไม่ได้แค่ Buy/Sell/Close แต่บริหาร position เช่น Move SL to BE หรือ Trail SL</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="warnbox">
+        ถ้าเปลี่ยน <strong>Reward Settings</strong> หรือ <strong>Action Profile</strong>
+        โมเดลเดิมจะไม่เปลี่ยนนิสัยย้อนหลัง ต้อง train โมเดลใหม่เสมอ
+        โดยเฉพาะ Action Profile เพราะจำนวน output ของ network เปลี่ยนได้จริง
+      </div>
+    </section>
+
     <section id="reward-profile">
       <h2>Reward Profile คืออะไร</h2>
       <p>
@@ -548,6 +595,52 @@
         ค่าที่เห็นคือ parameter ย่อยของ reward profile ปัจจุบัน ผู้ใช้สามารถเลื่อนเฉพาะค่าที่อยากทดลองได้
         ระบบจะส่งค่าที่ต่างจาก preset เข้า <code>rl_train.py --reward_overrides</code>
         และบันทึกทั้ง overrides กับ config สุดท้ายไว้ใน <code>artifacts/models/&lt;model&gt;/&lt;model&gt;.train.json</code>
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ส่วนในกล่อง Reward</th>
+            <th>หน้าที่</th>
+            <th>ผลที่เกิดขึ้นตอนกด Train</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Show Reward Sliders</strong></td>
+            <td>เปิด/ปิดแผง slider ของ reward parameters</td>
+            <td>ถ้าไม่เปิด ระบบยังใช้ reward profile ที่เลือกไว้ตามปกติ ไม่มี override เพิ่ม</td>
+          </tr>
+          <tr>
+            <td><strong>Reset to profile</strong></td>
+            <td>ดึงค่าทุก slider กลับไปเป็น default ของ Reward Profile ปัจจุบัน</td>
+            <td>ล้างการทดลองที่เลื่อนไว้ เพื่อให้ train รอบใหม่กลับมาเทียบกับ preset ได้สะอาด</td>
+          </tr>
+          <tr>
+            <td><strong>Load JSON</strong></td>
+            <td>โหลด reward recipe จากไฟล์ <code>metafxclub.reward_profile.v1</code></td>
+            <td>ตั้งค่า base profile, overrides และสูตร developer formula ถ้ามีใน JSON</td>
+          </tr>
+          <tr>
+            <td><strong>Save JSON</strong></td>
+            <td>บันทึก base profile + slider overrides + formula เป็น recipe</td>
+            <td>เหมาะกับการเก็บสูตรที่ทดลองแล้วไว้ใช้ซ้ำหรือส่งให้เครื่องอื่น</td>
+          </tr>
+          <tr>
+            <td><strong>Reward JSON: none/path</strong></td>
+            <td>บอกว่าตอนนี้มี JSON recipe โหลดอยู่หรือไม่</td>
+            <td>ถ้ามี path แปลว่าตอน train จะส่ง recipe นั้นเข้า <code>rl_train.py</code> ด้วย</td>
+          </tr>
+          <tr>
+            <td><strong>Developer Mode</strong></td>
+            <td>เปิดโหมดใช้ custom reward formula แบบ safe expression</td>
+            <td>สูตรนี้มีผลเฉพาะตอน train และถูกบันทึกไว้ใน train metadata เพื่อ audit ย้อนหลัง</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        ค่าบน slider เป็น reward shaping ไม่ใช่ risk setting ของ broker:
+        มันบอก agent ว่า behavior แบบไหนควรได้คะแนนมาก/น้อยระหว่างเรียน
+        แต่หลัง train แล้ว Backtest/Live/EA จะใช้ policy ที่เรียนมา ไม่ได้เปิดอ่าน slider เหล่านี้เพื่อคำนวณ order ใหม่
       </p>
       <h3>Reward Profile JSON</h3>
       <p>
@@ -627,6 +720,57 @@
           </tr>
         </tbody>
       </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Reward slider</th>
+            <th>ความหมายละเอียด</th>
+            <th>ถ้าเพิ่มค่านี้</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Close PnL Mult</code></td>
+            <td>ตัวคูณกำไร/ขาดทุนสุทธิเมื่อปิด position เป็นน้ำหนักหลักของ reward แบบ realized</td>
+            <td>โมเดลสนใจกำไรจริงตอนปิดไม้มากขึ้น แต่ reward อาจแกว่งแรงขึ้น</td>
+          </tr>
+          <tr>
+            <td><code>Loss Penalty Mult</code></td>
+            <td>ตัวคูณเพิ่มเฉพาะไม้ที่ปิดแล้วขาดทุน</td>
+            <td>โมเดลกลัว loss มากขึ้น อาจลด drawdown แต่ก็อาจปิดไม้เร็วหรือไม่กล้าเข้า</td>
+          </tr>
+          <tr>
+            <td><code>Bonus Threshold</code> / <code>Profit Bonus</code></td>
+            <td>กำไรต้องเกิน threshold เท่าไรจึงได้ bonus และ bonus นั้นมีน้ำหนักเท่าไร</td>
+            <td>บังคับให้ agent มองหา win ที่มีระยะพอ ไม่ใช่กำไรจิ๋ว ๆ ตลอดเวลา</td>
+          </tr>
+          <tr>
+            <td><code>Unrealized Scale</code></td>
+            <td>direction hint ระหว่างถือ position จากกำไร/ขาดทุนลอยตัว</td>
+            <td>โมเดลตอบสนองระหว่างถือไม้มากขึ้น แต่สูงเกินไปอาจเรียนจากกำไรลอยตัวแทน P/L ตอนปิดจริง</td>
+          </tr>
+          <tr>
+            <td><code>Giveback Trigger/Fraction/Penalty</code></td>
+            <td>ระบบลงโทษเมื่อกำไรลอยตัวเคยขึ้นไปแล้วคืนกำไรกลับมามากเกิน</td>
+            <td>โมเดลอาจเรียนรู้ให้ปกป้องกำไรเร็วขึ้น แต่ถ้าแรงเกินไปอาจตัด trend เร็ว</td>
+          </tr>
+          <tr>
+            <td><code>Trade Penalty</code></td>
+            <td>ต้นทุน reward ตอนเปิด trade ใหม่</td>
+            <td>ลด overtrade และ churn; ถ้าสูงเกินไป model อาจ Hold มากเกินจนแทบไม่เปิด order</td>
+          </tr>
+          <tr>
+            <td><code>Idle Penalty</code></td>
+            <td>โทษเล็ก ๆ ตอน agent Hold ว่างโดยไม่มี position</td>
+            <td>บีบให้ agent หาโอกาสมากขึ้น แต่ถ้าสูงไปอาจบังคับเข้าไม้ทั้งที่ edge ไม่พอ</td>
+          </tr>
+          <tr>
+            <td><code>Time Decay Start/Penalty</code></td>
+            <td>เริ่มลงโทษหลังถือ position เกินสัดส่วนของ Max Hold และลงโทษต่อ bar เท่าไร</td>
+            <td>โมเดลถือไม้นานน้อยลง เหมาะกับ scalping/mean-reversion มากกว่า trend following</td>
+          </tr>
+        </tbody>
+      </table>
       <div class="warnbox">
         ห้ามเทียบผลข้าม profile จาก quick eval อย่างเดียว ให้ใช้ dataset เดียวกัน,
         train pct เดียวกัน, steps ใกล้กัน แล้วค่อยเทียบผ่าน Backtest และ Walk-Forward
@@ -639,6 +783,12 @@
         Action Profile คือชุดคำสั่งที่ PPO output ออกมาได้ ไม่ใช่แค่ label ในหน้าจอ
         เพราะจำนวน action จะกลายเป็น output dimension ของ policy network โดยตรง
         ดังนั้นเปลี่ยน Action Profile แล้วต้อง train model ใหม่ และตอน export EA ต้องใช้ profile เดียวกัน
+      </p>
+      <p>
+        ในเชิงเทคนิค <code>TradingEnv</code> จะสร้าง <code>spaces.Discrete(N)</code>
+        ตามจำนวน action ใน profile นั้น เช่น <code>Basic 4</code> คือ output 4 ช่อง
+        แต่ <code>Manage 6</code> คือ output 6 ช่อง ถ้าเอาโมเดล 4 action ไปใช้กับ EA/Backtest ที่คาดหวัง 6 action
+        ระบบจะตีความ action ผิดหรือ reject ด้วย action profile mismatch
       </p>
       <div class="grid two">
         <div class="card blue">
@@ -657,6 +807,62 @@
           </p>
         </div>
       </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Action ID</th>
+            <th>Basic 4</th>
+            <th>Manage 6</th>
+            <th>ความหมายตอน train/backtest</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>0</code></td>
+            <td>Hold</td>
+            <td>Hold</td>
+            <td>ไม่ทำอะไรใน bar นี้ ถ้ามี position ก็ถือไม้ต่อ</td>
+          </tr>
+          <tr>
+            <td><code>1</code></td>
+            <td>Buy</td>
+            <td>Buy</td>
+            <td>เปิด long เมื่อยังไม่มี position หรือเมื่อ execution layer อนุญาต</td>
+          </tr>
+          <tr>
+            <td><code>2</code></td>
+            <td>Sell</td>
+            <td>Sell</td>
+            <td>เปิด short เมื่อยังไม่มี position หรือเมื่อ execution layer อนุญาต</td>
+          </tr>
+          <tr>
+            <td><code>3</code></td>
+            <td>Close</td>
+            <td>Close</td>
+            <td>ปิด position ปัจจุบันเพื่อรับ realized P/L</td>
+          </tr>
+          <tr>
+            <td><code>4</code></td>
+            <td>-</td>
+            <td>Move SL to BE</td>
+            <td>ถ้ามีกำไรลอยตัวเกินเงื่อนไข ให้เลื่อน SL มาที่ราคาเข้า</td>
+          </tr>
+          <tr>
+            <td><code>5</code></td>
+            <td>-</td>
+            <td>Trail SL by ATR</td>
+            <td>ถ้ามีกำไรลอยตัวเกินเงื่อนไข ให้เลื่อน SL ตามราคาโดยใช้ระยะ ATR</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3>Action Parameters ในกล่องนี้</h3>
+      <p>
+        slider ในการ์ด Action Profile &amp; Parameters ไม่ได้เปลี่ยน feature input
+        แต่เปลี่ยนเงื่อนไขของ action จัดการไม้และ reward cost ที่ agent เห็นระหว่าง train
+        ค่าเหล่านี้จะถูกบันทึกใน <code>&lt;model&gt;.train.json</code>
+        และตอน export จะถูกแปลงเป็น macro ในไฟล์ config ของ EA เช่น
+        <code>RL_ACTION_TRAIL_ATR_MULT</code> เพื่อให้ EA live ใช้กติกาเดียวกับโมเดล
+      </p>
       <table>
         <thead>
           <tr>
@@ -688,6 +894,80 @@
           </tr>
         </tbody>
       </table>
+      <table>
+        <thead>
+          <tr>
+            <th>ชื่อใน UI</th>
+            <th>key ใน JSON</th>
+            <th>default / ช่วง</th>
+            <th>คำอธิบายละเอียด</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>BE Min Profit</strong></td>
+            <td><code>breakeven_min_profit</code></td>
+            <td><code>0.0010</code> / <code>0.0..0.05</code></td>
+            <td>
+              หน่วยเป็นสัดส่วนกำไรเทียบราคาเข้า เช่น <code>0.0010</code> = 0.10%.
+              ถ้า long และกำไรลอยตัวถึง threshold จะตั้ง SL อย่างน้อยที่ราคาเข้า;
+              ถ้า short จะตั้ง SL ไม่สูงกว่าราคาเข้า
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Trail ATR Period</strong></td>
+            <td><code>trail_atr_period</code></td>
+            <td><code>14</code> / <code>2..100</code> bars</td>
+            <td>
+              จำนวนแท่งย้อนหลังที่ใช้คำนวณ ATR proxy สำหรับ trailing action.
+              ค่าน้อยตอบสนองเร็วแต่ไวต่อ noise; ค่าสูง smooth กว่าแต่ trailing ช้าลง
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Trail ATR Mult</strong></td>
+            <td><code>trail_atr_mult</code></td>
+            <td><code>2.00</code> / <code>0.1..10.0</code></td>
+            <td>
+              ระยะ trailing = ATR proxy x multiplier.
+              long จะใช้ candidate ประมาณ <code>price - ATR*mult</code>;
+              short จะใช้ candidate ประมาณ <code>price + ATR*mult</code>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Trail Min Profit</strong></td>
+            <td><code>trail_min_profit</code></td>
+            <td><code>0.0010</code> / <code>0.0..0.05</code></td>
+            <td>
+              กำไรลอยตัวขั้นต่ำก่อน action trail จะมีผลจริง ถ้ายังไม่ถึง threshold
+              agent กด trail แล้วจะถือว่า action ใช้งานไม่ได้และโดน invalid penalty
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Manage Penalty</strong></td>
+            <td><code>management_action_penalty</code></td>
+            <td><code>0.00020</code> / <code>0.0..0.01</code></td>
+            <td>
+              reward cost เล็ก ๆ เมื่อ management action ใช้งานได้จริง
+              ใช้กันไม่ให้ agent กด move/trail ซ้ำ ๆ ทุก bar โดยไม่มีเหตุผล
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Invalid Action Penalty</strong></td>
+            <td><code>invalid_action_penalty</code></td>
+            <td><code>0.00100</code> / <code>0.0..0.02</code></td>
+            <td>
+              reward cost เมื่อ management action ใช้ไม่ได้ เช่น ไม่มี position,
+              กำไรยังไม่ถึง threshold หรือ SL ใหม่ไม่ได้ดีขึ้นจาก SL เดิม
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>Buy/Sell ทำงานแยกฝั่ง:</strong>
+        Move SL to BE และ Trail SL by ATR รองรับทั้งฝั่ง long และ short.
+        Long จะเลื่อน SL ขึ้นเพื่อปกป้องกำไร ส่วน short จะเลื่อน SL ลงตามราคา
+        โดยระบบจะไม่เลื่อน SL ถอยหลังไปทางที่แย่กว่าเดิม
+      </div>
       <h3>Developer Action JSON / DSL</h3>
       <p>
         ปุ่ม <strong>Load JSON</strong> และ <strong>Save JSON</strong> ในการ์ด Action Profile &amp; Parameters
@@ -704,6 +984,37 @@
     "trail_min_profit": 0.0015
   }
 }</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>ปุ่มในกล่อง Action</th>
+            <th>หน้าที่</th>
+            <th>ควรใช้เมื่อไหร่</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Reset</strong></td>
+            <td>คืน Action Profile และ parameter กลับค่า default ของ profile ที่เลือก</td>
+            <td>หลังทดลอง slider แล้วอยากกลับ baseline ก่อน train รอบใหม่</td>
+          </tr>
+          <tr>
+            <td><strong>Load JSON</strong></td>
+            <td>โหลด action recipe ที่จำกัด primitive/action params ตาม schema</td>
+            <td>เมื่อมีสูตร action parameter ที่ต้องการใช้ซ้ำหรือเทียบกับเครื่องอื่น</td>
+          </tr>
+          <tr>
+            <td><strong>Save JSON</strong></td>
+            <td>บันทึก profile + params ปัจจุบันเป็นไฟล์ recipe</td>
+            <td>หลังเจอค่า BE/trailing ที่อยากเก็บไว้ใช้ train รอบต่อไป</td>
+          </tr>
+          <tr>
+            <td><strong>Action JSON: none/path</strong></td>
+            <td>แสดงว่ากำลังใช้ recipe จากไฟล์หรือปรับจาก UI โดยตรง</td>
+            <td>ใช้เช็คก่อน train ว่ารอบนี้อิง recipe ไหนอยู่</td>
+          </tr>
+        </tbody>
+      </table>
       <div class="warnbox">
         Action Profile เป็นส่วนหนึ่งของ architecture ไม่ใช่ filter หลัง train:
         model ที่ train ด้วย <code>Basic 4</code> ใช้กับ EA ที่คาดหวัง <code>Manage 6</code> ไม่ได้
@@ -713,6 +1024,198 @@
         ถ้าต้องการให้ Codex เพิ่มหรือปรับ action ใหม่ ให้ใช้ prompt ใน
         <a href="../codex_custom_action_prompts.md"><code>docs/codex_custom_action_prompts.md</code></a>
         เพื่อบังคับให้แก้ครบทั้ง train, backtest, fine-tune, walk-forward, full pipeline, export และ EA live
+      </div>
+    </section>
+
+    <section id="custom-action-flow">
+      <h2>วิธีเพิ่ม Action Profile / Custom Action ใหม่</h2>
+      <p>
+        การเพิ่ม action ไม่เหมือนการเพิ่ม input ทั่วไป เพราะ action คือสิ่งที่โมเดลเลือกออกมาโดยตรง
+        ถ้าเปลี่ยนจำนวน action หรือเปลี่ยนความหมายของ action จะกระทบตั้งแต่ตอน train ไปจนถึง EA live
+        ดังนั้นต้องออกแบบก่อน แล้วค่อยแก้ครบทั้ง flow
+        <code>dataset → train → backtest → fine-tune → walk-forward → full pipeline → export → EA live</code>
+      </p>
+
+      <h3>1. ออกแบบ action ให้ชัดก่อนแก้โค้ด</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>สิ่งที่ต้องกำหนด</th>
+            <th>ตัวอย่าง</th>
+            <th>ทำไมต้องกำหนด</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ชื่อ action / ชื่อ profile</td>
+            <td><code>partial_close</code>, <code>scale_in</code>, <code>Manage 8</code></td>
+            <td>ใช้เป็นชื่อใน metadata, JSON recipe, GUI, backtest log และ EA config</td>
+          </tr>
+          <tr>
+            <td>ใช้กับ position แบบไหน</td>
+            <td><code>buy</code>, <code>sell</code>, <code>both</code>, หรือใช้ได้เฉพาะตอนมี position</td>
+            <td>ป้องกัน logic ผิดฝั่ง เช่น trail short ด้วยสูตร long หรือแก้ SL ผิดทิศ</td>
+          </tr>
+          <tr>
+            <td>เงื่อนไขที่ action ใช้ได้</td>
+            <td>ต้องมีกำไรลอยตัวเกิน <code>0.0010</code>, ต้องมี SL เดิม, ต้องถือมาอย่างน้อย N bars</td>
+            <td>ให้ train/backtest/EA ตัดสิน invalid action เหมือนกัน</td>
+          </tr>
+          <tr>
+            <td>ถ้า action ใช้ไม่ได้ให้ทำอะไร</td>
+            <td><code>ignore</code>, <code>treat as Hold</code>, หรือหัก <code>invalid_action_penalty</code></td>
+            <td>เป็นส่วนหนึ่งของ reward shaping ถ้าไม่กำหนด agent อาจ spam action ที่ใช้ไม่ได้</td>
+          </tr>
+          <tr>
+            <td>parameter ที่ user ปรับได้</td>
+            <td><code>trail_atr_period</code>, <code>trail_atr_mult</code>, <code>partial_close_pct</code></td>
+            <td>ต้องรู้ว่าจะเก็บใน JSON, train metadata, export config และ EA input อย่างไร</td>
+          </tr>
+          <tr>
+            <td>ผลข้างเคียงต่อ order</td>
+            <td>แก้ SL, ปิดบางส่วน, เปิดเพิ่ม, reverse position</td>
+            <td>ยิ่งกระทบ order มาก ยิ่งต้อง validate ใน MT5/Strategy Tester อย่างเข้ม</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>2. แยกก่อนว่าเพิ่มแค่ profile หรือเพิ่ม action ใหม่จริง</h3>
+      <div class="grid two">
+        <div class="card blue">
+          <span class="tag blue">ง่ายกว่า</span>
+          <h3>เปลี่ยนชุด action เดิม / เพิ่ม preset ใหม่</h3>
+          <p>
+            ถ้าใช้ primitive เดิม เช่น <code>hold</code>, <code>buy</code>, <code>sell</code>,
+            <code>close</code>, <code>move_sl_breakeven</code>, <code>trail_sl_atr</code>
+            แต่ต้องการ profile ใหม่หรือค่า default ใหม่ ให้แก้หลัก ๆ ที่
+            <code>ACTION_PROFILES</code> ใน <code>action_profiles.py</code>
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">ต้องแก้ครบ flow</span>
+          <h3>เพิ่ม action primitive ใหม่</h3>
+          <p>
+            ถ้า action ไม่เคยมีมาก่อน เช่น <code>partial_close</code>, <code>scale_in</code>,
+            <code>reverse_position</code> ต้องเพิ่มทั้งความหมายใน env, backtest, export และ EA live
+            เพราะโมเดลจะมี output ช่องใหม่จริง
+          </p>
+        </div>
+      </div>
+
+      <h3>3. ไฟล์ที่ต้องแก้ตามระดับของงาน</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>กรณี</th>
+            <th>ไฟล์ที่ต้องแก้</th>
+            <th>รายละเอียด</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>เพิ่ม profile จาก action เดิม</td>
+            <td><code>action_profiles.py</code></td>
+            <td>
+              เพิ่ม/แก้ <code>ACTION_PROFILES</code>, ค่า default params, label และ description.
+              GUI จะดึง <code>ACTION_PROFILE_LABELS</code> ไปแสดงอัตโนมัติ
+            </td>
+          </tr>
+          <tr>
+            <td>เพิ่ม parameter ใหม่ให้ action เดิม</td>
+            <td><code>action_profiles.py</code>, <code>trading_env.py</code>, <code>backtest_live.py</code>, <code>export_to_onnx.py</code>, <code>ML_RL_Trader_template.mq5</code></td>
+            <td>
+              เพิ่ม spec ใน <code>ACTION_PARAM_SPECS</code>, default ใน <code>DEFAULT_ACTION_PARAMS</code>,
+              ใช้ parameter นั้นใน train/backtest และ export ไปเป็น config/input ให้ EA
+            </td>
+          </tr>
+          <tr>
+            <td>เพิ่ม action ใหม่จริง</td>
+            <td>
+              <code>action_profiles.py</code>, <code>trading_env.py</code>, <code>backtest_live.py</code>,
+              <code>rl_train.py</code>, <code>rl_finetune.py</code>, <code>rl_walkforward.py</code>,
+              <code>rl_app.py</code>, <code>export_to_onnx.py</code>,
+              <code>mt5_files\MQL5\Experts\ML_RL_Trader_template.mq5</code>
+            </td>
+            <td>
+              เพิ่ม primitive, action id, execution logic ตอน train, execution logic ตอน backtest,
+              UI/CLI plumbing, metadata, export config และ EA live branch
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>4. Flow หลังเพิ่ม action/profile</h3>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag blue">Implement</span>
+            <h3>แก้โค้ดให้ train/backtest/export/EA เข้าใจ action เดียวกัน</h3>
+            <p>
+              ห้ามแก้เฉพาะหน้า GUI เพราะ action ต้องมีความหมายเดียวกันใน
+              <code>TradingEnv</code>, <code>backtest_live.py</code> และ EA template
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag warn">Retrain</span>
+            <h3>Train โมเดลใหม่</h3>
+            <p>
+              เปลี่ยน action space แล้ว model เก่าใช้ต่อไม่ได้ เพราะ output dimension หรือ action meaning เปลี่ยน
+              แม้จำนวน action เท่าเดิมแต่ความหมายเปลี่ยน ก็ต้อง train ใหม่เพื่อไม่ให้ policy ตีความผิด
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag green">Validate</span>
+            <h3>Backtest + Walk-Forward ด้วย profile เดียวกัน</h3>
+            <p>
+              Backtest ควรอ่าน profile จาก model metadata หรือระบุ profile/params เดียวกับตอน train
+              แล้วใช้ Walk-Forward เพื่อดูว่า action ใหม่ช่วยจริงหรือแค่ fit กับช่วงหนึ่งของข้อมูล
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag blue">Export</span>
+            <h3>Export EA ใหม่</h3>
+            <p>
+              EA ต้องรู้ action IDs, จำนวน output และ parameter ของ action ใหม่
+              ดังนั้นต้อง export package ใหม่จากโมเดลที่ train ด้วย action profile นั้น
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag warn">MT5</span>
+            <h3>Compile/Test ใน MetaEditor และ MT5 Strategy Tester</h3>
+            <p>
+              หลังแก้ <code>ML_RL_Trader_template.mq5</code> หรือ export EA ใหม่ ต้อง compile ใน MetaEditor
+              และทดสอบใน MT5 ว่า action ใหม่ไม่เปิด order ผิดฝั่ง ไม่แก้ SL ผิดทิศ และ log ไม่มี mismatch
+            </p>
+          </div>
+        </article>
+      </div>
+
+      <h3>5. ใช้ prompt เพื่อบังคับให้ Codex แก้ครบ</h3>
+      <p>
+        ถ้าผู้ใช้งานต้องการเพิ่ม action ใหม่เอง ให้เริ่มจาก prompt ใน
+        <a href="../codex_custom_action_prompts.md"><code>docs/codex_custom_action_prompts.md</code></a>
+        เพราะ prompt นั้นบังคับให้ Codex อ่านและแก้ครบทั้ง
+        <code>action_profiles.py</code>, <code>trading_env.py</code>, <code>backtest_live.py</code>,
+        <code>rl_train.py</code>, <code>rl_finetune.py</code>, <code>rl_walkforward.py</code>,
+        <code>rl_app.py</code>, <code>export_to_onnx.py</code> และ
+        <code>ML_RL_Trader_template.mq5</code>
+      </p>
+      <div class="warnbox">
+        อย่าเพิ่ม action ใหม่เฉพาะใน JSON หรือเฉพาะใน GUI ถ้า train/backtest/EA ยังไม่มี logic รองรับ
+        เพราะโมเดลจะ output action id ที่บางชั้นไม่รู้จัก ทำให้ backtest เพี้ยนหรือ EA live ไม่ทำงานตรงกับที่ train มา
       </div>
     </section>
 
@@ -780,6 +1283,12 @@
       <p>
         สำหรับ user ใหม่ ให้ใช้ค่า default ก่อน แล้วค่อยกลับมาแก้เมื่ออ่าน log/backtest แล้วมีเหตุผล
       </p>
+      <p>
+        กล่องนี้ถูกซ่อนไว้หลัง <strong>Show Advanced</strong> เพราะเป็นค่าระดับ optimization ของ PPO
+        ไม่ใช่ strategy rule โดยตรง ถ้าปรับผิดอาจทำให้ train ดูเหมือนเร็วขึ้นแต่ OOS แย่ลง
+        ทุกค่าจะถูกส่งเป็น argument เข้า <code>rl_train.py</code> และบันทึกไว้ใน
+        <code>&lt;model&gt;.train.json</code> เพื่อย้อนดูได้ว่าโมเดลนี้ train ด้วย hyperparameter ชุดไหน
+      </p>
       <table>
         <thead>
           <tr>
@@ -813,6 +1322,105 @@
             <td><code>gamma</code>, <code>gae_lambda</code>, <code>vf_coef</code></td>
             <td>discount, advantage smoothing และ critic/value loss</td>
             <td>ใช้ default ก่อน เว้นแต่มีเหตุผลจาก metric หรือ experiment</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3>ช่องที่อยู่ใน Advanced PPO</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>ช่องใน UI</th>
+            <th>default</th>
+            <th>ความหมาย</th>
+            <th>อ่านอาการจาก log</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Learning Rate</code></td>
+            <td><code>3e-4</code></td>
+            <td>ความแรงของการอัปเดต policy/critic ในแต่ละ optimization step</td>
+            <td>ถ้า <code>approx_kl</code> หรือ <code>clip_fraction</code> สูงและ reward พังเร็ว ให้ลดเป็น <code>1e-4</code></td>
+          </tr>
+          <tr>
+            <td><code>Clip Range</code></td>
+            <td><code>0.2</code></td>
+            <td>กรอบที่ PPO ใช้จำกัดไม่ให้ policy ใหม่ต่างจาก policy เก่าแรงเกินไป</td>
+            <td>ถ้า policy แกว่งมาก ใช้ <code>0.1</code> เพื่อ conservative ขึ้น; ถ้าเรียนช้ามากอาจลอง <code>0.3</code></td>
+          </tr>
+          <tr>
+            <td><code>Entropy Coef</code></td>
+            <td><code>0.01</code></td>
+            <td>แรงจูงใจให้ agent explore action หลากหลาย ไม่รีบล็อกเป็น action เดียว</td>
+            <td>ถ้า action กระจุกมากหรือ Hold/Close ซ้ำผิดปกติ ลองเพิ่ม เช่น <code>0.05</code></td>
+          </tr>
+          <tr>
+            <td><code>n_steps</code></td>
+            <td><code>2048</code></td>
+            <td>จำนวน step ใน rollout buffer ก่อนนำไป update policy</td>
+            <td>เพิ่มเป็น <code>4096</code> มักนิ่งขึ้นแต่ช้าขึ้น; ลดเป็น <code>1024</code> เร็วขึ้นแต่ noisy กว่า</td>
+          </tr>
+          <tr>
+            <td><code>n_epochs</code></td>
+            <td><code>10</code></td>
+            <td>จำนวนรอบที่นำ rollout เดิมกลับมา optimize ซ้ำ</td>
+            <td>มากเกินไปอาจ overfit กับ rollout สั้น ๆ; fast preset ใช้ <code>5</code></td>
+          </tr>
+          <tr>
+            <td><code>batch_size</code></td>
+            <td><code>64</code></td>
+            <td>ขนาด minibatch ที่ใช้ optimize จาก rollout</td>
+            <td>ต้องไม่เกิน <code>n_steps</code>; ใหญ่ขึ้นนิ่งขึ้นแต่กิน memory/เวลาเพิ่ม</td>
+          </tr>
+          <tr>
+            <td><code>gamma</code></td>
+            <td><code>0.99</code></td>
+            <td>discount factor ว่าให้ความสำคัญกับ reward ในอนาคตแค่ไหน</td>
+            <td>ค่าใกล้ 1 เหมาะกับการถือหลาย bar; ลดลงจะทำให้ agent สนใจผลระยะสั้นมากขึ้น</td>
+          </tr>
+          <tr>
+            <td><code>gae_lambda</code></td>
+            <td><code>0.95</code></td>
+            <td>ตัว smooth advantage ระหว่าง bias/variance ของสัญญาณเรียนรู้</td>
+            <td>ใช้ default ก่อน ปรับเมื่อเข้าใจความสัมพันธ์ของ reward variance แล้ว</td>
+          </tr>
+          <tr>
+            <td><code>vf_coef</code></td>
+            <td><code>0.5</code></td>
+            <td>น้ำหนัก loss ของ critic/value function เทียบกับ policy loss</td>
+            <td>ถ้า value loss แปลกมาก อาจทดลองช่วง <code>0.25..1.0</code> แต่ต้องวัด OOS</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3>Quick Presets</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Preset</th>
+            <th>ค่าหลักที่เปลี่ยน</th>
+            <th>ใช้เมื่อไหร่</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Default</strong></td>
+            <td><code>lr=3e-4</code>, <code>clip=0.2</code>, <code>ent=0.01</code>, <code>n_steps=2048</code></td>
+            <td>baseline สำหรับเริ่ม train และใช้เทียบกับ preset อื่น</td>
+          </tr>
+          <tr>
+            <td><strong>Stable</strong></td>
+            <td><code>lr=1e-4</code>, <code>clip=0.1</code>, <code>n_steps=4096</code>, <code>batch=128</code></td>
+            <td>เมื่อ train แกว่ง, KL/clip สูง, reward collapse หรืออยากลดความรุนแรงของ policy update</td>
+          </tr>
+          <tr>
+            <td><strong>Fast</strong></td>
+            <td><code>lr=5e-4</code>, <code>clip=0.3</code>, <code>n_steps=1024</code>, <code>n_epochs=5</code></td>
+            <td>ใช้ทดลองเร็ว ๆ เพื่อดูทิศทาง ไม่ควรใช้สรุป production โดยไม่ผ่าน OOS/WF</td>
+          </tr>
+          <tr>
+            <td><strong>Explorer</strong></td>
+            <td><code>ent_coef=0.05</code> ที่เหลือใกล้ Default</td>
+            <td>เมื่อ agent ติด action เดิมหรือ explore น้อยเกินไป</td>
           </tr>
         </tbody>
       </table>

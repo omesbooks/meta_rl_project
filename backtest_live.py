@@ -129,6 +129,77 @@ def _resolve_action_profile(args, model):
 
 
 # =============================================================
+# M1 Intrabar Resolver (L2 execution realism)
+# =============================================================
+class M1Resolver:
+    """Resolve SL/TP ordering inside a main-TF bar by replaying M1 bars.
+
+    When both SL and TP fall inside one H4/H1 bar, OHLC can't tell which was
+    hit first. This walks the M1 bars covering that main bar in time order
+    and returns 'SL' or 'TP' based on which level was touched first.
+    Returns None when M1 can't decide (no data for that bar, or both levels
+    inside the same single minute) -> caller falls back to the intrabar
+    assumption.
+    """
+
+    def __init__(self, m1_csv: str, bar_delta):
+        m1 = pd.read_csv(m1_csv)
+        m1.columns = [c.lower().strip() for c in m1.columns]
+        tcol = 'timestamp' if 'timestamp' in m1.columns else (
+            'time' if 'time' in m1.columns else None)
+        if tcol is None:
+            raise ValueError("M1 CSV needs a 'timestamp' (or 'time') column")
+        if not {'high', 'low'}.issubset(m1.columns):
+            raise ValueError("M1 CSV needs 'high' and 'low' columns")
+        m1[tcol] = pd.to_datetime(m1[tcol], errors='coerce')
+        m1 = m1.dropna(subset=[tcol]).sort_values(tcol).reset_index(drop=True)
+        self.ts = m1[tcol].to_numpy(dtype='datetime64[ns]')
+        self.high = m1['high'].to_numpy(dtype=float)
+        self.low = m1['low'].to_numpy(dtype=float)
+        self.bar_delta = pd.Timedelta(bar_delta)
+        self.n_bars = len(m1)
+        self.period = (str(m1[tcol].iloc[0]), str(m1[tcol].iloc[-1])) if len(m1) else ("", "")
+        # resolution stats (reported at the end of the run)
+        self.resolved_sl = 0      # M1 says SL was hit first
+        self.resolved_tp = 0      # M1 says TP was hit first
+        self.m1_ambiguous = 0     # both levels inside one M1 bar -> still unknown
+        self.no_data = 0          # no M1 rows for that main bar / neither level touched
+
+    def resolve(self, side: str, sl: float, tp: float, bar_time):
+        try:
+            start = np.datetime64(pd.Timestamp(bar_time))
+        except (ValueError, TypeError):
+            self.no_data += 1
+            return None
+        end = np.datetime64(pd.Timestamp(bar_time) + self.bar_delta)
+        i0 = int(np.searchsorted(self.ts, start, side='left'))
+        i1 = int(np.searchsorted(self.ts, end, side='left'))
+        if i1 <= i0:
+            self.no_data += 1
+            return None
+        for j in range(i0, i1):
+            if side == 'long':
+                sl_hit = sl > 0 and self.low[j] <= sl
+                tp_hit = tp > 0 and self.high[j] >= tp
+            else:
+                sl_hit = sl > 0 and self.high[j] >= sl
+                tp_hit = tp > 0 and self.low[j] <= tp
+            if sl_hit and tp_hit:
+                self.m1_ambiguous += 1
+                return None
+            if sl_hit:
+                self.resolved_sl += 1
+                return 'SL'
+            if tp_hit:
+                self.resolved_tp += 1
+                return 'TP'
+        # M1 rows exist but neither level was touched — the two feeds disagree
+        # (different broker/source). Fall back rather than pretend to know.
+        self.no_data += 1
+        return None
+
+
+# =============================================================
 # Simulated Account (แทน MT5)
 # =============================================================
 class SimAccount:
@@ -151,7 +222,12 @@ class SimAccount:
         # Extra adverse fill on STOP orders only (stops fill at market when
         # triggered -> slip past the level; limits/TP fill at price or better).
         self.stop_slippage = stop_slippage
-        self.ambiguous_fills = 0   # exits where both SL & TP were inside the bar
+        # Optional M1Resolver — when set, ambiguous bars are resolved by
+        # replaying M1 data instead of the intrabar assumption.
+        self.m1_resolver = None
+        self.ambiguous_bars = 0    # bars where both SL & TP were inside the range
+        self.m1_resolved = 0       # ...of which M1 replay settled the order
+        self.ambiguous_fills = 0   # ...of which fell back to the assumption
         self.positions = []  # list of dicts
         self.trade_history = []
         self.equity_curve = [initial_balance]
@@ -287,9 +363,20 @@ class SimAccount:
                 continue
 
             ambiguous = sl_hit and tp_hit
+            by_assumption = False
             if ambiguous:
-                self.ambiguous_fills += 1
-                take_sl = (self.intrabar == "pessimistic")
+                self.ambiguous_bars += 1
+                resolution = None
+                if self.m1_resolver is not None:
+                    resolution = self.m1_resolver.resolve(
+                        p['side'], p['sl'], p['tp'], bar_time)
+                if resolution is not None:
+                    take_sl = (resolution == 'SL')
+                    self.m1_resolved += 1
+                else:
+                    take_sl = (self.intrabar == "pessimistic")
+                    self.ambiguous_fills += 1
+                    by_assumption = True
             else:
                 take_sl = sl_hit
 
@@ -299,7 +386,8 @@ class SimAccount:
             else:
                 trade = self.close_position(i, p['tp'], bar_idx, bar_time, "TP")
             if trade is not None:
-                trade['ambiguous'] = ambiguous
+                # True only when the exit was decided by assumption, not data
+                trade['ambiguous'] = by_assumption
 
     def move_sl_breakeven(self, current_price, min_profit_pct=0.001):
         """Move SL to entry for positions that already have enough floating profit."""
@@ -471,6 +559,25 @@ def run_backtest_live(args):
                           commission=args.commission,
                           intrabar=getattr(args, 'intrabar', 'pessimistic'),
                           stop_slippage=getattr(args, 'stop_slippage', 0.0))
+
+    # L2: M1 intrabar replay — resolves ambiguous SL/TP bars with real data
+    m1_csv = getattr(args, 'm1_csv', '') or ''
+    if m1_csv.strip():
+        if 'timestamp' not in df.columns:
+            print("[m1] main CSV has no timestamp column — cannot align M1; "
+                  "falling back to intrabar assumption")
+        else:
+            try:
+                bar_delta = df['timestamp'].diff().median()
+                resolver = M1Resolver(m1_csv.strip(), bar_delta)
+                account.m1_resolver = resolver
+                print(f"[m1] replay enabled: {resolver.n_bars:,} M1 bars "
+                      f"({resolver.period[0]} -> {resolver.period[1]}) | "
+                      f"main bar delta: {bar_delta}")
+                meta["settings"]["m1_csv"] = m1_csv.strip()
+            except Exception as exc:
+                print(f"[m1] failed to load {m1_csv}: {exc} — "
+                      f"falling back to intrabar assumption")
 
     # Stats counters
     n_signals = {int(action["id"]): 0 for action in action_profile_cfg["actions"]}
@@ -740,15 +847,26 @@ def run_backtest_live(args):
     print(f"    Hard stops triggered    : {n_hard_stop:,}")
 
     # Intrabar ambiguity: exits where SL & TP were both inside one bar.
-    # These were resolved by assumption, not data — the bigger this share,
-    # the wider the gap between pessimistic and optimistic runs.
+    # With M1 replay these are resolved by real data; leftovers fall back to
+    # the assumption — the bigger the leftover share, the wider the gap
+    # between pessimistic and optimistic runs.
     sl_tp_exits = sum(1 for t in trades if t['reason'] in ('SL', 'TP'))
-    amb = account.ambiguous_fills
+    amb = account.ambiguous_fills          # decided by assumption
     amb_share = amb / sl_tp_exits if sl_tp_exits else 0.0
     print(f"\n  Execution realism ({account.intrabar} mode):")
-    print(f"    Ambiguous SL/TP bars    : {amb:,} of {sl_tp_exits:,} SL/TP exits ({amb_share:.1%})")
+    print(f"    SL+TP in same bar       : {account.ambiguous_bars:,} of {sl_tp_exits:,} SL/TP exits")
+    r = account.m1_resolver
+    if r is not None:
+        print(f"    Resolved by M1 replay   : {account.m1_resolved:,} "
+              f"(SL first: {r.resolved_sl:,} | TP first: {r.resolved_tp:,})")
+        if r.m1_ambiguous or r.no_data:
+            print(f"    M1 couldn't decide      : both-in-1-minute: {r.m1_ambiguous:,} | "
+                  f"no/mismatched M1 data: {r.no_data:,}")
+    print(f"    Decided by assumption   : {amb:,} ({amb_share:.1%} of SL/TP exits)")
     if amb_share > 0.10:
         print(f"    [warn] >10% of exits rely on the intrabar assumption —")
+        if r is None:
+            print(f"           add --m1_csv <M1 data> to resolve with real data,")
         print(f"           re-run with --intrabar optimistic to bracket the result,")
         print(f"           and treat live results as somewhere in between.")
     print("=" * 60)
@@ -776,6 +894,12 @@ def run_backtest_live(args):
         "force_closed_max_hold": n_force_close,
         "hard_stops": n_hard_stop,
         "intrabar_mode": account.intrabar,
+        "ambiguous_bars": account.ambiguous_bars,
+        "m1_resolved": account.m1_resolved,
+        "m1_resolved_sl": r.resolved_sl if r else 0,
+        "m1_resolved_tp": r.resolved_tp if r else 0,
+        "m1_still_ambiguous": r.m1_ambiguous if r else 0,
+        "m1_no_data": r.no_data if r else 0,
         "ambiguous_fills": amb,
         "ambiguous_share_of_sl_tp": amb_share,
     }
@@ -867,6 +991,11 @@ def main():
     ap.add_argument("--stop_slippage", type=float, default=0.0,
                     help="extra adverse fill on SL stop orders, as price fraction "
                          "(e.g. 0.0001 = 0.01%%). TP/limit fills are not slipped")
+    ap.add_argument("--m1_csv", default="",
+                    help="optional M1 OHLC CSV covering the test period "
+                         "(timestamp,open,high,low,close). Resolves SL/TP "
+                         "ordering inside ambiguous bars with real data "
+                         "instead of the --intrabar assumption")
 
     # Data split
     ap.add_argument("--start", type=float, default=0.0,

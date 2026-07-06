@@ -6393,20 +6393,35 @@ class RLTradingStudio(ctk.CTk):
             command=lambda _: self._schedule_backtest_skip_hint_update(0))
         self.bt_csv.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
 
-        ctk.CTkLabel(setup, text="Confidence Threshold", text_color=COLOR_DIM
+        # M1 replay data (optional) — resolves ambiguous SL/TP bars with real data
+        ctk.CTkLabel(setup, text="M1 Data (optional — resolve SL/TP order ด้วยข้อมูลจริง)",
+                      text_color=COLOR_DIM
                       ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
+        m1_row = ctk.CTkFrame(setup, fg_color="transparent")
+        m1_row.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 12))
+        m1_row.grid_columnconfigure(0, weight=1)
+        self.bt_m1_csv = ScrollableOptionMenu(m1_row, values=["(none)"],
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+        self.bt_m1_csv.grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(m1_row, text="📂", width=40,
+            command=self._browse_bt_m1_csv,
+            fg_color=COLOR_BG_INPUT, hover_color="#2d333b"
+            ).grid(row=0, column=1, padx=(6, 0))
+
+        ctk.CTkLabel(setup, text="Confidence Threshold", text_color=COLOR_DIM
+                      ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_conf = ctk.CTkEntry(setup)
         self.bt_conf.insert(0, "0")
-        self.bt_conf.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 12))
+        self.bt_conf.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 12))
 
         # Skip % — backtest only the tail (e.g., 85 = skip first 85%, test on last 15%)
         ctk.CTkLabel(setup,
             text="Skip % (start fraction — e.g. 85 = test on last 15%)",
             text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
-            ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 4))
+            ).grid(row=9, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_start = ctk.CTkEntry(setup, placeholder_text="0 (= test on all data)")
         self.bt_start.insert(0, "0")
-        self.bt_start.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 4))
+        self.bt_start.grid(row=10, column=0, sticky="ew", padx=18, pady=(0, 4))
         self.bt_start_hint = ctk.CTkLabel(
             setup,
             text="Select dataset to preview backtest range",
@@ -6416,25 +6431,25 @@ class RLTradingStudio(ctk.CTk):
             justify="left",
             wraplength=620,
         )
-        self.bt_start_hint.grid(row=9, column=0, sticky="ew", padx=18, pady=(0, 12))
+        self.bt_start_hint.grid(row=11, column=0, sticky="ew", padx=18, pady=(0, 12))
         self.bt_start.bind("<KeyRelease>", lambda _e: self._schedule_backtest_skip_hint_update())
         self.bt_start.bind("<FocusOut>", lambda _e: self._schedule_backtest_skip_hint_update(0))
 
         # Backtest mode toggle
         ctk.CTkLabel(setup, text="Backtest Mode", text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=12)
-                      ).grid(row=10, column=0, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=12, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_mode = ctk.CTkOptionMenu(setup,
             values=[
                 "Pure Agent (matches training) ⭐",
                 "Agent + SL/TP (live-realistic)",
             ],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.bt_mode.grid(row=11, column=0, sticky="ew", padx=18, pady=(0, 4))
+        self.bt_mode.grid(row=13, column=0, sticky="ew", padx=18, pady=(0, 4))
         ctk.CTkLabel(setup,
             text="Pure = ตรงกับ env ตอน train · SL/TP = สำหรับ live broker",
             font=ctk.CTkFont(size=10), text_color=COLOR_DIM
-            ).grid(row=12, column=0, sticky="w", padx=18, pady=(0, 16))
+            ).grid(row=14, column=0, sticky="w", padx=18, pady=(0, 16))
 
         # Risk card
         risk = Card(live_tab, title="🛡️ Risk Management")
@@ -6538,6 +6553,19 @@ class RLTradingStudio(ctk.CTk):
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
 
         self.bt_log = self._make_log_widget(log_frame, height=12)
+
+    def _browse_bt_m1_csv(self):
+        """Pick an M1 CSV from anywhere (e.g. MT5 export outside the project)."""
+        path = filedialog.askopenfilename(
+            title="Select M1 OHLC CSV",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            initialdir=str(WORK_DIR))
+        if not path:
+            return
+        current = list(getattr(self.bt_m1_csv, "_values", []) or [])
+        if path not in current:
+            self.bt_m1_csv.configure(values=current + [path])
+        self.bt_m1_csv.set(path)
 
     def _schedule_backtest_skip_hint_update(self, delay_ms=250):
         if not hasattr(self, "bt_start_hint"):
@@ -6670,6 +6698,11 @@ class RLTradingStudio(ctk.CTk):
             "--intrabar", intrabar,
             "--stop_slippage", str(stop_slip),
         ]
+
+        # Optional M1 replay data for intrabar SL/TP resolution
+        m1_choice = self.bt_m1_csv.get().strip() if hasattr(self, "bt_m1_csv") else ""
+        if m1_choice and m1_choice != "(none)":
+            cmd += ["--m1_csv", m1_choice]
 
         self._log(self.bt_log, f"$ {' '.join(cmd)}", "info")
         self.bt_run_btn.configure(state="disabled")
@@ -8178,6 +8211,18 @@ Built with: CustomTkinter + stable-baselines3
                 elif current in ("(none)", "") or current not in models:
                     menu.set(models[0])
             except: pass
+
+        # M1 dropdown keeps "(none)" as a first-class choice — user opts in
+        m1_menu = getattr(self, "bt_m1_csv", None)
+        if m1_menu is not None:
+            try:
+                current = m1_menu.get()
+                m1_values = ["(none)"] + [c for c in csvs if c != "(none)"]
+                m1_menu.configure(values=m1_values)
+                if current not in m1_values:
+                    m1_menu.set(current if current.strip() else "(none)")
+            except Exception:
+                pass
 
         csv_menu_names = (
             "pipe_csv", "pipe_bt_csv", "bt_csv", "wf_csv", "an_csv",

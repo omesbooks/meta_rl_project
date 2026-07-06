@@ -896,6 +896,23 @@ class RLTradingStudio(ctk.CTk):
             self._file_cache["models"] = sorted(models) or ["(none)"]
         return self._file_cache["models"]
 
+    def _find_matching_m1(self, csv_name):
+        """Find the companion _m1.csv for a dataset, if one exists in the project.
+
+        Checks <stem>_m1.csv first; for built training files
+        (training_data_<collector_stem>.csv) also tries the collector's
+        original <collector_stem>_m1.csv."""
+        if not csv_name or csv_name == "(none)":
+            return None
+        stem = Path(csv_name).stem
+        candidates = [f"{stem}_m1.csv"]
+        if stem.startswith("training_data_"):
+            candidates.append(f"{stem[len('training_data_'):]}_m1.csv")
+        for cand in candidates:
+            if (WORK_DIR / cand).exists():
+                return cand
+        return None
+
     def _csv_row_count(self, csv_name):
         path = WORK_DIR / csv_name
         if not path.exists() or not path.is_file():
@@ -2178,6 +2195,9 @@ class RLTradingStudio(ctk.CTk):
                 "--start", hparams.get("bt_start", "0"),
                 "--mode", mode,
             ]
+            m1_file = self._find_matching_m1(bt_csv)
+            if m1_file:
+                backtest_cmd += ["--m1_csv", m1_file]
             self._pipeline_run_cmd(backtest_cmd, stage, "Backtest", stages_total)
             stage += 1
 
@@ -3318,7 +3338,10 @@ class RLTradingStudio(ctk.CTk):
         files = []
         try:
             if d.exists():
-                files = sorted([p.name for p in d.glob("*.csv")])
+                # _m1.csv is companion execution data — imported automatically
+                # alongside its dataset, never picked as the source itself
+                files = sorted([p.name for p in d.glob("*.csv")
+                                if not p.name.endswith("_m1.csv")])
         except Exception:
             pass
         values = files or ["(none)"]
@@ -3888,7 +3911,10 @@ class RLTradingStudio(ctk.CTk):
                       level)
 
     def _refresh_tools_dropdowns(self):
-        csvs = self._list_csv_files()
+        # _m1.csv = raw M1 execution data — not valid input for split/relabel/
+        # feature analysis, so keep it out of these menus
+        csvs = [c for c in self._list_csv_files()
+                if not c.endswith("_m1.csv")] or ["(none)"]
         menus = []
         if hasattr(self, 'tool_split_csv'):
             menus.append(self.tool_split_csv)
@@ -6181,8 +6207,16 @@ class RLTradingStudio(ctk.CTk):
         self.train_steps.insert(0, str(int(steps)))
 
     def _set_train_csv(self, path):
-        self.train_csv_path = path
         name = Path(path).name
+        # Guard: _m1.csv is raw M1 execution data for backtest replay —
+        # it has no features and must not be trained on.
+        if name.endswith("_m1.csv"):
+            messagebox.showwarning(
+                "M1 execution data",
+                f"{name} เป็นข้อมูล M1 ดิบสำหรับ backtest (ช่อง M1 Data)\n"
+                f"ไม่ใช่ feature dataset สำหรับ train — กรุณาเลือกไฟล์ dataset หลักแทน")
+            return
+        self.train_csv_path = path
         rows = None
         try:
             import pandas as pd
@@ -6402,7 +6436,8 @@ class RLTradingStudio(ctk.CTk):
                       ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
         self.bt_csv = ScrollableOptionMenu(setup, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
-            command=lambda _: self._schedule_backtest_skip_hint_update(0))
+            command=lambda _: (self._schedule_backtest_skip_hint_update(0),
+                               self._auto_select_bt_m1()))
         self.bt_csv.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
 
         # M1 replay data (optional) — resolves ambiguous SL/TP bars with real data
@@ -6565,6 +6600,23 @@ class RLTradingStudio(ctk.CTk):
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
 
         self.bt_log = self._make_log_widget(log_frame, height=12)
+
+    def _auto_select_bt_m1(self):
+        """When the picked dataset has a companion _m1.csv, pre-select it in the
+        M1 dropdown — but never override an explicit user choice."""
+        if not hasattr(self, "bt_m1_csv"):
+            return
+        try:
+            if self.bt_m1_csv.get().strip() not in ("", "(none)"):
+                return  # user already chose something
+            m1 = self._find_matching_m1(self.bt_csv.get().strip())
+            if m1:
+                values = list(getattr(self.bt_m1_csv, "_values", []) or [])
+                if m1 not in values:
+                    self.bt_m1_csv.configure(values=values + [m1])
+                self.bt_m1_csv.set(m1)
+        except Exception:
+            pass
 
     def _browse_bt_m1_csv(self):
         """Pick an M1 CSV from anywhere (e.g. MT5 export outside the project)."""

@@ -186,6 +186,7 @@
         <a href="#inputs">ไฟล์ที่ใช้</a>
         <a href="#modes">Backtest Mode</a>
         <a href="#settings">ค่าหลัก</a>
+        <a href="#execution">Execution Realism</a>
         <a href="#confidence">Confidence Filter</a>
         <a href="#metrics">อ่าน Metrics</a>
         <a href="#decision">ตัดสินใจ</a>
@@ -393,12 +394,131 @@
             <td>หน้า GUI ตั้งต้น <code>2.0</code> / <code>4.0</code> สำหรับ backtest live logic</td>
           </tr>
           <tr>
+            <td>Intrabar Fill</td>
+            <td>สมมติฐานเมื่อ SL และ TP อยู่ใน bar เดียวกัน: <code>pessimistic</code> = ถือว่า SL โดนก่อน, <code>optimistic</code> = ถือว่า TP โดนก่อน</td>
+            <td>ใช้ <code>pessimistic</code> เป็นหลัก แล้วรัน <code>optimistic</code> ซ้ำเพื่อดูช่วงผลจริง (ดู section Execution Realism)</td>
+          </tr>
+          <tr>
+            <td>Stop Slippage %</td>
+            <td>ราคา fill ของ SL ที่แย่กว่าระดับจริง (stop order fill at market) — ไม่คิดกับ TP เพราะเป็น limit order</td>
+            <td>เริ่ม <code>0.01</code> (0.01%); คู่เงิน volatile หรือช่วงข่าวใช้สูงกว่านี้</td>
+          </tr>
+          <tr>
+            <td>M1 Data (optional)</td>
+            <td>ไฟล์ M1 OHLC ครอบคลุมช่วง test — ใช้ replay ราคาในระดับนาทีเพื่อตอบว่า SL หรือ TP โดนก่อนจริง แทนการเดา</td>
+            <td>ใส่เมื่อ report เตือนว่า ambiguous เกิน 10%; export M1 จาก MT5 broker เดียวกับ dataset หลัก</td>
+          </tr>
+          <tr>
             <td>Window Size</td>
             <td>ขนาด state window</td>
             <td>ปล่อย blank/auto เพราะ backtest auto-detect จาก observation space ของ model</td>
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <section id="execution">
+      <h2>Execution Realism: SL/TP โดนอะไรก่อนใน bar เดียวกัน</h2>
+      <p>
+        Backtest เดินทีละ bar (เช่น H4) แต่ราคาจริงวิ่งภายใน bar ตลอด 4 ชั่วโมง
+        ถ้าทั้ง SL และ TP อยู่ใน range ของ bar เดียวกัน ข้อมูล OHLC 4 ค่าตอบไม่ได้ว่าราคาแตะระดับไหนก่อน
+        — นี่คือจุดที่ผล backtest กับผลจริงต่างกันได้มากที่สุด ระบบมีเครื่องมือ 2 ชั้นสำหรับจัดการเรื่องนี้
+      </p>
+      <div class="grid three">
+        <div class="card warn">
+          <span class="tag warn">ปัญหา</span>
+          <h3>Ambiguous bar</h3>
+          <p>
+            bar ที่ SL+TP อยู่ใน high-low เดียวกัน ระบบต้อง "เดา" ว่าโดนอะไรก่อน
+            ยิ่ง SL/TP แคบเทียบกับ bar range เคสนี้ยิ่งเยอะ และผลรวมยิ่งเชื่อถือไม่ได้
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">ชั้นที่ 1</span>
+          <h3>Bracket ด้วย 2 โหมด</h3>
+          <p>
+            รัน <code>pessimistic</code> (SL ก่อน = ผลต่ำสุด) และ <code>optimistic</code>
+            (TP ก่อน = ผลสูงสุด) — ผลจริงอยู่ระหว่างสองค่านี้เสมอ
+            ถ้าสองค่าห่างกันมาก แปลว่า backtest นี้ยังตัดสินอะไรไม่ได้
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">ชั้นที่ 2</span>
+          <h3>M1 Replay</h3>
+          <p>
+            ใส่ไฟล์ M1 ในช่อง M1 Data ระบบจะเดินราคาทีละนาทีภายใน bar ที่ ambiguous
+            แล้วตอบจากข้อมูลจริงว่าโดนอะไรก่อน — เหลือเคสที่ต้องเดาเกือบ 0%
+          </p>
+        </div>
+      </div>
+      <p>ผลทดสอบจริงกับ <code>rl_uj_h4</code> ตอนตั้ง SL/TP แคบ (0.3 ATR) — เคสที่ ambiguous สูงถึง 27% ของ SL/TP exits:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>วิธีรัน</th>
+            <th>Win Rate</th>
+            <th>Return</th>
+            <th>ตัดสินด้วยการเดา</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>pessimistic</code> (ค่าต่ำสุดที่เป็นไปได้)</td>
+            <td>35.0%</td>
+            <td>-53.2%</td>
+            <td>27.4%</td>
+          </tr>
+          <tr>
+            <td><code>optimistic</code> (ค่าสูงสุดที่เป็นไปได้)</td>
+            <td>61.5%</td>
+            <td>-20.8%</td>
+            <td>27.4%</td>
+          </tr>
+          <tr>
+            <td><code>pessimistic + M1 Data</code> (ค่าจริงจากข้อมูล)</td>
+            <td>49.3%</td>
+            <td>-37.9%</td>
+            <td>0.1%</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        วิธีอ่าน log: ท้ายผล backtest มี block <code>Execution realism</code> บอกว่า
+        SL+TP ตกใน bar เดียวกันกี่ครั้ง, M1 ตอบได้กี่ครั้ง (แยก SL ก่อน / TP ก่อน),
+        และเหลือกี่ครั้งที่ตัดสินด้วยสมมติฐาน (<code>Decided by assumption</code>)
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ค่า Decided by assumption</th>
+            <th>ความหมาย</th>
+            <th>สิ่งที่ควรทำ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>&lt; 5%</td>
+            <td>ผล backtest พึ่งข้อมูลจริงเกือบทั้งหมด</td>
+            <td>ใช้ตัดสินใจได้เลย</td>
+          </tr>
+          <tr>
+            <td>5–10%</td>
+            <td>เริ่มมีผลจากการเดา</td>
+            <td>รัน optimistic เทียบ ถ้าข้อสรุป (ผ่าน/ไม่ผ่าน) ไม่เปลี่ยนก็ใช้ได้</td>
+          </tr>
+          <tr>
+            <td>&gt; 10% (ระบบขึ้น warn)</td>
+            <td>ผลรวมขึ้นกับสมมติฐานมากเกินไป</td>
+            <td>หา M1 data มาใส่ หรือขยาย SL/TP ให้กว้างขึ้นเทียบ bar range</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>ข้อควรระวังเรื่อง M1:</strong>
+        ใช้ M1 จาก broker/แหล่งเดียวกับ dataset หลักเพื่อให้ timestamp ตรงกัน
+        ถ้า bar ไหนไม่มี M1 ครอบคลุม ระบบจะ fallback ไปใช้สมมติฐานให้เอง (นับแยกใน log ไม่เงียบหาย)
+        และก่อน live จริงยังต้องผ่าน MT5 Strategy Tester แบบ real ticks เป็นด่านสุดท้ายเสมอ
+      </div>
     </section>
 
     <section id="confidence">

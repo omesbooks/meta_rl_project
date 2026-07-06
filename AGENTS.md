@@ -51,7 +51,7 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 |------|---------|
 | Launch GUI | `run_rl_app.bat` or `.venv/Scripts/python.exe rl_app.py` |
 | Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--reward_profile balanced] [--action_profile basic_4] [--eval_csv <csv>]` |
-| Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent` |
+| Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent [--intrabar {pessimistic,optimistic}] [--stop_slippage 0.0001] [--m1_csv <m1.csv>]` |
 | Backtest chart | `python backtest_chart.py <model> <csv> --limit 5000` |
 | Walk-forward | `python rl_walkforward.py <csv> --windows 5 --steps 50000` |
 | Export to ONNX | `python export_to_onnx.py <model> [--name <deploy>]` |
@@ -101,7 +101,7 @@ reference/                 MIT-Quant-Bible.md, ml4t/  (quant theory)
 | `rl_app.py` | **Main GUI** (`RLTradingStudio`, ~8000 lines). Pages: Train, Pipeline, Backtest, Walk-forward, Fine-tune, Analyze, **Regime Check**, Models, Tools, Settings. Drives everything via subprocess. Train page exposes **Reward Profile** + **Action Profile** pickers. |
 | `trading_env.py` | Gymnasium env (`TradingEnv`). Action space + reward are **profile-driven**: `action_profile` (default `basic_4`) sets `spaces.Discrete(len(actions))`; `reward_profile` (default `balanced`) sets the reward weights. Imports `get_reward_profile` + `get_action_profile`. Single source of truth for env behavior. |
 | `rl_train.py` | PPO trainer CLI. Loads CSV → time-sorted split → **train-only** z-score normalize → train → saves under `artifacts/models/<name>/` (`.zip` + `_norm.csv` + `.params.json` + `.train.json` run metadata) via `artifact_paths`. Accepts `--train_pct`, `--reward_profile`/`--reward_overrides`/`--reward_profile_json`/`--reward_formula`, `--action_profile`/`--action_params`/`--action_profile_json`. Forwards the input CSV's `.params.json` sidecar. |
-| `backtest_live.py` | Production-grade backtest (`run_backtest_live`, `SimAccount`). Matches `tools/mt5/live_trader.py` logic. Confidence filter + 3-layer risk. Window auto-detected from `model.observation_space.shape`. Defaults: `--conf 0`, max 1 position. |
+| `backtest_live.py` | Production-grade backtest (`run_backtest_live`, `SimAccount`). Matches `tools/mt5/live_trader.py` logic. Confidence filter + 3-layer risk. Window auto-detected from `model.observation_space.shape`. Defaults: `--conf 0`, max 1 position. **Execution realism:** `--intrabar {pessimistic,optimistic}` (SL-first vs TP-first when both fall inside one bar), `--stop_slippage` (adverse fill on SL stops only), `--m1_csv` (`M1Resolver` replays M1 bars inside ambiguous main-TF bars to read the true SL/TP order; falls back to the assumption with per-run counters). See §5 "Execution realism". |
 | `export_to_onnx.py` | PPO `.zip` → `.onnx` + `_config.mqh` + `_EA.mq5` (from template). Embeds `<model>.params.json` → emits `RL_ApplyDataCollectorConfig()` in the `.mqh` so the EA reproduces the collector's exact indicator periods. `PolicyWrapper` adds softmax. |
 
 ### Action & Reward profiles (root) — configurable RL behavior
@@ -196,6 +196,22 @@ Backtest & live only execute Buy/Sell when `confidence ≥ threshold`.
 Backtest defaults to `--conf 0` so the first validation run matches train/quick eval as closely as possible.
 **Close is never filtered.** Sweep thresholds such as 0.3/0.5/0.7/0.85/0.9 on OOS/WF before using a live-style gate.
 `confidence = softmax(policy_logits)[argmax]`.
+
+### Execution realism (intrabar SL/TP ambiguity)
+Bar-level OHLC cannot tell which of SL/TP was hit first when both fall inside one
+bar's range — a real error source on H4 when SL/TP distances are small vs bar range.
+`backtest_live.py` handles it in two layers:
+- **L1 bracket:** `--intrabar pessimistic` (SL first, default) vs `optimistic` (TP first)
+  bound the true result from both sides; `--stop_slippage` adds adverse fill on SL stops.
+  The results block reports `Decided by assumption` share and warns above 10%.
+- **L2 M1 replay:** `--m1_csv <file>` makes `M1Resolver` walk the M1 bars inside each
+  ambiguous main bar and read the actual order. Unresolvable cases (no M1 coverage,
+  both levels in one minute) fall back to the assumption and are counted separately.
+  Measured on `rl_uj_h4` @ 0.3/0.3 ATR: assumption share 27.4% → 0.1%, result lands
+  between the two brackets (WR 35→49.3→61.5%).
+- Trades CSV column `ambiguous` = True only for assumption-decided exits.
+- MT5 Strategy Tester (real ticks) stays the final pre-live gate — L1/L2 are for
+  fast Python iteration.
 
 ### Steps rule of thumb
 `total_timesteps ≈ train_rows × 5–10`. Monitor `ep_rew_mean`: rising→keep going,
@@ -322,6 +338,8 @@ the post-Brexit subset removes the distribution shift.
 | Import error running a `tools/` script | Run from the repo root so root-level imports (`action_profiles`, `artifact_paths`, …) resolve. `cd` into `tools/…` and it breaks. |
 | Log/metrics show up on the wrong GUI page | Fixed (`8925489`): the process runner now routes stdout/`done` to the **page that started the run** (owner page), not just `current_page`. |
 | Old model artifacts not found after reorg | `artifact_paths` still checks legacy root-level paths as a fallback, so pre-reorg `.zip`/`_norm.csv` at the repo root remain loadable. New runs write under `artifacts/models/<name>/`. |
+| Backtest looks great but SL/TP are tight vs bar range | Check the `Execution realism` block: if `Decided by assumption` >10%, the PF/WR partly reflect the intrabar guess, not the market. Bracket with `--intrabar optimistic`, or add `--m1_csv` to resolve with data. Tight-SL results without M1 are not trustworthy. |
+| M1 replay silently resolves nothing | Feeds mismatch: M1 must come from the same broker/source as the main CSV (same server-time timestamps). If neither level is touched in the M1 slice, the resolver counts it as `no/mismatched M1 data` and falls back — check that counter in the results block. |
 
 ---
 

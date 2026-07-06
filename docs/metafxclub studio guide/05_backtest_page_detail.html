@@ -406,7 +406,7 @@
           <tr>
             <td>M1 Data (optional)</td>
             <td>ไฟล์ M1 OHLC ครอบคลุมช่วง test — ใช้ replay ราคาในระดับนาทีเพื่อตอบว่า SL หรือ TP โดนก่อนจริง แทนการเดา</td>
-            <td>ใส่เมื่อ report เตือนว่า ambiguous เกิน 10%; export M1 จาก MT5 broker เดียวกับ dataset หลัก</td>
+            <td>DataCollector_RL เก็บให้อัตโนมัติเป็น <code>&lt;dataset&gt;_m1.csv</code> (import พร้อม dataset จาก Data Tools) — เลือกจาก dropdown ได้เลย broker ตรงกันแน่นอน</td>
           </tr>
           <tr>
             <td>Window Size</td>
@@ -515,7 +515,9 @@
       </table>
       <div class="callout warn">
         <strong>ข้อควรระวังเรื่อง M1:</strong>
-        ใช้ M1 จาก broker/แหล่งเดียวกับ dataset หลักเพื่อให้ timestamp ตรงกัน
+        ทางที่ง่ายที่สุดคือให้ DataCollector_RL เก็บให้ (input <code>InpCollectM1</code> เปิดเป็นค่าเริ่มต้น)
+        — จะได้ <code>&lt;dataset&gt;_m1.csv</code> จาก broker เดียวกับ dataset หลัก timestamp ตรงกันแน่นอน
+        โดย M1 history ของ broker มักย้อนหลังได้สั้นกว่า H4 ระบบจะ log ให้เห็นว่าคลุมช่วงไหนจริง
         ถ้า bar ไหนไม่มี M1 ครอบคลุม ระบบจะ fallback ไปใช้สมมติฐานให้เอง (นับแยกใน log ไม่เงียบหาย)
         และก่อน live จริงยังต้องผ่าน MT5 Strategy Tester แบบ real ticks เป็นด่านสุดท้ายเสมอ
       </div>

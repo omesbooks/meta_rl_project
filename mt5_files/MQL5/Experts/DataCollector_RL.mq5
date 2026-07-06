@@ -27,6 +27,9 @@ const string RL_FEATURE_NAMES[1] = {""};
 
 input string InpOutFile = "rl_gbpusd_dataset.csv";   // output CSV (Common\Files)
 
+input group "=== M1 execution data (backtest intrabar replay) ==="
+input bool InpCollectM1 = true;   // also write <out>_m1.csv — raw M1 OHLCV for backtest --m1_csv
+
 input group "=== Indicator periods (advanced — must sync with EA) ==="
 input int InpRSI_Pmin    = 4;
 input int InpRSI_Pmax    = 30;
@@ -121,6 +124,8 @@ input double InpCP_PiercingMinBody  = 0.5;
 int      g_fh   = INVALID_HANDLE;
 datetime g_last = 0;
 long     g_rows = 0;
+datetime g_first_bar = 0;   // open time of first collected bar (M1 range start)
+datetime g_last_bar  = 0;   // open time of last collected bar  (M1 range end)
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -257,6 +262,8 @@ void OnTick()
 
    FileWriteString(g_fh, row + "\r\n");
    g_rows++;
+   if(g_first_bar == 0) g_first_bar = bt;
+   g_last_bar = bt;
 }
 
 //+------------------------------------------------------------------+
@@ -361,6 +368,75 @@ void OnDeinit(const int reason)
       Print("[COL] WARN: failed to write params sidecar (err=", GetLastError(), ")");
    }
 
+   // ⭐ M1 execution data: raw OHLCV dump of the collected period, used by
+   //   backtest_live.py --m1_csv to resolve SL/TP ordering inside ambiguous
+   //   bars with real data instead of the intrabar assumption.
+   WriteM1File(base);
+
    RL_DeinitIndicators();
+}
+
+//+------------------------------------------------------------------+
+//| Dump M1 OHLCV covering [first collected bar, last collected bar] |
+//| -> <base>_m1.csv in Common\Files. Same broker/server time as the |
+//| main dataset, so backtest M1 replay aligns perfectly.            |
+//| Broker M1 history is usually shorter than the chart-TF history — |
+//| partial coverage is expected and logged; the backtest falls back |
+//| to the intrabar assumption for bars without M1 data.             |
+//+------------------------------------------------------------------+
+void WriteM1File(const string base)
+{
+   if(!InpCollectM1 || g_first_bar == 0) return;
+
+   string m1_file = base + "_m1.csv";
+   int fh = FileOpen(m1_file, FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON);
+   if(fh == INVALID_HANDLE) {
+      Print("[COL] M1 FileOpen failed (err=", GetLastError(), ")");
+      return;
+   }
+   FileWriteString(fh, "timestamp,open,high,low,close,volume\r\n");
+
+   datetime from = g_first_bar;
+   datetime to   = g_last_bar + PeriodSeconds(_Period);   // end of last bar
+   long     total    = 0;
+   datetime m1_first = 0;
+   datetime m1_last  = 0;
+   datetime cursor   = from;
+   const int CHUNK_SECS = 90 * 24 * 60 * 60;   // 90 days per CopyRates call
+
+   while(cursor < to) {
+      datetime chunk_end = cursor + CHUNK_SECS;
+      if(chunk_end > to) chunk_end = to;
+
+      MqlRates rates[];
+      int n = CopyRates(_Symbol, PERIOD_M1, cursor, chunk_end, rates);
+      for(int i = 0; i < n; i++) {
+         if(rates[i].time <= m1_last) continue;   // guard chunk-boundary overlap
+         string line = TimeToString(rates[i].time, TIME_DATE|TIME_MINUTES);
+         line += "," + DoubleToString(rates[i].open,  5);
+         line += "," + DoubleToString(rates[i].high,  5);
+         line += "," + DoubleToString(rates[i].low,   5);
+         line += "," + DoubleToString(rates[i].close, 5);
+         line += "," + IntegerToString(rates[i].tick_volume);
+         FileWriteString(fh, line + "\r\n");
+         if(m1_first == 0) m1_first = rates[i].time;
+         m1_last = rates[i].time;
+         total++;
+      }
+      cursor = chunk_end;
+   }
+   FileClose(fh);
+
+   if(total == 0) {
+      Print("[COL] M1: no history for ", TimeToString(from), " -> ", TimeToString(to),
+            " — broker M1 depth does not reach this period (file left empty)");
+      return;
+   }
+   Print("[COL] M1: ", total, " bars -> Common\\Files\\", m1_file,
+         "  (", TimeToString(m1_first), " -> ", TimeToString(m1_last), ")");
+   if(m1_first > from + PeriodSeconds(_Period))
+      Print("[COL] M1 coverage is PARTIAL: dataset starts ", TimeToString(from),
+            " but M1 starts ", TimeToString(m1_first),
+            " — backtest falls back to the intrabar assumption before that point");
 }
 //+------------------------------------------------------------------+

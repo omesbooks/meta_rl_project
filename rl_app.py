@@ -3381,6 +3381,18 @@ class RLTradingStudio(ctk.CTk):
 
             # 2) Copy params.json (if exists)
             copied_paths = [raw_copy]
+
+            # 2b) Copy <base>_m1.csv (if collector dumped M1 execution data)
+            src_m1 = src_csv.parent / f"{src_csv.stem}_m1.csv"
+            if src_m1.exists():
+                dst_m1 = WORK_DIR / f"{raw_copy.stem}_m1.csv"
+                shutil.copy(src_m1, dst_m1)
+                copied_paths.append(dst_m1)
+                self.after(0, lambda p=dst_m1: self._log(
+                    self.tools_log,
+                    f"[copy] M1   -> {p.name} (ใช้ในช่อง M1 Data ของหน้า Backtest)",
+                    "success"))
+
             if src_params.exists():
                 dst_params = raw_copy.with_suffix(".params.json")
                 params_existed = dst_params.exists()
@@ -8212,17 +8224,24 @@ Built with: CustomTkinter + stable-baselines3
                     menu.set(models[0])
             except: pass
 
-        # M1 dropdown keeps "(none)" as a first-class choice — user opts in
+        # M1 dropdown keeps "(none)" as a first-class choice — user opts in.
+        # _m1.csv files (collector M1 dumps) are listed first here and are
+        # excluded from the regular dataset dropdowns below so raw M1 OHLCV
+        # can't be picked as a training/backtest feature dataset by mistake.
         m1_menu = getattr(self, "bt_m1_csv", None)
         if m1_menu is not None:
             try:
                 current = m1_menu.get()
-                m1_values = ["(none)"] + [c for c in csvs if c != "(none)"]
+                m1_first = [c for c in csvs if c.endswith("_m1.csv")]
+                others = [c for c in csvs if c != "(none)" and not c.endswith("_m1.csv")]
+                m1_values = ["(none)"] + m1_first + others
                 m1_menu.configure(values=m1_values)
                 if current not in m1_values:
                     m1_menu.set(current if current.strip() else "(none)")
             except Exception:
                 pass
+
+        csvs = [c for c in csvs if not c.endswith("_m1.csv")] or ["(none)"]
 
         csv_menu_names = (
             "pipe_csv", "pipe_bt_csv", "bt_csv", "wf_csv", "an_csv",

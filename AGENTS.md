@@ -156,7 +156,7 @@ reference/                 MIT-Quant-Bible.md, ml4t/  (quant theory)
 | File | Role |
 |------|------|
 | `Indicators/CandlePatterns.mq5` | 10 candlestick patterns indicator (exposed via iCustom). |
-| `Experts/DataCollector_RL.mq5` | Export bars + current RL feature stack -> CSV + `.params` sidecar for train/deploy parity. |
+| `Experts/DataCollector_RL.mq5` | Export bars + current RL feature stack -> CSV + `.params` sidecar for train/deploy parity. With `InpCollectM1=true` (default) also dumps `<out>_m1.csv` (raw M1 OHLCV over the collected period, chunked `CopyRates`) for `backtest_live.py --m1_csv`; partial M1 coverage is logged, not fatal. |
 | `Experts/ML_RL_Trader_template.mq5` | **TEMPLATE** — placeholders filled by `export_to_onnx.py`. Required for MT5 EA export; do not hand-edit for a specific model. |
 | `Include/RL_Indicators.mqh` | Feature library: 75-feature master list, dynamic feature mapping, iCustom auto-load. Shared by all models. |
 | `Experts/*_EA.mq5`, `Include/*_config.mqh` | **Generated per model** by export script. |

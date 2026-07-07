@@ -51,7 +51,7 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 |------|---------|
 | Launch GUI | `run_rl_app.bat` or `.venv/Scripts/python.exe rl_app.py` |
 | Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--reward_profile balanced] [--action_profile basic_4] [--eval_csv <csv>]` |
-| Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent [--intrabar {pessimistic,optimistic}] [--stop_slippage 0.0001] [--m1_csv <m1.csv>]` |
+| Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent [--intrabar {pessimistic,optimistic}] [--stop_slippage 0.0001] [--m1_csv <m1.csv>] [--swap_long -0.00005 --swap_short -0.00003] [--random_baseline 20] [--mc 1000]` |
 | Backtest chart | `python backtest_chart.py <model> <csv> --limit 5000` |
 | Walk-forward | `python rl_walkforward.py <csv> --windows 5 --steps 50000` |
 | Export to ONNX | `python export_to_onnx.py <model> [--name <deploy>]` |
@@ -212,6 +212,20 @@ bar's range — a real error source on H4 when SL/TP distances are small vs bar 
 - Trades CSV column `ambiguous` = True only for assumption-decided exits.
 - MT5 Strategy Tester (real ticks) stays the final pre-live gate — L1/L2 are for
   fast Python iteration.
+
+Three statistical-validation layers on top (all in `backtest_live.py`):
+- **Overnight swap:** `--swap_long`/`--swap_short` (price fraction per rollover,
+  negative = cost; Wednesday rollover charges 3x for T+2 weekend). H4 positions
+  held to `max_hold=30` cross ~5 nights — a real cost most backtests skip.
+  Per-trade `swap_pct` lands in the trades CSV; totals in the report + meta.
+- **Random-agent baseline:** `--random_baseline N` reruns the SAME engine
+  (`_simulate()` with a random policy, no NN inference) N times. If the model
+  doesn't beat ≥95% of random agents, the result comes from the risk rules,
+  not model edge. Verdict + percentile in report + meta.
+- **Monte Carlo DD:** `--mc N` (default 1000, needs ≥10 trades) shuffles trade
+  order → distribution of max drawdown + P(hitting the hard stop). Final
+  balance is order-independent (product commutes), so only DD is reported.
+  Answers sizing/survival risk, not strategy quality.
 
 ### Steps rule of thumb
 `total_timesteps ≈ train_rows × 5–10`. Monitor `ep_rew_mean`: rising→keep going,

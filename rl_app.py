@@ -6541,12 +6541,46 @@ class RLTradingStudio(ctk.CTk):
             wraplength=380, justify="left"
             ).grid(row=7, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 12))
 
+        # Overnight swap (H4 holds cross nights — real cost most backtests skip)
+        ctk.CTkLabel(risk, text="Swap Long %/night", text_color=COLOR_DIM
+                      ).grid(row=8, column=0, sticky="w", padx=18, pady=(0, 4))
+        ctk.CTkLabel(risk, text="Swap Short %/night", text_color=COLOR_DIM
+                      ).grid(row=8, column=1, sticky="w", padx=18, pady=(0, 4))
+        self.bt_swap_long = ctk.CTkEntry(risk, placeholder_text="0 (เช่น -0.005)")
+        self.bt_swap_long.insert(0, "0")
+        self.bt_swap_long.grid(row=9, column=0, sticky="ew", padx=18, pady=(0, 4))
+        self.bt_swap_short = ctk.CTkEntry(risk, placeholder_text="0 (เช่น -0.005)")
+        self.bt_swap_short.insert(0, "0")
+        self.bt_swap_short.grid(row=9, column=1, sticky="ew", padx=18, pady=(0, 4))
+        ctk.CTkLabel(risk,
+            text="ติดลบ = โดนเก็บ · บวก = ได้ carry · คืนวันพุธคิด 3 เท่า (T+2)",
+            font=ctk.CTkFont(size=10), text_color=COLOR_DIM
+            ).grid(row=10, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 12))
+
+        # Statistical validation
+        ctk.CTkLabel(risk, text="Random Baseline Runs", text_color=COLOR_DIM
+                      ).grid(row=11, column=0, sticky="w", padx=18, pady=(0, 4))
+        ctk.CTkLabel(risk, text="Monte Carlo Shuffles", text_color=COLOR_DIM
+                      ).grid(row=11, column=1, sticky="w", padx=18, pady=(0, 4))
+        self.bt_random_baseline = ctk.CTkEntry(risk, placeholder_text="20")
+        self.bt_random_baseline.insert(0, "20")
+        self.bt_random_baseline.grid(row=12, column=0, sticky="ew", padx=18, pady=(0, 4))
+        self.bt_mc = ctk.CTkEntry(risk, placeholder_text="1000")
+        self.bt_mc.insert(0, "1000")
+        self.bt_mc.grid(row=12, column=1, sticky="ew", padx=18, pady=(0, 4))
+        ctk.CTkLabel(risk,
+            text="Baseline: model ต้องชนะ agent สุ่ม ≥95% ถึงถือว่ามี edge จริง · "
+                 "MC: กระจาย DD จากการสลับลำดับ trade",
+            font=ctk.CTkFont(size=10), text_color=COLOR_DIM,
+            wraplength=380, justify="left"
+            ).grid(row=13, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 12))
+
         # Window size — auto-detected from the model; leave blank
         ctk.CTkLabel(risk, text="Window Size (auto-detected — leave blank)",
                       text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
-                      ).grid(row=8, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=14, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 4))
         self.bt_window = ctk.CTkEntry(risk, placeholder_text="auto (from model)")
-        self.bt_window.grid(row=9, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 16))
+        self.bt_window.grid(row=15, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 16))
 
         # Run button + stats
         run_row = ctk.CTkFrame(page, fg_color="transparent")
@@ -6767,6 +6801,25 @@ class RLTradingStudio(ctk.CTk):
         m1_choice = self.bt_m1_csv.get().strip() if hasattr(self, "bt_m1_csv") else ""
         if m1_choice and m1_choice != "(none)":
             cmd += ["--m1_csv", m1_choice]
+
+        # Overnight swap (UI takes percent/night -> CLI takes price fraction)
+        def _pct_field(entry, default="0"):
+            try:
+                return float(entry.get().strip() or default) / 100.0
+            except ValueError:
+                return 0.0
+        cmd += ["--swap_long", str(_pct_field(self.bt_swap_long)),
+                "--swap_short", str(_pct_field(self.bt_swap_short))]
+
+        # Statistical validation
+        try:
+            cmd += ["--random_baseline", str(int(self.bt_random_baseline.get().strip() or "20"))]
+        except ValueError:
+            cmd += ["--random_baseline", "20"]
+        try:
+            cmd += ["--mc", str(int(self.bt_mc.get().strip() or "1000"))]
+        except ValueError:
+            cmd += ["--mc", "1000"]
 
         self._log(self.bt_log, f"$ {' '.join(cmd)}", "info")
         self.bt_run_btn.configure(state="disabled")

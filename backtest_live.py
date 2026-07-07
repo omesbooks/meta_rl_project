@@ -206,7 +206,8 @@ class SimAccount:
     """จำลอง broker account สำหรับ backtest"""
 
     def __init__(self, initial_balance=10000.0, spread_pct=0.0002, commission=0.0001,
-                 intrabar="pessimistic", stop_slippage=0.0):
+                 intrabar="pessimistic", stop_slippage=0.0,
+                 swap_long=0.0, swap_short=0.0):
         self.initial = initial_balance
         self.balance = initial_balance
         self.equity = initial_balance
@@ -222,6 +223,11 @@ class SimAccount:
         # Extra adverse fill on STOP orders only (stops fill at market when
         # triggered -> slip past the level; limits/TP fill at price or better).
         self.stop_slippage = stop_slippage
+        # Overnight swap per rollover, as price fraction (negative = cost,
+        # positive = carry credit). Wednesday rollover charges 3x (T+2 weekend).
+        self.swap_long = swap_long
+        self.swap_short = swap_short
+        self.swap_rollovers = 0
         # Optional M1Resolver — when set, ambiguous bars are resolved by
         # replaying M1 data instead of the intrabar assumption.
         self.m1_resolver = None
@@ -297,7 +303,8 @@ class SimAccount:
             exit_price = exit_price * (1 + self.spread)
 
         pnl_pct = (exit_price - p['entry']) / p['entry'] * sign
-        net_pnl_pct = pnl_pct - self.commission
+        swap_pct = p.get('swap_acc', 0.0)
+        net_pnl_pct = pnl_pct - self.commission + swap_pct
         pnl_dollars = self.balance * net_pnl_pct * p['lots']
         self.balance += pnl_dollars
 
@@ -309,6 +316,7 @@ class SimAccount:
             'bars_held': bar_idx - p['open_idx'],
             'pnl_pct': net_pnl_pct,
             'pnl_dollars': pnl_dollars,
+            'swap_pct': swap_pct,
             'reason': reason,
             'ambiguous': False,  # set True by check_sl_tp when SL & TP shared the bar
         }
@@ -322,6 +330,18 @@ class SimAccount:
             self.close_position(0, exit_price, bar_idx, bar_time, reason)
             closed += 1
         return closed
+
+    def apply_overnight_swap(self, mult=1):
+        """Charge/credit swap on all open positions at a day rollover.
+        mult=3 on the Wednesday rollover (weekend T+2 settlement)."""
+        if self.swap_long == 0.0 and self.swap_short == 0.0:
+            return
+        for p in self.positions:
+            rate = self.swap_long if p['side'] == 'long' else self.swap_short
+            if rate:
+                p['swap_acc'] = p.get('swap_acc', 0.0) + rate * mult
+        if self.positions:
+            self.swap_rollovers += 1
 
     def update_equity(self, current_price):
         """Mark-to-market update"""
@@ -439,6 +459,8 @@ def run_backtest_live(args):
     print(f"  Hard DD     : {args.hard_dd:.0%}")
     print(f"  Intrabar    : {getattr(args, 'intrabar', 'pessimistic')}"
           f" | stop slippage {getattr(args, 'stop_slippage', 0.0):.4%}")
+    print(f"  Swap/night  : long {getattr(args, 'swap_long', 0.0):+.5%}"
+          f" | short {getattr(args, 'swap_short', 0.0):+.5%} (Wed 3x)")
     print("=" * 60)
 
     # Load data
@@ -516,6 +538,10 @@ def run_backtest_live(args):
             "commission": args.commission,
             "intrabar": getattr(args, 'intrabar', 'pessimistic'),
             "stop_slippage": getattr(args, 'stop_slippage', 0.0),
+            "swap_long": getattr(args, 'swap_long', 0.0),
+            "swap_short": getattr(args, 'swap_short', 0.0),
+            "random_baseline": getattr(args, 'random_baseline', 0),
+            "mc": getattr(args, 'mc', 1000),
             "window": args.window,
         },
     }
@@ -558,7 +584,9 @@ def run_backtest_live(args):
                           spread_pct=args.spread,
                           commission=args.commission,
                           intrabar=getattr(args, 'intrabar', 'pessimistic'),
-                          stop_slippage=getattr(args, 'stop_slippage', 0.0))
+                          stop_slippage=getattr(args, 'stop_slippage', 0.0),
+                          swap_long=getattr(args, 'swap_long', 0.0),
+                          swap_short=getattr(args, 'swap_short', 0.0))
 
     # L2: M1 intrabar replay — resolves ambiguous SL/TP bars with real data
     m1_csv = getattr(args, 'm1_csv', '') or ''
@@ -578,14 +606,6 @@ def run_backtest_live(args):
             except Exception as exc:
                 print(f"[m1] failed to load {m1_csv}: {exc} — "
                       f"falling back to intrabar assumption")
-
-    # Stats counters
-    n_signals = {int(action["id"]): 0 for action in action_profile_cfg["actions"]}
-    n_executed = {int(action["id"]): 0 for action in action_profile_cfg["actions"] if int(action["id"]) > 0}
-    n_skipped_conf = 0
-    n_skipped_pos = 0
-    n_force_close = 0
-    n_hard_stop = 0
 
     # Auto-detect window from the model's observation space:
     #   obs_dim = window * n_features + 3  ->  window = (obs_dim - 3) / n_features
@@ -614,154 +634,184 @@ def run_backtest_live(args):
         return 1
 
     # ==========================================================
-    # Main backtest loop
+    # Simulation engine — one pass over the bars with a given policy.
+    # Reused by the model run and by the random-agent baseline runs.
     # ==========================================================
-    print(f"\n[backtest] starting on {len(df) - warmup} bars ...")
-    paused = False
+    sltp_enabled = args.mode == "agent_sltp" and args.atr_sl > 0
 
-    for i in range(warmup, len(df) - 1):
-        row = df.iloc[i]
-        next_row = df.iloc[i + 1]
-        price = row['close']
-        bar_time = row.get('timestamp', i)
+    def _simulate(sim_account, select_action, need_state=True, verbose=False):
+        """select_action(state) -> (action_id, confidence). state is None when
+        need_state=False (random policy doesn't need observations)."""
+        counters = {
+            "n_signals": {int(a["id"]): 0 for a in action_profile_cfg["actions"]},
+            "n_executed": {int(a["id"]): 0 for a in action_profile_cfg["actions"] if int(a["id"]) > 0},
+            "n_skipped_conf": 0, "n_skipped_pos": 0,
+            "n_force_close": 0, "n_hard_stop": 0,
+        }
+        paused = False
+        prev_date = None
 
-        # Update equity (mark-to-market)
-        account.update_equity(price)
+        for i in range(warmup, len(df) - 1):
+            row = df.iloc[i]
+            price = row['close']
+            bar_time = row.get('timestamp', i)
 
-        # Check SL/TP for open positions (using bar OHLC)
-        account.check_sl_tp(row['high'], row['low'], i, bar_time)
+            # ---- Overnight swap on day rollover (Wednesday = 3x) ----
+            cur_date = bar_time.date() if hasattr(bar_time, 'date') else None
+            if cur_date is not None:
+                if prev_date is not None and cur_date != prev_date and sim_account.positions:
+                    sim_account.apply_overnight_swap(3 if prev_date.weekday() == 2 else 1)
+                prev_date = cur_date
 
-        # ---- Hard stop check (L1) ----
-        if account.drawdown_pct() <= -args.hard_dd:
-            if not paused:
-                if args.verbose:
-                    print(f"  [{bar_time}] 🚨 HARD STOP triggered (DD={account.drawdown_pct():.2%})")
-                account.close_all(price, i, bar_time, "hard_stop")
-                n_hard_stop += 1
-                # ⭐ Reset peak so agent can resume after hard stop
-                # (Without this, drawdown stays negative forever → paused forever)
-                account.peak = account.equity
-                paused = True
-            continue
-        else:
-            paused = False
+            # Update equity (mark-to-market)
+            sim_account.update_equity(price)
 
-        # ---- Force close after max_hold ----
-        for j in range(len(account.positions) - 1, -1, -1):
-            p = account.positions[j]
-            if i - p['open_idx'] >= args.max_hold:
-                account.close_position(j, price, i, bar_time, "max_hold")
-                n_force_close += 1
+            # Check SL/TP for open positions (using bar OHLC)
+            sim_account.check_sl_tp(row['high'], row['low'], i, bar_time)
 
-        # ---- Predict ----
-        # Build state: window of features + position_info
-        if i < warmup:
-            continue
-        window = df.iloc[i - warmup + 1:i + 1][feature_cols].values
-        pos_side = account.get_position_side()
-        unrealized = account.unrealized_pnl_pct(price)
-        bars_in_pos = 0
-        if account.positions:
-            bars_in_pos = i - account.positions[0]['open_idx']
-        extra = np.array([pos_side, unrealized, bars_in_pos / 100.0])
-        state = np.concatenate([window.flatten(), extra]).astype(np.float32)
+            # ---- Hard stop check (L1) ----
+            if sim_account.drawdown_pct() <= -args.hard_dd:
+                if not paused:
+                    if verbose:
+                        print(f"  [{bar_time}] 🚨 HARD STOP triggered (DD={sim_account.drawdown_pct():.2%})")
+                    sim_account.close_all(price, i, bar_time, "hard_stop")
+                    counters["n_hard_stop"] += 1
+                    # ⭐ Reset peak so agent can resume after hard stop
+                    # (Without this, drawdown stays negative forever → paused forever)
+                    sim_account.peak = sim_account.equity
+                    paused = True
+                continue
+            else:
+                paused = False
 
+            # ---- Force close after max_hold ----
+            for j in range(len(sim_account.positions) - 1, -1, -1):
+                p = sim_account.positions[j]
+                if i - p['open_idx'] >= args.max_hold:
+                    sim_account.close_position(j, price, i, bar_time, "max_hold")
+                    counters["n_force_close"] += 1
+
+            # ---- Select action ----
+            if need_state:
+                window = df.iloc[i - warmup + 1:i + 1][feature_cols].values
+                pos_side = sim_account.get_position_side()
+                unrealized = sim_account.unrealized_pnl_pct(price)
+                bars_in_pos = 0
+                if sim_account.positions:
+                    bars_in_pos = i - sim_account.positions[0]['open_idx']
+                extra = np.array([pos_side, unrealized, bars_in_pos / 100.0])
+                state = np.concatenate([window.flatten(), extra]).astype(np.float32)
+            else:
+                state = None
+
+            action, confidence = select_action(state)
+            counters["n_signals"][action] += 1
+
+            # ---- Apply confidence filter ----
+            if action in entry_action_ids and confidence < args.conf:
+                counters["n_skipped_conf"] += 1
+                continue
+
+            # ---- Position limit ----
+            if action in entry_action_ids and sim_account.position_count() >= args.max_positions:
+                counters["n_skipped_pos"] += 1
+                continue
+
+            # ---- Calc ATR for SL/TP ----
+            # Note: features are normalized — need raw ATR from price columns
+            recent_high = df.iloc[max(0, i - 14):i + 1]['high']
+            recent_low = df.iloc[max(0, i - 14):i + 1]['low']
+            atr_proxy = (recent_high - recent_low).mean()
+            atr_proxy = max(atr_proxy, price * 0.001)  # min 0.1%
+            trail_recent_high = df.iloc[max(0, i - trail_atr_period):i + 1]['high']
+            trail_recent_low = df.iloc[max(0, i - trail_atr_period):i + 1]['low']
+            trail_atr_proxy = (trail_recent_high - trail_recent_low).mean()
+            trail_atr_proxy = max(trail_atr_proxy, price * 0.001)
+
+            # ---- Execute ----
+            if action == buy_id:  # Buy
+                if sltp_enabled:
+                    sl = price - atr_proxy * args.atr_sl
+                    tp = price + atr_proxy * args.atr_tp
+                    lots = sim_account.calc_lot_size(price - sl, args.risk)
+                else:
+                    sl = 0   # no SL — pure agent mode
+                    tp = 0
+                    lots = max(0.01, args.risk * 100)
+                sim_account.open_position('long', price, lots, sl, tp, i, bar_time)
+                counters["n_executed"][action] += 1
+                if verbose:
+                    print(f"  [{bar_time}] BUY  conf={confidence:.2f} lots={lots} "
+                          f"price={price:.2f} sl={sl:.2f} tp={tp:.2f}")
+
+            elif action == sell_id:  # Sell
+                if sltp_enabled:
+                    sl = price + atr_proxy * args.atr_sl
+                    tp = price - atr_proxy * args.atr_tp
+                    lots = sim_account.calc_lot_size(sl - price, args.risk)
+                else:
+                    sl = 0
+                    tp = 0
+                    lots = max(0.01, args.risk * 100)
+                sim_account.open_position('short', price, lots, sl, tp, i, bar_time)
+                counters["n_executed"][action] += 1
+                if verbose:
+                    print(f"  [{bar_time}] SELL conf={confidence:.2f} lots={lots} "
+                          f"price={price:.2f} sl={sl:.2f} tp={tp:.2f}")
+
+            elif action == close_id:  # Close
+                if sim_account.position_count() > 0:
+                    closed = sim_account.close_all(price, i, bar_time, "signal")
+                    counters["n_executed"][action] += closed
+                    if verbose:
+                        print(f"  [{bar_time}] CLOSE conf={confidence:.2f} closed={closed}")
+
+            elif action == breakeven_id:
+                modified = sim_account.move_sl_breakeven(
+                    price,
+                    min_profit_pct=float(action_profile_cfg["params"]["breakeven_min_profit"]),
+                )
+                counters["n_executed"][action] += modified
+                if verbose and modified:
+                    print(f"  [{bar_time}] MOVE_SL_BE conf={confidence:.2f} modified={modified}")
+
+            elif action == trail_id:
+                modified = sim_account.trail_sl_atr(
+                    price,
+                    trail_atr_proxy,
+                    atr_mult=float(action_profile_cfg["params"]["trail_atr_mult"]),
+                    min_profit_pct=float(action_profile_cfg["params"]["trail_min_profit"]),
+                )
+                counters["n_executed"][action] += modified
+                if verbose and modified:
+                    print(f"  [{bar_time}] TRAIL_SL_ATR conf={confidence:.2f} modified={modified}")
+
+        # Final close any remaining positions
+        if sim_account.positions:
+            final_price = df.iloc[-1]['close']
+            sim_account.close_all(final_price, len(df) - 1, df.iloc[-1].get('timestamp'), "end")
+        return counters
+
+    def _model_select(state):
         obs_tensor = torch.as_tensor(state).unsqueeze(0).float()
         with torch.no_grad():
             dist = model.policy.get_distribution(obs_tensor)
             probs = dist.distribution.probs.numpy().flatten()
         action = int(np.argmax(probs))
-        confidence = float(probs[action])
-        n_signals[action] += 1
+        return action, float(probs[action])
 
-        # ---- Apply confidence filter ----
-        if action in entry_action_ids and confidence < args.conf:
-            n_skipped_conf += 1
-            continue
-
-        # ---- Position limit ----
-        if action in entry_action_ids and account.position_count() >= args.max_positions:
-            n_skipped_pos += 1
-            continue
-
-        # ---- Calc ATR for SL/TP ----
-        # Use raw ATR if available, else compute from recent prices
-        # Note: features are normalized — need raw ATR
-        recent_high = df.iloc[max(0, i - 14):i + 1]['high']
-        recent_low = df.iloc[max(0, i - 14):i + 1]['low']
-        atr_proxy = (recent_high - recent_low).mean()
-        atr_proxy = max(atr_proxy, price * 0.001)  # min 0.1%
-        trail_recent_high = df.iloc[max(0, i - trail_atr_period):i + 1]['high']
-        trail_recent_low = df.iloc[max(0, i - trail_atr_period):i + 1]['low']
-        trail_atr_proxy = (trail_recent_high - trail_recent_low).mean()
-        trail_atr_proxy = max(trail_atr_proxy, price * 0.001)
-
-        # ---- Execute ----
-        # Pure agent mode: disable SL/TP (set to 0 = no level)
-        sltp_enabled = args.mode == "agent_sltp" and args.atr_sl > 0
-
-        if action == buy_id:  # Buy
-            if sltp_enabled:
-                sl = price - atr_proxy * args.atr_sl
-                tp = price + atr_proxy * args.atr_tp
-                lots = account.calc_lot_size(price - sl, args.risk)
-            else:
-                sl = 0  # no SL
-                tp = 0  # no TP
-                # In pure mode, use fixed lot proportional to risk%
-                lots = max(0.01, args.risk * 100)
-            account.open_position('long', price, lots, sl, tp, i, bar_time)
-            n_executed[action] += 1
-            if args.verbose:
-                print(f"  [{bar_time}] BUY  conf={confidence:.2f} lots={lots} "
-                      f"price={price:.2f} sl={sl:.2f} tp={tp:.2f}")
-
-        elif action == sell_id:  # Sell
-            if sltp_enabled:
-                sl = price + atr_proxy * args.atr_sl
-                tp = price - atr_proxy * args.atr_tp
-                lots = account.calc_lot_size(sl - price, args.risk)
-            else:
-                sl = 0
-                tp = 0
-                lots = max(0.01, args.risk * 100)
-            account.open_position('short', price, lots, sl, tp, i, bar_time)
-            n_executed[action] += 1
-            if args.verbose:
-                print(f"  [{bar_time}] SELL conf={confidence:.2f} lots={lots} "
-                      f"price={price:.2f} sl={sl:.2f} tp={tp:.2f}")
-
-        elif action == close_id:  # Close
-            if account.position_count() > 0:
-                closed = account.close_all(price, i, bar_time, "signal")
-                n_executed[action] += closed
-                if args.verbose:
-                    print(f"  [{bar_time}] CLOSE conf={confidence:.2f} closed={closed}")
-
-        elif action == breakeven_id:
-            modified = account.move_sl_breakeven(
-                price,
-                min_profit_pct=float(action_profile_cfg["params"]["breakeven_min_profit"]),
-            )
-            n_executed[action] += modified
-            if args.verbose and modified:
-                print(f"  [{bar_time}] MOVE_SL_BE conf={confidence:.2f} modified={modified}")
-
-        elif action == trail_id:
-            modified = account.trail_sl_atr(
-                price,
-                trail_atr_proxy,
-                atr_mult=float(action_profile_cfg["params"]["trail_atr_mult"]),
-                min_profit_pct=float(action_profile_cfg["params"]["trail_min_profit"]),
-            )
-            n_executed[action] += modified
-            if args.verbose and modified:
-                print(f"  [{bar_time}] TRAIL_SL_ATR conf={confidence:.2f} modified={modified}")
-
-    # Final close any remaining positions
-    if account.positions:
-        final_price = df.iloc[-1]['close']
-        account.close_all(final_price, len(df) - 1, df.iloc[-1].get('timestamp'), "end")
+    # ==========================================================
+    # Main backtest run (model policy)
+    # ==========================================================
+    print(f"\n[backtest] starting on {len(df) - warmup} bars ...")
+    run_counters = _simulate(account, _model_select, need_state=True,
+                             verbose=args.verbose)
+    n_signals = run_counters["n_signals"]
+    n_executed = run_counters["n_executed"]
+    n_skipped_conf = run_counters["n_skipped_conf"]
+    n_skipped_pos = run_counters["n_skipped_pos"]
+    n_force_close = run_counters["n_force_close"]
+    n_hard_stop = run_counters["n_hard_stop"]
 
     # ==========================================================
     # Stats
@@ -869,6 +919,90 @@ def run_backtest_live(args):
             print(f"           add --m1_csv <M1 data> to resolve with real data,")
         print(f"           re-run with --intrabar optimistic to bracket the result,")
         print(f"           and treat live results as somewhere in between.")
+
+    # Swap summary (only when enabled)
+    swap_net = sum(t.get('swap_pct', 0.0) * t.get('lots', 1.0) for t in trades)
+    if account.swap_long or account.swap_short:
+        print(f"    Overnight swap          : {account.swap_rollovers:,} rollovers | "
+              f"net impact {swap_net:+.4%} (balance-fraction terms)")
+
+    # ---- Random-agent baseline: is the edge distinguishable from luck + risk rules? ----
+    baseline_result = None
+    n_base = int(getattr(args, 'random_baseline', 0) or 0)
+    if n_base > 0:
+        rng_base = np.random.default_rng(42)
+        n_actions_total = len(action_profile_cfg["actions"])
+        base_returns = []
+        for _k in range(n_base):
+            acct = SimAccount(initial_balance=args.balance, spread_pct=args.spread,
+                              commission=args.commission,
+                              intrabar=getattr(args, 'intrabar', 'pessimistic'),
+                              stop_slippage=getattr(args, 'stop_slippage', 0.0),
+                              swap_long=getattr(args, 'swap_long', 0.0),
+                              swap_short=getattr(args, 'swap_short', 0.0))
+            _simulate(acct,
+                      lambda _s: (int(rng_base.integers(0, n_actions_total)), 1.0),
+                      need_state=False, verbose=False)
+            base_returns.append(acct.balance / args.balance - 1)
+        base_arr = np.array(base_returns)
+        model_return = account.balance / args.balance - 1
+        beat = int((model_return > base_arr).sum())
+        pctile = beat / n_base
+        print(f"\n  Random-agent baseline ({n_base} runs, same costs/risk rules):")
+        print(f"    random return : median {np.median(base_arr):+.2%} | "
+              f"p5 {np.percentile(base_arr, 5):+.2%} | p95 {np.percentile(base_arr, 95):+.2%}")
+        print(f"    model return  : {model_return:+.2%} -> beats {beat}/{n_base} "
+              f"random agents ({pctile:.0%})")
+        if pctile >= 0.95:
+            base_verdict = "edge distinguishable from random (>=95th percentile)"
+        elif pctile >= 0.75:
+            base_verdict = "weak evidence of edge (75th-95th percentile)"
+        else:
+            base_verdict = ("NOT distinguishable from random — the risk rules, "
+                            "not the model, drive this result")
+        print(f"    verdict       : {base_verdict}")
+        baseline_result = {
+            "runs": n_base,
+            "random_return_median": float(np.median(base_arr)),
+            "random_return_p5": float(np.percentile(base_arr, 5)),
+            "random_return_p95": float(np.percentile(base_arr, 95)),
+            "model_return": float(model_return),
+            "beats": beat,
+            "percentile": pctile,
+            "verdict": base_verdict,
+        }
+
+    # ---- Monte Carlo: shuffle trade order -> DD / final-balance distributions ----
+    # (assumes trade independence; answers "how bad could the same trades look
+    #  in a different order" — sizing/hard-stop risk, not strategy quality)
+    mc_result = None
+    n_mc = int(getattr(args, 'mc', 1000) or 0)
+    if n_mc > 0 and len(trades) >= 10:
+        # Note: final balance is order-independent (product of (1+r) commutes) —
+        # only the DRAWDOWN PATH changes with ordering, so that's what we report.
+        fracs = np.array([t['pnl_pct'] * t.get('lots', 1.0) for t in trades], dtype=float)
+        rng_mc = np.random.default_rng(7)
+        mc_dds = np.empty(n_mc)
+        for _k in range(n_mc):
+            order = rng_mc.permutation(fracs)
+            eq = np.concatenate(([args.balance], args.balance * np.cumprod(1.0 + order)))
+            peak = np.maximum.accumulate(eq)
+            mc_dds[_k] = ((eq - peak) / peak).min()
+        p_hard = float((mc_dds <= -args.hard_dd).mean())
+        print(f"\n  Monte Carlo ({n_mc:,} shuffles of trade order):")
+        print(f"    Max DD (this ordering)  : {max_dd:.2%}")
+        print(f"    Max DD across orderings : median {np.median(mc_dds):.2%} | "
+              f"95% worst-case {np.percentile(mc_dds, 5):.2%} | worst {mc_dds.min():.2%}")
+        print(f"    P(hit hard stop {args.hard_dd:.0%} in some ordering): {p_hard:.1%}")
+        print(f"    (same trades, shuffled order — answers sizing/survival risk, "
+              f"not strategy quality)")
+        mc_result = {
+            "shuffles": n_mc,
+            "dd_median": float(np.median(mc_dds)),
+            "dd_p95_worst_case": float(np.percentile(mc_dds, 5)),
+            "dd_worst": float(mc_dds.min()),
+            "p_hit_hard_dd": p_hard,
+        }
     print("=" * 60)
 
     # Save trades + equity curve
@@ -902,6 +1036,10 @@ def run_backtest_live(args):
         "m1_no_data": r.no_data if r else 0,
         "ambiguous_fills": amb,
         "ambiguous_share_of_sl_tp": amb_share,
+        "swap_rollovers": account.swap_rollovers,
+        "swap_net_impact": swap_net,
+        "random_baseline": baseline_result,
+        "monte_carlo": mc_result,
     }
     if args.save:
         out_csv = artifact_trades_path(args.model)
@@ -996,6 +1134,23 @@ def main():
                          "(timestamp,open,high,low,close). Resolves SL/TP "
                          "ordering inside ambiguous bars with real data "
                          "instead of the --intrabar assumption")
+    ap.add_argument("--swap_long", type=float, default=0.0,
+                    help="overnight swap per rollover for LONG positions, as "
+                         "price fraction (negative = cost, e.g. -0.00005 = "
+                         "-0.005%%/night). Wednesday rollover charges 3x")
+    ap.add_argument("--swap_short", type=float, default=0.0,
+                    help="overnight swap per rollover for SHORT positions "
+                         "(same units as --swap_long)")
+
+    # Statistical validation
+    ap.add_argument("--random_baseline", type=int, default=0,
+                    help="run N random-agent passes through the same engine "
+                         "and report where the model ranks (0 = off). If the "
+                         "model doesn't beat ~95%% of random agents, the "
+                         "result is driven by risk rules, not edge")
+    ap.add_argument("--mc", type=int, default=1000,
+                    help="Monte Carlo shuffles of trade order for DD/final-"
+                         "balance distributions (0 = off; needs >=10 trades)")
 
     # Data split
     ap.add_argument("--start", type=float, default=0.0,

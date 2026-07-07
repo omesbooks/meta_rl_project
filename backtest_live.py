@@ -632,6 +632,19 @@ def run_backtest_live(args):
               f"features={n_feat}); using {warmup}. "
               f"Check that backtest features match training.")
 
+    # Hard guard: if the obs we will build can't match the model's input dim,
+    # fail HERE with a clear message instead of a torch shape RuntimeError.
+    if warmup * n_feat + 3 != obs_dim:
+        print(f"\nERROR: model/dataset feature mismatch")
+        print(f"  model expects obs_dim={obs_dim} (= window x n_features + 3)")
+        print(f"  dataset provides {n_feat} features -> obs would be {warmup * n_feat + 3}")
+        print(f"  -> this dataset is NOT the one this model was trained on.")
+        print(f"     Pick the matching dataset (same feature set/collector run),")
+        print(f"     or the matching model for this dataset.")
+        _write_json(meta_path, {**meta, "status": "failed",
+                    "error": f"feature mismatch: model obs_dim={obs_dim}, csv features={n_feat}"})
+        return 1
+
     # Ensure we have enough warmup
     if len(df) <= warmup + 1:
         print("ERROR: not enough data after warmup")

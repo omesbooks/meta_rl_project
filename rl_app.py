@@ -6624,6 +6624,18 @@ class RLTradingStudio(ctk.CTk):
         self.stat_dd = StatCard(stats_grid, "Max DD", "—")
         self.stat_dd.grid(row=0, column=3, sticky="ew", padx=4)
 
+        # Equity curve (PNG rendered inline after each run)
+        self.bt_equity_label = ctk.CTkLabel(stats_card, text="")
+        self.bt_equity_label.grid(row=2, column=0, sticky="w", padx=18, pady=(4, 8))
+
+        # Full report (settings + all validation metrics from meta JSON)
+        self.bt_report_box = ctk.CTkTextbox(stats_card, height=300,
+            font=ctk.CTkFont(family="Consolas", size=12),
+            fg_color="#0a0e14", wrap="none")
+        self.bt_report_box.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.bt_report_box.insert("1.0", "(run a backtest to see the full report)")
+        self.bt_report_box.configure(state="disabled")
+
         # Log
         log_card = Card(page, title="📝 Backtest Log")
         log_card.grid(row=3, column=0, sticky="ew")
@@ -6651,6 +6663,101 @@ class RLTradingStudio(ctk.CTk):
                 self.bt_m1_csv.set(m1)
         except Exception:
             pass
+
+    def _load_backtest_report(self):
+        """After a run: render equity PNG + full report from the meta JSON."""
+        from artifact_paths import backtest_meta_path
+        model = self.bt_model.get().strip()
+        mp = backtest_meta_path(model)
+        if not mp.exists():
+            return
+        meta = json.loads(mp.read_text(encoding="utf-8-sig"))
+        s = meta.get("settings", {})
+        res = meta.get("result", {}) or {}
+
+        def pc(v, d=2):
+            return f"{v*100:.{d}f}%" if isinstance(v, (int, float)) else "—"
+
+        # Stat cards from meta (exact values, no log-regex guessing)
+        if res.get("total_trades"):
+            self._update_stat(self.stat_wr, pc(res.get("win_rate"), 1))
+            pf = res.get("profit_factor", 0)
+            self._update_stat(self.stat_pf, f"{pf:.2f}",
+                              COLOR_GREEN if pf and pf > 1 else COLOR_RED)
+            ret = res.get("return_pct", 0)
+            self._update_stat(self.stat_ret, pc(ret),
+                              COLOR_GREEN if ret > 0 else COLOR_RED)
+            self._update_stat(self.stat_dd, pc(res.get("max_drawdown")), COLOR_RED)
+
+        # Equity PNG inline
+        try:
+            from PIL import Image
+            ep = find_equity_path(model)
+            if ep and Path(ep).exists():
+                img = Image.open(ep)
+                w = 900
+                h = int(img.height * w / img.width)
+                self._bt_equity_imgref = ctk.CTkImage(img, size=(w, h))
+                self.bt_equity_label.configure(image=self._bt_equity_imgref, text="")
+        except Exception:
+            pass
+
+        # Full report text
+        L = []
+        L.append(f"Model {meta.get('model','?')}  ·  {meta.get('data_csv','?')}  ·  "
+                 f"{meta.get('backtest_rows',0):,} rows  ·  "
+                 f"{(meta.get('backtest_period') or {}).get('start','?')} -> "
+                 f"{(meta.get('backtest_period') or {}).get('end','?')}")
+        L.append(f"Settings   mode={s.get('mode')}  conf={s.get('conf')}  "
+                 f"risk={pc(s.get('risk'))}  maxpos={s.get('max_positions')}  "
+                 f"SL/TP={s.get('atr_sl')}/{s.get('atr_tp')} ATR")
+        L.append(f"Realism    intrabar={s.get('intrabar')}  slip={pc(s.get('stop_slippage'),3)}  "
+                 f"swap L/S={pc(s.get('swap_long'),4)}/{pc(s.get('swap_short'),4)}  "
+                 f"M1={'yes' if s.get('m1_csv') else 'no'}")
+        L.append("-" * 100)
+        L.append(f"Trades     {res.get('total_trades',0):,} "
+                 f"(L {res.get('long_trades',0):,} / S {res.get('short_trades',0):,})  ·  "
+                 f"WR {pc(res.get('win_rate'),1)}  ·  PF {res.get('profit_factor',0):.2f}  ·  "
+                 f"avg win {pc(res.get('avg_win'))} / loss {pc(res.get('avg_loss'))}")
+        L.append(f"P&L        return {pc(res.get('return_pct'))}  ·  "
+                 f"final ${res.get('final_balance',0):,.0f}  ·  "
+                 f"max DD {pc(res.get('max_drawdown'))}  ·  "
+                 f"sharpe {res.get('sharpe',0):.2f}")
+        amb = res.get('ambiguous_share_of_sl_tp')
+        L.append(f"Execution  ambiguous(SL+TP same bar) {res.get('ambiguous_bars',0)}  ·  "
+                 f"M1-resolved {res.get('m1_resolved',0)}  ·  "
+                 f"by-assumption {pc(amb,1)}  ·  "
+                 f"swap {res.get('swap_rollovers',0)} rollovers ({pc(res.get('swap_net_impact'),3)})")
+        rb = res.get("random_baseline")
+        if rb:
+            L.append(f"Baseline   beats {rb.get('beats')}/{rb.get('runs')} random agents "
+                     f"({pc(rb.get('percentile'),0)})  ·  random median {pc(rb.get('random_return_median'))}")
+            L.append(f"           -> {rb.get('verdict','')}")
+        mc = res.get("monte_carlo")
+        if mc:
+            L.append(f"MonteCarlo DD median {pc(mc.get('dd_median'))}  ·  "
+                     f"95% worst {pc(mc.get('dd_p95_worst_case'))}  ·  "
+                     f"worst {pc(mc.get('dd_worst'))}  ·  "
+                     f"P(hard stop) {pc(mc.get('p_hit_hard_dd'),1)}")
+        sig = res.get("significance")
+        if sig:
+            L.append(f"Stats      mean/trade {pc(sig.get('mean_per_trade'),4)}  ·  "
+                     f"t {sig.get('t_stat',0):.2f}  ·  p {sig.get('p_value_one_sided',0):.3f}  ·  "
+                     f"PSR {pc(sig.get('psr'),1)}")
+            L.append(f"           -> {sig.get('verdict','')}")
+        ea = res.get("equity_analytics") or {}
+        if ea:
+            neg = sum(1 for v in (ea.get('monthly_returns') or {}).values() if v < 0)
+            tot = len(ea.get('monthly_returns') or {})
+            L.append(f"Analytics  underwater {ea.get('longest_underwater_bars',0):,} bars  ·  "
+                     f"winners MAE {pc(ea.get('winners_avg_mae'),2)}  ·  "
+                     f"losers MFE {pc(ea.get('losers_avg_mfe'),2)}  ·  "
+                     f"months neg {neg}/{tot}")
+
+        self.bt_report_box.configure(state="normal")
+        self.bt_report_box.delete("1.0", "end")
+        self.bt_report_box.insert("1.0", "\n".join(L))
+        self.bt_report_box.configure(state="disabled")
 
     def _browse_bt_m1_csv(self):
         """Pick an M1 CSV from anywhere (e.g. MT5 export outside the project)."""
@@ -8676,6 +8783,13 @@ Built with: CustomTkinter + stable-baselines3
                 self.wf_progress_label.configure(
                     text="Progress: stopped/failed",
                     text_color=COLOR_RED)
+
+        # Populate the backtest report panel on success
+        if page == 'backtest' and rc == 0 and hasattr(self, 'bt_report_box'):
+            try:
+                self._load_backtest_report()
+            except Exception as exc:
+                self._log(self.bt_log, f"(report render failed: {exc})", "warn")
 
         # Populate regime breakpoint table on success
         if page == 'regime' and rc == 0:

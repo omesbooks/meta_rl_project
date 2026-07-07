@@ -317,6 +317,8 @@ class SimAccount:
             'pnl_pct': net_pnl_pct,
             'pnl_dollars': pnl_dollars,
             'swap_pct': swap_pct,
+            'mae_pct': p.get('mae', 0.0),   # worst unrealized during the trade
+            'mfe_pct': p.get('mfe', 0.0),   # best unrealized during the trade
             'reason': reason,
             'ambiguous': False,  # set True by check_sl_tp when SL & TP shared the bar
         }
@@ -344,11 +346,13 @@ class SimAccount:
             self.swap_rollovers += 1
 
     def update_equity(self, current_price):
-        """Mark-to-market update"""
+        """Mark-to-market update + per-position MAE/MFE tracking (close-based)"""
         unrealized = 0.0
         for p in self.positions:
             sign = 1 if p['side'] == 'long' else -1
             change = (current_price - p['entry']) / p['entry'] * sign
+            p['mfe'] = max(p.get('mfe', change), change)  # max favorable excursion
+            p['mae'] = min(p.get('mae', change), change)  # max adverse excursion
             unrealized += self.balance * change * p['lots']
         self.equity = self.balance + unrealized
         self.peak = max(self.peak, self.equity)
@@ -985,9 +989,11 @@ def run_backtest_live(args):
         mc_dds = np.empty(n_mc)
         for _k in range(n_mc):
             order = rng_mc.permutation(fracs)
-            eq = np.concatenate(([args.balance], args.balance * np.cumprod(1.0 + order)))
-            peak = np.maximum.accumulate(eq)
-            mc_dds[_k] = ((eq - peak) / peak).min()
+            # NB: local names — must not shadow the real bar-level eq/peak
+            # used later by the equity-analytics block
+            mc_eq = np.concatenate(([args.balance], args.balance * np.cumprod(1.0 + order)))
+            mc_peak = np.maximum.accumulate(mc_eq)
+            mc_dds[_k] = ((mc_eq - mc_peak) / mc_peak).min()
         p_hard = float((mc_dds <= -args.hard_dd).mean())
         print(f"\n  Monte Carlo ({n_mc:,} shuffles of trade order):")
         print(f"    Max DD (this ordering)  : {max_dd:.2%}")
@@ -1003,6 +1009,116 @@ def run_backtest_live(args):
             "dd_worst": float(mc_dds.min()),
             "p_hit_hard_dd": p_hard,
         }
+
+    # ---- Statistical significance: is the mean trade return really > 0? ----
+    sig_result = None
+    fracs_all = np.array([t['pnl_pct'] * t.get('lots', 1.0) for t in trades], dtype=float)
+    n_tr = len(fracs_all)
+    if n_tr >= 10:
+        mean_r = float(fracs_all.mean())
+        std_r = float(fracs_all.std(ddof=1)) + 1e-12
+        t_stat = mean_r / (std_r / np.sqrt(n_tr))
+        try:
+            from scipy import stats as _st
+            p_val = float(1 - _st.t.cdf(t_stat, df=n_tr - 1))
+            skew = float(_st.skew(fracs_all))
+            kurt = float(_st.kurtosis(fracs_all, fisher=False))
+            _cdf = _st.norm.cdf
+        except ImportError:
+            from math import erf as _erf, sqrt as _msqrt
+            _cdf = lambda z: 0.5 * (1 + _erf(z / _msqrt(2)))
+            p_val = float(1 - _cdf(t_stat))
+            skew, kurt = 0.0, 3.0
+        sr = mean_r / std_r                       # per-trade Sharpe
+        se_sr = float(np.sqrt((1 + 0.5 * sr * sr) / n_tr))   # Lo (2002)
+        # Probabilistic Sharpe Ratio vs 0 (Bailey & de Prado 2012):
+        # P(true Sharpe > 0) with skew/kurtosis correction
+        denom = float(np.sqrt(max(1e-12, 1 - skew * sr + (kurt - 1) / 4.0 * sr * sr)))
+        psr = float(_cdf(sr * np.sqrt(n_tr - 1) / denom))
+
+        if n_tr < 30:
+            sig_verdict = f"sample too small (n={n_tr} < 30) — every number here is noisy"
+        elif p_val < 0.01 and psr >= 0.95:
+            sig_verdict = "edge is statistically significant (p<0.01, PSR>=95%)"
+        elif p_val < 0.05:
+            sig_verdict = "moderate evidence (p<0.05) — confirm on walk-forward/OOS"
+        else:
+            sig_verdict = "mean trade return is NOT statistically > 0"
+        print(f"\n  Statistical significance (n={n_tr:,} trades):")
+        print(f"    mean/trade   : {mean_r:+.4%} | t-stat {t_stat:.2f} | "
+              f"p (mean>0, one-sided) {p_val:.3f}")
+        print(f"    Sharpe/trade : {sr:.3f} +/- {1.96 * se_sr:.3f} (95% CI) | "
+              f"PSR P(SR>0): {psr:.1%}")
+        print(f"    verdict      : {sig_verdict}")
+        sig_result = {
+            "n_trades": n_tr, "mean_per_trade": mean_r, "t_stat": float(t_stat),
+            "p_value_one_sided": p_val, "sharpe_per_trade": float(sr),
+            "sharpe_ci95": float(1.96 * se_sr), "psr": psr, "verdict": sig_verdict,
+        }
+
+    # ---- Equity analytics: DD duration, monthly returns, MAE/MFE ----
+    eq_analytics = {}
+    # Longest underwater stretch (bars below the running peak)
+    uw = eq < peak
+    longest_uw = cur_uw = 0
+    for flag in uw:
+        cur_uw = cur_uw + 1 if flag else 0
+        longest_uw = max(longest_uw, cur_uw)
+    uw_line = f"{longest_uw:,} bars"
+    if 'timestamp' in df.columns:
+        try:
+            bd = df['timestamp'].diff().median()
+            uw_line += f" (~{(longest_uw * bd).days} days)"
+        except Exception:
+            pass
+    print(f"\n  Equity analytics:")
+    print(f"    Longest underwater      : {uw_line}")
+    eq_analytics["longest_underwater_bars"] = int(longest_uw)
+
+    # MAE/MFE (close-based excursions while the trade was open)
+    winners = [t for t in trades if t['pnl_pct'] > 0]
+    losers = [t for t in trades if t['pnl_pct'] <= 0]
+    if winners and losers:
+        win_mae = float(np.mean([t.get('mae_pct', 0.0) for t in winners]))
+        lose_mfe = float(np.mean([t.get('mfe_pct', 0.0) for t in losers]))
+        print(f"    Winners avg MAE         : {win_mae:+.4%}  "
+              f"(winners' worst unrealized point; <0 = went red first)")
+        print(f"    Losers  avg MFE         : {lose_mfe:+.4%}  "
+              f"(losers' best unrealized point; >0 = had profit, gave it back)")
+        if lose_mfe > abs(avg_loss) * 0.5:
+            print(f"    [hint] losers averaged {lose_mfe:+.2%} unrealized profit before "
+                  f"losing — a tighter TP/trailing stop may capture it")
+        eq_analytics["winners_avg_mae"] = win_mae
+        eq_analytics["losers_avg_mfe"] = lose_mfe
+
+    # Monthly returns table (equity curve resampled by calendar month)
+    if 'timestamp' in df.columns and len(eq) > 2:
+        try:
+            ts = df['timestamp'].iloc[warmup:warmup + len(eq) - 1]
+            s = pd.Series(eq[1:len(ts) + 1].astype(float),
+                          index=pd.DatetimeIndex(ts.values))
+            try:
+                month_end = s.resample('ME').last().dropna()
+            except ValueError:          # pandas < 2.2 uses 'M'
+                month_end = s.resample('M').last().dropna()
+            mr = month_end.pct_change()
+            if len(month_end) > 0:
+                mr.iloc[0] = month_end.iloc[0] / float(eq[0]) - 1
+            print(f"    Monthly returns:")
+            months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
+            for year in sorted(set(mr.index.year)):
+                cells = []
+                for m in range(1, 13):
+                    v = mr[(mr.index.year == year) & (mr.index.month == m)]
+                    cells.append(f"{months[m-1]} {v.iloc[0]:+6.2%}" if len(v) else "")
+                row_txt = "  ".join(c for c in cells if c)
+                print(f"      {year}: {row_txt}")
+            eq_analytics["monthly_returns"] = {
+                str(k.date()): float(v) for k, v in mr.items() if pd.notna(v)}
+            neg_months = int((mr.dropna() < 0).sum())
+            print(f"    Months negative         : {neg_months} / {mr.notna().sum()}")
+        except Exception as exc:
+            print(f"    (monthly table skipped: {exc})")
     print("=" * 60)
 
     # Save trades + equity curve
@@ -1040,6 +1156,8 @@ def run_backtest_live(args):
         "swap_net_impact": swap_net,
         "random_baseline": baseline_result,
         "monte_carlo": mc_result,
+        "significance": sig_result,
+        "equity_analytics": eq_analytics,
     }
     if args.save:
         out_csv = artifact_trades_path(args.model)

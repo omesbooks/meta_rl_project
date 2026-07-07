@@ -470,6 +470,67 @@ def main():
 
     stats = test_env_raw.get_stats()
     meta["quick_eval_stats"] = stats
+
+    # ---------- MC robustness — measured from the very first training ----------
+    # Two Monte Carlo probes on the quick-eval trade list so EVERY model gets
+    # robustness numbers at birth (not only when someone runs a full backtest):
+    #   1) order-shuffle -> drawdown distribution   (sizing / survival risk)
+    #   2) skip 10% of trades -> profit retention   (is the edge concentrated
+    #      in a few lucky trades? SQX-style criterion: retention >= ~70%)
+    mc_meta = None
+    trade_rets = np.array([t.get("pnl", 0.0) for t in test_env_raw.trades], dtype=float)
+    if len(trade_rets) >= 10:
+        rng = np.random.default_rng(7)
+        n_mc = 1000
+        dds = np.empty(n_mc)
+        for _k in range(n_mc):
+            eq = np.concatenate(([1.0], np.cumprod(1.0 + rng.permutation(trade_rets))))
+            pk = np.maximum.accumulate(eq)
+            dds[_k] = ((eq - pk) / pk).min()
+
+        base_ret = float(np.prod(1.0 + trade_rets) - 1)
+        keep = max(1, int(len(trade_rets) * 0.9))
+        finals = np.empty(n_mc)
+        for _k in range(n_mc):
+            pick = rng.choice(trade_rets, size=keep, replace=False)
+            finals[_k] = np.prod(1.0 + pick) - 1
+        p95_worst_ret = float(np.percentile(finals, 5))
+        flip_rate = float((finals <= 0).mean()) if base_ret > 0 else float((finals > 0).mean())
+        retention = (p95_worst_ret / base_ret) if base_ret > 0 else None
+
+        print("\n" + "=" * 50)
+        print(f"  MC robustness (quick eval, {n_mc:,} runs)")
+        print("=" * 50)
+        print(f"  DD across orderings : median {np.median(dds):.2%} | "
+              f"95% worst {np.percentile(dds, 5):.2%} | worst {dds.min():.2%}")
+        print(f"  Skip 10% of trades  : base {base_ret:+.2%} | "
+              f"p95-worst {p95_worst_ret:+.2%}"
+              + (f" | retention {retention:.0%}" if retention is not None else ""))
+        if base_ret > 0:
+            print(f"  P(profit flips to loss when 10% skipped): {flip_rate:.1%}")
+            if retention is not None and retention >= 0.7 and flip_rate < 0.05:
+                print(f"  verdict: edge is well-distributed across trades")
+            elif retention is not None and retention < 0.4:
+                print(f"  verdict: edge CONCENTRATED in few trades — fragile")
+            else:
+                print(f"  verdict: moderate concentration — check on full backtest")
+        else:
+            print(f"  (strategy not profitable on quick eval — "
+                  f"retention criterion not applicable)")
+
+        mc_meta = {
+            "n_trades": int(len(trade_rets)),
+            "dd_median": float(np.median(dds)),
+            "dd_p95_worst": float(np.percentile(dds, 5)),
+            "dd_worst": float(dds.min()),
+            "skip_frac": 0.10,
+            "base_return": base_ret,
+            "skip_p95_worst_return": p95_worst_ret,
+            "profit_retention": retention,
+            "flip_rate": flip_rate,
+        }
+    meta["quick_eval_mc"] = mc_meta
+
     meta["updated_at"] = datetime.now().isoformat(timespec="seconds")
     meta_path.write_text(json.dumps(_jsonable(meta), indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[meta] updated -> {meta_path}")

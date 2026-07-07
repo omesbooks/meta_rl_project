@@ -4698,6 +4698,25 @@ class RLTradingStudio(ctk.CTk):
             wraplength=280,
         )
         self.train_split_hint.grid(row=2, column=2, sticky="ew", padx=(8, 0), pady=(4, 0))
+
+        # MC robustness settings (quick-eval Monte Carlo after training)
+        ctk.CTkLabel(wm, text="MC Eval Runs (0 = off)", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=3, column=0, sticky="w", pady=(10, 0))
+        ctk.CTkLabel(wm, text="MC Skip %", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=(10, 0))
+        self.train_mc_eval = ctk.CTkEntry(wm, placeholder_text="1000")
+        self.train_mc_eval.insert(0, "1000")
+        self.train_mc_eval.grid(row=4, column=0, sticky="ew", pady=(2, 0))
+        self.train_mc_skip = ctk.CTkEntry(wm, placeholder_text="10")
+        self.train_mc_skip.insert(0, "10")
+        self.train_mc_skip.grid(row=4, column=1, sticky="ew", padx=(8, 0), pady=(2, 0))
+        ctk.CTkLabel(wm,
+            text="MC หลัง quick eval: shuffle DD + skip-trades retention (SQX-style)",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=10), anchor="w",
+            justify="left", wraplength=560,
+            ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(4, 0))
         self.train_window_hint = ctk.CTkLabel(
             wm,
             text="Recommended: 10 (H4 default)",
@@ -6359,6 +6378,8 @@ class RLTradingStudio(ctk.CTk):
             "--window", window,
             "--max_hold", max_hold,
             "--train_pct", str(self._parse_train_pct(self.train_pct.get(), 0.85)),
+            "--mc_eval", (self.train_mc_eval.get().strip() or "1000"),
+            "--mc_skip_frac", str(self._parse_train_pct(self.train_mc_skip.get(), 0.10)),
             "--reward_mode", reward,
             "--reward_profile", reward_profile,
             "--reward_overrides", reward_overrides,

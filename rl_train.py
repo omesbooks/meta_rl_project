@@ -114,6 +114,10 @@ def main():
                     help="บังคับปิด position ถ้าถือเกินกี่ bars")
     ap.add_argument("--net_arch", default="auto",
                     help="NN layers e.g. '128,64' or 'auto' (scale by window)")
+    ap.add_argument("--mc_eval", type=int, default=1000,
+                    help="MC robustness runs on the quick eval (0 = off)")
+    ap.add_argument("--mc_skip_frac", type=float, default=0.10,
+                    help="fraction of trades dropped per skip-MC run (0.10 = 10%%)")
 
     # Advanced PPO hyperparameters
     ap.add_argument("--learning_rate", type=float, default=3e-4,
@@ -479,9 +483,10 @@ def main():
     #      in a few lucky trades? SQX-style criterion: retention >= ~70%)
     mc_meta = None
     trade_rets = np.array([t.get("pnl", 0.0) for t in test_env_raw.trades], dtype=float)
-    if len(trade_rets) >= 10:
+    n_mc = int(getattr(args, 'mc_eval', 1000) or 0)
+    skip_frac = min(max(float(getattr(args, 'mc_skip_frac', 0.10)), 0.01), 0.5)
+    if n_mc > 0 and len(trade_rets) >= 10:
         rng = np.random.default_rng(7)
-        n_mc = 1000
         dds = np.empty(n_mc)
         for _k in range(n_mc):
             eq = np.concatenate(([1.0], np.cumprod(1.0 + rng.permutation(trade_rets))))
@@ -489,7 +494,7 @@ def main():
             dds[_k] = ((eq - pk) / pk).min()
 
         base_ret = float(np.prod(1.0 + trade_rets) - 1)
-        keep = max(1, int(len(trade_rets) * 0.9))
+        keep = max(1, int(len(trade_rets) * (1.0 - skip_frac)))
         finals = np.empty(n_mc)
         for _k in range(n_mc):
             pick = rng.choice(trade_rets, size=keep, replace=False)
@@ -503,11 +508,11 @@ def main():
         print("=" * 50)
         print(f"  DD across orderings : median {np.median(dds):.2%} | "
               f"95% worst {np.percentile(dds, 5):.2%} | worst {dds.min():.2%}")
-        print(f"  Skip 10% of trades  : base {base_ret:+.2%} | "
+        print(f"  Skip {skip_frac:.0%} of trades : base {base_ret:+.2%} | "
               f"p95-worst {p95_worst_ret:+.2%}"
               + (f" | retention {retention:.0%}" if retention is not None else ""))
         if base_ret > 0:
-            print(f"  P(profit flips to loss when 10% skipped): {flip_rate:.1%}")
+            print(f"  P(profit flips to loss when {skip_frac:.0%} skipped): {flip_rate:.1%}")
             if retention is not None and retention >= 0.7 and flip_rate < 0.05:
                 print(f"  verdict: edge is well-distributed across trades")
             elif retention is not None and retention < 0.4:
@@ -523,7 +528,7 @@ def main():
             "dd_median": float(np.median(dds)),
             "dd_p95_worst": float(np.percentile(dds, 5)),
             "dd_worst": float(dds.min()),
-            "skip_frac": 0.10,
+            "skip_frac": skip_frac,
             "base_return": base_ret,
             "skip_p95_worst_return": p95_worst_ret,
             "profit_retention": retention,

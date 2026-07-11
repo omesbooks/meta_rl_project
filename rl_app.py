@@ -6779,12 +6779,14 @@ class RLTradingStudio(ctk.CTk):
         if pure:
             for w in sltp_widgets:
                 w.grid_remove()
-            # Slippage moves into the vacated left slot so it doesn't float
-            # alone in the right column (empty grid rows collapse on their own)
-            self.bt_slip_label.grid(row=3, column=0, sticky="w",
+            # Slippage is a niche knob in Pure mode (only manage_6 BE/Trailing
+            # SLs use it) — park it at the bottom of the card, under Window
+            self.bt_slip_label.grid(row=16, column=0, sticky="w",
                                     padx=18, pady=(0, 4))
-            self.bt_stop_slip.grid(row=4, column=0, sticky="ew",
+            self.bt_stop_slip.grid(row=17, column=0, columnspan=2, sticky="ew",
                                    padx=18, pady=(0, 4))
+            self.bt_realism_hint.grid(row=18, column=0, columnspan=2,
+                                      sticky="w", padx=18, pady=(0, 12))
             self.bt_realism_hint.configure(
                 text="Pure Agent: ไม่มี initial SL/TP → ATR SL/TP กับ Intrabar Fill ไม่ถูกใช้ · "
                      "Stop Slippage ยังมีผลกับ model แบบ Manage 6 (agent ตั้ง SL เองผ่าน BE/Trailing)")
@@ -6793,8 +6795,10 @@ class RLTradingStudio(ctk.CTk):
                 w.grid()
             self.bt_slip_label.grid(row=5, column=1, sticky="w",
                                     padx=18, pady=(0, 4))
-            self.bt_stop_slip.grid(row=6, column=1, sticky="ew",
+            self.bt_stop_slip.grid(row=6, column=1, columnspan=1, sticky="ew",
                                    padx=18, pady=(0, 4))
+            self.bt_realism_hint.grid(row=7, column=0, columnspan=2,
+                                      sticky="w", padx=18, pady=(0, 12))
             self.bt_realism_hint.configure(
                 text="ถ้า SL+TP อยู่ใน bar เดียว OHLC บอกไม่ได้ว่าโดนอะไรก่อน → รันทั้ง 2 โหมด"
                      "เพื่อดูช่วงผลจริง · slippage คิดเฉพาะ SL (stop order)")

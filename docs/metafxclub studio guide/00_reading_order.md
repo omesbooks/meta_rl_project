@@ -32,6 +32,24 @@
    - บทละเอียดสำหรับผู้ใช้ที่ต้องการออกแบบ feature / indicator / dataset schema ของตัวเอง
    - ครอบคลุม feature contract, `.params.json`, min/max/step, การเพิ่ม feature ใน `RL_Indicators.mqh`, และ checklist ให้ flow `dataset -> train -> export -> EA live` ไม่หลุด parity
 
+8. [10_finetune_detail.html](10_finetune_detail.html)
+   - บทละเอียดหน้า Fine-tune: ปรับ model เดิมด้วยข้อมูลใหม่ (mix old 30% + new 70%, LR ต่ำ)
+   - เมื่อไหร่ควร fine-tune vs retrain ใหม่, catastrophic forgetting, ข้อจำกัดเรื่อง action profile
+
+9. [11_analyze_confidence_detail.html](11_analyze_confidence_detail.html)
+   - บทละเอียดหน้า Analyze: อ่านตาราง threshold scan หา confidence sweet spot ของแต่ละ model
+   - เข้าใจว่า confidence ของ PPO ไม่ใช่ calibrated probability และต้องยืนยันบน Backtest ก่อนใช้จริง
+
+10. [12_regime_check_detail.html](12_regime_check_detail.html)
+    - บทละเอียดหน้า Regime Check: ตรวจ regime shift ด้วย HMM / K-Means / PELT
+    - Gemini auto-event labeling, การอ่านตาราง breakpoints และปุ่ม Use as Train Cutoff
+
+11. [13_models_library_detail.html](13_models_library_detail.html)
+    - บทละเอียดหน้า Models: ตารางเปรียบเทียบ model, คอลัมน์ Realism (M1 / guess %),
+      equity viewer และหลักการเลือก model ไป deploy
+
+> เลข `08` จองไว้สำหรับ `08_export_mt5_detail.html` ตามแผนเดิม (ยังไม่เขียน)
+
 ## Codex Prompt Files
 
 - [Codex Git Update Prompt](../codex_git_update_prompts.md)

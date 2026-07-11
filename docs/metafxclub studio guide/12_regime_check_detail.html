@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Regime Check Detail</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+      --purple: #6d28d9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ede9fe;
+      color: var(--purple);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .tag.purple { background: #ede9fe; color: var(--purple); }
+    .flow { display: grid; gap: 12px; margin-top: 16px; }
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--purple);
+      background: #f4f0ff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Flow Step 2 · Regime Check</span>
+      <h1>Regime Check — จัด train data ให้อยู่โลกเดียวกับตลาดปัจจุบัน</h1>
+      <p class="lead">
+        บทนี้อธิบายหน้า Regime Check: ทำไม regime shift ทำให้โมเดลที่ train ผ่านกลับขาดทุนหนักตอน test,
+        วิธีเลือก detection method (HMM / K-Means / PELT), การใช้ Gemini ตั้งชื่อ event อัตโนมัติ,
+        การอ่านตาราง breakpoints และปุ่ม Use Selected as Train Cutoff ที่ตัดข้อมูลให้ตรง regime ปัจจุบันในคลิกเดียว
+      </p>
+      <nav>
+        <a href="#why">ทำไม Regime สำคัญ</a>
+        <a href="#story">เคสจริง -38.7%</a>
+        <a href="#workflow">ขั้นตอนใช้งาน</a>
+        <a href="#methods">3 Methods</a>
+        <a href="#params">Parameters</a>
+        <a href="#gemini">Gemini Events</a>
+        <a href="#table">อ่านตาราง Breakpoints</a>
+        <a href="#cutoff">Train Cutoff</a>
+        <a href="#caveat">Trade-off</a>
+      </nav>
+    </header>
+
+    <section id="why">
+      <h2>Regime คืออะไร และทำไมต้องเช็คก่อน Train</h2>
+      <p>
+        Regime คือ "สภาพตลาด" ช่วงหนึ่ง ๆ ที่ราคามีพฤติกรรมทางสถิติแบบเดียวกัน เช่น mean, volatility,
+        แนวโน้มหลัก. เหตุการณ์ใหญ่อย่าง Brexit, COVID, วิกฤต Lehman ทำให้ตลาด "ย้ายโลก" —
+        distribution ของราคาเปลี่ยนไปถาวร ไม่ใช่แค่ผันผวนชั่วคราว
+      </p>
+      <div class="grid">
+        <div class="card warn">
+          <span class="tag warn">Problem</span>
+          <h3>โมเดลเรียนจากโลกเก่า</h3>
+          <p>
+            ถ้า train data คลุมหลาย regime โมเดล RL จะเรียนกฎของโลกเก่าไปด้วย
+            เช่น "ราคาต่ำกว่า mean เดี๋ยวก็เด้งกลับ" ทั้งที่โลกใหม่ mean ย้ายไปแล้ว
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Evidence</span>
+          <h3>Train ดี Test พัง = สัญญาณ regime drift</h3>
+          <p>
+            อาการคลาสสิก: eval reward ตอน train ดูดี แต่ backtest บนช่วงปัจจุบันขาดทุนซ้ำ ๆ
+            ยิ่ง train นาน ยิ่งแย่ลง เพราะโมเดลยิ่งจำโลกเก่าแม่นขึ้น
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">Fix</span>
+          <h3>ตัด train data ให้อยู่ regime เดียวกับปัจจุบัน</h3>
+          <p>
+            หา breakpoint ที่ตลาดเปลี่ยนโลกครั้งล่าสุด แล้วตัดข้อมูลก่อนหน้านั้นทิ้ง
+            ให้ train และ test อยู่ใน distribution เดียวกัน — นี่คือหน้าที่ของหน้า Regime Check
+          </p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>ประโยคสอน user:</strong>
+        โมเดลไม่ได้โง่ มันแค่เรียนมาจากโลกที่ไม่มีอยู่แล้ว
+        ก่อนโทษ hyperparameter ให้เช็คก่อนว่า train data กับตลาดปัจจุบันอยู่โลกเดียวกันหรือเปล่า
+      </div>
+    </section>
+
+    <section id="story">
+      <h2>เคสจริง: GBPUSD ขาดทุน -38.7% เพราะ regime shift</h2>
+      <p>
+        เคสนี้เกิดจริงระหว่างพัฒนาระบบ และเป็นเหตุผลที่หน้านี้ถูกสร้างขึ้นมา
+        ใช้เล่าให้ user ฟังก่อนสอนปุ่มต่าง ๆ เพราะมันตอบคำถาม "ทำไมต้องมีหน้านี้" ได้ชัดที่สุด
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ช่วงข้อมูล</th>
+            <th>บทบาท</th>
+            <th>ราคาเฉลี่ย GBPUSD</th>
+            <th>ผลที่เกิด</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>2004 – 2022</td>
+            <td>Train (full history)</td>
+            <td>~1.55</td>
+            <td>โมเดลเรียนว่า "ราคาปกติ" อยู่แถว 1.55</td>
+          </tr>
+          <tr>
+            <td>2022 – ปัจจุบัน</td>
+            <td>Test</td>
+            <td>~1.27</td>
+            <td>ราคาย้าย regime ไปแล้ว (~18% shift)</td>
+          </tr>
+          <tr>
+            <td colspan="2"><strong>ผลลัพธ์รวม</strong></td>
+            <td colspan="2"><strong>โมเดลกด BUY ซ้ำ ๆ รอราคากลับ mean เก่า → return -38.7%</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="grid two">
+        <div class="card warn">
+          <span class="tag red">สิ่งที่โมเดลคิด</span>
+          <h3>"1.27 ถูกมาก เดี๋ยวเด้งกลับ 1.55"</h3>
+          <p>
+            โมเดลเห็นราคาปัจจุบันต่ำกว่า mean ที่เรียนมาตลอด 18 ปี
+            จึงกด BUY แล้วถือรอ mean reversion ที่ไม่มีวันมา
+            ยิ่งรันนานยิ่งขาดทุนสะสม (-26.9% แล้วแย่ลงเป็น -38.7%)
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">สิ่งที่แก้จริง</span>
+          <h3>ตัด train data เหลือหลัง Brexit</h3>
+          <p>
+            HMM ชี้ breakpoint ใหญ่ที่ Brexit 2016 และ COVID 2020
+            การ retrain บน subset หลัง Brexit ทำให้ train distribution
+            ตรงกับ test — distribution shift หายไปโดยไม่ต้องแตะโมเดลเลย
+          </p>
+        </div>
+      </div>
+      <div class="callout warn">
+        <strong>ข้อคิดสำคัญ:</strong>
+        ปัญหานี้แก้ด้วยการปรับ learning rate, เพิ่ม steps, เปลี่ยน reward ไม่ได้เลย
+        เพราะต้นเหตุอยู่ที่ <em>ข้อมูล</em> ไม่ใช่ตัวโมเดล — data quality ชนะ model tuning เสมอ
+      </div>
+    </section>
+
+    <section id="workflow">
+      <h2>ขั้นตอนใช้งานหน้า Regime Check</h2>
+      <p>
+        Flow แนะนำสำหรับใช้จริง: เริ่มจากไฟล์ dataset ที่จะเอาไป train
+        แล้วจบที่ไฟล์ใหม่ที่ตัดแล้วพร้อม train ทันที
+      </p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag blue">Data</span>
+            <h3>Browse เลือก CSV</h3>
+            <p>
+              เลือกไฟล์ dataset ที่จะใช้ train (ต้องมีคอลัมน์ <code>timestamp</code> และ <code>close</code>)
+              GUI จะโชว์จำนวน rows และช่วงวันที่ให้ตรวจว่าใช่ไฟล์ที่ตั้งใจ
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag purple">Events</span>
+            <h3>Refresh events with Gemini (ครั้งแรกของ symbol ใหม่)</h3>
+            <p>
+              กดปุ่ม <code>🤖 Refresh events with Gemini</code> ให้ระบบหา price shock ใหญ่ ๆ
+              แล้วให้ AI ตั้งชื่อ event ให้อัตโนมัติ — ทำครั้งเดียวต่อ symbol ก็พอ
+              ผลถูกเก็บใน <code>known_events.json</code> ใช้ซ้ำได้ทุกรอบ
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag green">Detect</span>
+            <h3>เลือก HMM แล้ว Run Detection</h3>
+            <p>
+              เริ่มจาก <code>HMM 3-state ⭐</code> (default) เพราะให้ผลดีสุดจากการทดสอบ
+              รันเสร็จใน ~3 วินาที ตาราง breakpoints จะขึ้นเองอัตโนมัติ
+              และเปิด chart ดูเส้น breakpoint บนกราฟราคาได้จากปุ่ม <code>📄 Open Chart</code>
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag blue">Pick</span>
+            <h3>เลือก breakpoint ใหญ่สุดที่ใกล้ปัจจุบัน</h3>
+            <p>
+              มองหาแถวที่ match กับ event ใหญ่ (✓ Brexit, ✓ COVID) และเป็นการเปลี่ยนโลกครั้งล่าสุด
+              ที่ยังเหลือข้อมูลหลังจากนั้นมากพอสำหรับ train
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag green">Cutoff</span>
+            <h3>Use Selected as Train Cutoff</h3>
+            <p>
+              กดปุ่มเดียว ระบบจะตัด CSV, copy <code>.params.json</code> sidecar
+              แล้วพาไปหน้า Train พร้อมไฟล์ใหม่ที่เลือกให้แล้ว
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">6</div>
+          <div>
+            <span class="tag warn">Verify</span>
+            <h3>Retrain แล้วเทียบผลกับโมเดลเดิม</h3>
+            <p>
+              Train บน subset ใหม่ แล้ว backtest เทียบกับโมเดล full-history
+              ถ้า regime drift คือต้นเหตุจริง ผลบนช่วง test ปัจจุบันควรดีขึ้นชัดเจน
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="methods">
+      <h2>3 Detection Methods: เลือกตัวไหน</h2>
+      <p>
+        เบื้องหลังหน้านี้คือ <code>regime_compare.py</code> ซึ่งตอนวิจัยทดสอบมา 6 วิธี
+        แล้วคัดเหลือ 3 วิธีที่คุ้มค่าให้เลือกใน GUI — คะแนน "จับ events" วัดจากการเจอ breakpoint
+        ภายใน ±90 วันของ event จริง (Lehman / Brexit / Truss) บนข้อมูล GBPUSD H4
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>หลักการ</th>
+            <th>จับ Events</th>
+            <th>ความเร็ว</th>
+            <th>เหมาะกับ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>HMM 3-state ⭐</strong></td>
+            <td>Hidden Markov Model มอง [log return, rolling volatility] แล้วแบ่งตลาดเป็น 3 hidden state (เช่น bull/bear/sideways) — breakpoint คือจุดที่ state เปลี่ยนแล้วอยู่ยาว</td>
+            <td>3/3</td>
+            <td>~3s</td>
+            <td><strong>ค่า default — ใช้ตัวนี้ก่อนเสมอ</strong></td>
+          </tr>
+          <tr>
+            <td>K-Means rolling</td>
+            <td>Cluster บน rolling features [mean, std, slope] — วันที่ label cluster เปลี่ยนแล้วคงอยู่ = breakpoint</td>
+            <td>2/3</td>
+            <td>เร็วสุด ~60ms</td>
+            <td>สแกนเร็ว ๆ หรือ cross-check ผล HMM</td>
+          </tr>
+          <tr>
+            <td>PELT (changepoint)</td>
+            <td>Optimal segmentation ด้วย RBF kernel (library <code>ruptures</code>) — หาจุดตัดที่แบ่ง series ได้ดีที่สุดทางคณิตศาสตร์</td>
+            <td>2/3</td>
+            <td>ช้า ~3 นาที</td>
+            <td>ยืนยันผลรอบสุดท้าย เมื่อยอมรอได้</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">ทำไม HMM ชนะ</span>
+          <h3>มองทั้ง return และ volatility พร้อมกัน</h3>
+          <p>
+            Regime shift จริงมักมาคู่กัน: ราคาย้าย mean และ volatility เปลี่ยน
+            HMM เห็น joint distribution ของทั้งสองตัว จึงแยก "โลกเปลี่ยน" ออกจาก "แค่ผันผวน" ได้ดีกว่า
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">กันสัญญาณหลอก</span>
+          <h3>Persistence filter 30 วัน</h3>
+          <p>
+            ทั้ง HMM และ K-Means กรอง breakpoint ที่ state เด้งกลับเร็ว:
+            ต้องอยู่ state ใหม่อย่างน้อย 25 จาก 30 วันถัดไปถึงนับเป็น breakpoint จริง
+            (no flapping) — เส้นที่เห็นในตารางจึงเป็นการย้ายโลกจริง ไม่ใช่ noise
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">หมายเหตุ</span>
+          <h3>ทุกวิธีวิเคราะห์บน daily</h3>
+          <p>
+            ระบบ resample H4 → daily close ก่อนวิเคราะห์เสมอ เพื่อความเร็วและลด noise
+            แต่ตอนตัด cutoff จริงจะตัดบนไฟล์ H4 ต้นฉบับเต็ม ๆ ไม่ใช่ไฟล์ daily
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="params">
+      <h2>Parameters ของแต่ละ Method</h2>
+      <p>
+        แต่ละ method มี parameter ชุดเดียวที่ต้องรู้ — GUI จะโชว์เฉพาะช่องของ method ที่เลือกอยู่
+        ค่า default ผ่านการทดสอบมาแล้ว ส่วนใหญ่ไม่ต้องแตะ
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>Parameter</th>
+            <th>ความหมาย</th>
+            <th>คำแนะนำ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>HMM</td>
+            <td>States (default <code>3</code>)</td>
+            <td>จำนวน hidden state ที่ให้โมเดลแบ่งตลาด (3 = bull/bear/sideways)</td>
+            <td>ใช้ <code>3</code> เป็นหลัก; เพิ่มเป็น <code>4-5</code> เฉพาะเมื่ออยากแยก regime ละเอียดขึ้น แต่ breakpoint จะถี่ขึ้นตาม</td>
+          </tr>
+          <tr>
+            <td rowspan="2">K-Means</td>
+            <td>Clusters k (default <code>3</code>)</td>
+            <td>จำนวนกลุ่มสภาพตลาด</td>
+            <td>ตีความเหมือน HMM states — เริ่มที่ <code>3</code></td>
+          </tr>
+          <tr>
+            <td>Window (default <code>60</code> วัน)</td>
+            <td>ความยาว rolling window ที่ใช้คำนวณ [mean, std, slope]</td>
+            <td>window สั้น = ไวต่อการเปลี่ยนแปลงแต่ noise เยอะ; window ยาว = นิ่งแต่เจอ breakpoint ช้า</td>
+          </tr>
+          <tr>
+            <td>PELT</td>
+            <td>Penalty (default <code>50</code>)</td>
+            <td>ต้นทุนของการเพิ่ม breakpoint หนึ่งจุดใน optimization</td>
+            <td>สูง = ตัด break น้อย จับเฉพาะ shift ใหญ่ ๆ; ต่ำ = ตัดถี่ เจอ break ยิบย่อยเยอะ</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>หลักการสอน:</strong>
+        อย่าจูน parameter เพื่อ "ให้เจอ breakpoint ที่อยากเห็น" — ให้รัน default ก่อน
+        แล้วถ้าผลขัดกับสายตา ค่อยลองอีก method มา cross-check ว่า breakpoint นั้นเจอเหมือนกันไหม
+      </div>
+    </section>
+
+    <section id="gemini">
+      <h2>Gemini Auto-Events: ให้ AI ตั้งชื่อเหตุการณ์ให้</h2>
+      <p>
+        ตาราง breakpoints จะอ่านง่ายขึ้นมากถ้ารู้ว่าแต่ละจุด "คือเหตุการณ์อะไร"
+        แทนที่จะต้องนั่งหาเองว่าวันนั้นเกิดอะไรขึ้น ปุ่ม <code>🤖 Refresh events with Gemini</code>
+        ทำงานเป็น pipeline อัตโนมัติผ่าน <code>gemini_labeler.py</code>:
+      </p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag blue">Detect</span>
+            <h3>หา Top-K price shocks จาก CSV</h3>
+            <p>
+              ระบบหา "วันช็อค" — วันที่ |return| ผิดปกติเทียบ rolling baseline 60 วัน (z-score)
+              เลือก Top-K ตัวที่ z สูงสุดก่อน (default <code>15</code>) โดยเว้นระยะขั้นต่ำ 30 วัน
+              ไม่ให้ event เดียวกันกินหลาย slot
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag purple">Label</span>
+            <h3>ถาม Gemini ว่าแต่ละวันเกิดอะไรขึ้น</h3>
+            <p>
+              ส่งคำถามทีละวัน เช่น "วันที่ X GBPUSD ร่วง 3.2% ในวันเดียว เกิดจากเหตุการณ์อะไร"
+              Gemini ตอบชื่อ event + category + confidence กลับมาเป็น JSON
+              (ระบบเว้น 4.5 วินาทีต่อ call เพื่อไม่ชน rate limit free tier 15 req/min)
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag green">Save</span>
+            <h3>บันทึกลง known_events.json</h3>
+            <p>
+              ผลถูกเก็บเป็นไฟล์ <code>known_events.json</code> ที่ regime detection ทุกรอบหลังจากนั้น
+              โหลดมาใช้ match อัตโนมัติ — สถานะไฟล์ (จำนวน events, symbol, last updated)
+              โชว์อยู่ใต้ปุ่มตลอด
+            </p>
+          </div>
+        </article>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>เรื่องต้องรู้</th>
+            <th>รายละเอียด</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ต้องมี API key</td>
+            <td>ใช้ Gemini free tier ได้ — ขอ key ฟรีที่ aistudio.google.com แล้วใส่ในหน้า <strong>Settings</strong> ก่อนกดปุ่ม (ระบบเก็บใน <code>api_keys.json</code> ที่ gitignore ไว้ ไม่หลุดขึ้น repo)</td>
+          </tr>
+          <tr>
+            <td>ไม่มี key ก็รันได้</td>
+            <td>จะได้เฉพาะวันที่ shock โดยไม่มีชื่อ (label เป็น <code>Shock @ YYYY-MM</code>) — ยังใช้ match ได้ แต่อ่านยากกว่า</td>
+          </tr>
+          <tr>
+            <td>ไม่เคยรันเลยก็ไม่พัง</td>
+            <td>ถ้ายังไม่มี <code>known_events.json</code> ระบบ fallback ไปใช้ 3 events ที่ hardcode ไว้ (Lehman / Brexit / Truss) ซึ่งเหมาะกับ GBPUSD เท่านั้น — symbol อื่นควร refresh ก่อน</td>
+          </tr>
+          <tr>
+            <td>Symbol / Top-K</td>
+            <td>ใส่ symbol ให้ตรงไฟล์ (Gemini ใช้เป็น context ตอนเดาเหตุการณ์) และ Top-K คือจำนวน shock สูงสุดที่จะ label (default 15 ≈ ใช้เวลา ~1 นาที)</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>จุดที่คนเข้าใจผิดบ่อยที่สุด:</strong>
+        events เป็นแค่ "ป้ายชื่อ" สำหรับ validate และอ่านผลง่ายเท่านั้น —
+        <em>ไม่มีผลใด ๆ ต่อการหา breakpoint</em>. HMM/K-Means/PELT หา breakpoint จากราคาล้วน ๆ
+        แล้วค่อยเอา events มาทาบทีหลังว่าจุดไหนตรงกับเหตุการณ์จริงบ้าง
+        ดังนั้นถึง Gemini จะ label ผิดหรือไม่มี key ผล detection ก็ไม่เปลี่ยนแม้แต่จุดเดียว
+      </div>
+    </section>
+
+    <section id="table">
+      <h2>อ่านตาราง Detected Breakpoints</h2>
+      <p>
+        หลังรัน detection เสร็จ ตารางจะถูกเติมอัตโนมัติจาก <code>regime_single_data.json</code>
+        แต่ละแถวคือ breakpoint หนึ่งจุด พร้อมข้อมูลว่า match กับ event ที่รู้จักหรือไม่
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>คอลัมน์</th>
+            <th>ความหมาย</th>
+            <th>วิธีใช้</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Breakpoint Date</td>
+            <td>วันที่ algorithm ตรวจพบว่าตลาดเปลี่ยน regime</td>
+            <td>วันนี้คือ candidate สำหรับ train cutoff — ข้อมูลตั้งแต่วันนี้เป็นต้นไปถือว่าอยู่โลกใหม่</td>
+          </tr>
+          <tr>
+            <td>Known Event Match</td>
+            <td><code>✓ ชื่อ event</code> ถ้ามี event ที่รู้จักภายใน ±90 วัน, <code>—</code> ถ้าไม่มี</td>
+            <td>แถวที่มี ✓ น่าเชื่อกว่า เพราะมีเหตุการณ์จริงในโลกรองรับว่าทำไมตลาดถึงเปลี่ยน</td>
+          </tr>
+          <tr>
+            <td>Days Apart</td>
+            <td>ระยะห่างระหว่าง breakpoint กับ event จริง (วัน)</td>
+            <td>ยิ่งน้อยยิ่งแม่น — หลักหน่วยถึงหลักสิบวันคือปกติ เพราะตลาดมักเริ่มขยับก่อน/หลังข่าวเล็กน้อย</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>เหนือตารางมี summary line สรุปผลรวมของรอบนั้น อ่านแบบนี้:</p>
+      <ul>
+        <li><code>Method: HMM · 6 breakpoints · 4/15 known events matched · 5,432 bars analyzed in 2.87s</code></li>
+        <li><strong>จำนวน breakpoints</strong> — เยอะเกิน (10+) แปลว่า method/param ไวไป, น้อยเกิน (0-1) แปลว่าหยาบไป</li>
+        <li><strong>score matched</strong> — สัดส่วน events ที่ detection จับได้ ใช้เป็น sanity check ว่าวิธีนี้ "เห็น" เหตุการณ์จริงบ้างไหม (ตัวหารคือจำนวน events ทั้งหมดใน known_events.json ไม่ใช่ 3 เสมอไป)</li>
+        <li>สีเขียว = match ratio ดี (≥40%), สีเหลือง = ต่ำ ควร cross-check ด้วย method อื่น</li>
+      </ul>
+      <div class="callout">
+        <strong>เลือกแถวไหนไปเป็น cutoff:</strong>
+        หลักคิดคือ "การย้ายโลกครั้งใหญ่ครั้งล่าสุด ที่ยังเหลือข้อมูลพอ train" —
+        breakpoint ที่มี ✓ event ใหญ่ (Brexit, COVID) และใกล้ปัจจุบันที่สุด
+        โดยหลัง cutoff ควรเหลือข้อมูลอย่างน้อยหลายพัน bars (ดู section Trade-off ด้านล่าง)
+      </div>
+    </section>
+
+    <section id="cutoff">
+      <h2>Use Selected as Train Cutoff: ปุ่มปิดจ็อบ</h2>
+      <p>
+        นี่คือ killer feature ของหน้านี้ — เปลี่ยนผลวิเคราะห์เป็นไฟล์ train จริงในคลิกเดียว
+        เลือกแถว breakpoint ในตาราง แล้วกด <code>🎯 Use Selected as Train Cutoff</code>
+        ระบบจะทำให้ครบทุกอย่าง:
+      </p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag blue">Filter</span>
+            <h3>ตัด CSV เหลือเฉพาะหลัง cutoff</h3>
+            <p>
+              กรองแถวที่ <code>timestamp &gt;= วันที่เลือก</code> จากไฟล์ H4 ต้นฉบับ
+              แล้วบันทึกเป็นไฟล์ใหม่ชื่อ <code>&lt;ชื่อเดิม&gt;_from_&lt;YYYY-MM-DD&gt;.csv</code>
+              (ไฟล์แม่ไม่ถูกแตะ) — log จะบอกว่าเหลือกี่แถวจากทั้งหมด
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag green">Sidecar</span>
+            <h3>Copy .params.json ตามไปด้วย</h3>
+            <p>
+              ระบบ copy <code>&lt;ชื่อเดิม&gt;.params.json</code> ไปเป็นของไฟล์ใหม่อัตโนมัติ
+              feature config / parity settings จึงติดไปครบ ไม่ต้อง Attach เองที่หน้า Train
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag purple">Jump</span>
+            <h3>เด้งไปหน้า Train พร้อมไฟล์ใหม่</h3>
+            <p>
+              หน้าจอสลับไปหน้า Train โดยไฟล์ <code>_from_&lt;date&gt;</code> ถูกเลือกไว้ให้แล้ว
+              ตั้งชื่อ model ใหม่แล้วกด train ได้ทันที
+            </p>
+          </div>
+        </article>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>สิ่งที่สืบทอดจากไฟล์แม่</th>
+            <th>กลไก</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>.params.json</code> (feature/parity config)</td>
+            <td>Copy เป็นไฟล์ใหม่คู่กับ CSV ที่ตัดแล้วตอนกดปุ่ม</td>
+          </tr>
+          <tr>
+            <td><code>_m1.csv</code> (M1 execution data สำหรับ Backtest M1 replay)</td>
+            <td><strong>ไม่ต้อง copy</strong> — ระบบ resolve ชื่อแบบ "ไล่บรรพบุรุษ": ไฟล์ <code>xxx_from_2016-06-24.csv</code> จะถูกจับคู่กับ <code>xxx_m1.csv</code> ของไฟล์แม่ให้อัตโนมัติตอน backtest</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>ประโยคสอน user:</strong>
+        cutoff ไม่ใช่การลบข้อมูล — ไฟล์เต็มยังอยู่เหมือนเดิม
+        เราแค่สร้าง "เวอร์ชันโลกปัจจุบัน" แยกออกมาอีกไฟล์ ถ้าผล train ไม่ดีขึ้นก็กลับไปใช้ไฟล์เต็มหรือลอง cutoff จุดอื่นได้เสมอ
+      </div>
+    </section>
+
+    <section id="caveat">
+      <h2>Trade-off: ตัดข้อมูล = ข้อมูลน้อยลง</h2>
+      <p>
+        การ cutoff ไม่ใช่ของฟรี — ทุกครั้งที่ตัด เราแลก "regime ตรงขึ้น" กับ "จำนวนข้อมูลที่ลดลง"
+        ต้องชั่งสองข้างนี้ทุกครั้ง:
+      </p>
+      <div class="grid two">
+        <div class="card green">
+          <span class="tag green">ได้อะไร</span>
+          <h3>Distribution ตรงกับตลาดจริง</h3>
+          <p>
+            โมเดลเรียนเฉพาะกฎของโลกปัจจุบัน ไม่ลาก bias จาก regime เก่ามาปน
+            train/test อยู่ distribution เดียวกัน ผล eval สะท้อนของจริงมากขึ้น
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">เสียอะไร</span>
+          <h3>Sample น้อยลง เสี่ยง overfit ขึ้น</h3>
+          <p>
+            RL ต้องการข้อมูลเยอะ ถ้าตัดจนเหลือปีสองปี โมเดลอาจจำ pattern เฉพาะช่วงแทนที่จะเรียนกฎทั่วไป
+            และเหตุการณ์หายาก (crisis, flash crash) อาจไม่เหลือให้เรียนเลย
+          </p>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>สถานการณ์</th>
+            <th>สัญญาณ</th>
+            <th>ตัดสินใจ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status ok">ควรตัด</span></td>
+            <td>Train ดี test พัง + HMM เจอ breakpoint ใหญ่ชัดเจน + หลัง cutoff ยังเหลือข้อมูลหลายพัน bars</td>
+            <td>Cutoff แล้ว retrain เทียบผล — เคส GBPUSD post-Brexit คือแบบนี้</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">ชั่งใจ</span></td>
+            <td>Breakpoint ล่าสุดใกล้ปัจจุบันมากจนหลัง cutoff เหลือข้อมูลน้อย</td>
+            <td>ลองถอยไปใช้ breakpoint ใหญ่ก่อนหน้า หรือใช้ไฟล์ตัดแล้ว fine-tune แทน train ใหม่จากศูนย์</td>
+          </tr>
+          <tr>
+            <td><span class="status no">อย่าเพิ่งตัด</span></td>
+            <td>ผล backtest แย่แต่ breakpoint ที่เจอเบา ๆ ไม่ match event อะไรเลย / method อื่นไม่เจอซ้ำ</td>
+            <td>ปัญหาอาจไม่ใช่ regime — กลับไปดู Quality Check, feature, reward ก่อน</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>กติกาสุดท้าย:</strong>
+        cutoff เป็นสมมติฐาน ไม่ใช่คำตอบ — ต้องพิสูจน์ด้วยการ retrain แล้ว backtest เทียบกับโมเดลเดิมบนช่วง test เดียวกันเสมอ
+        ถ้าผลไม่ดีขึ้น อย่าฝืนตัดลึกลงเรื่อย ๆ ให้กลับไปตั้งคำถามว่าต้นเหตุคืออะไรกันแน่
+      </div>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="03_quality_check_detail.html">Quality Check Detail</a> ·
+      <a href="04_train_page_detail.html">Train Page Detail</a> ·
+      <a href="05_backtest_page_detail.html">Backtest Page Detail</a>
+    </p>
+  </main>
+</body>
+</html>

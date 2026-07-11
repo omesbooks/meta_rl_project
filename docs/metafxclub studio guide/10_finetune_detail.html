@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fine-tune Page Detail</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+      --purple: #6d28d9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ede9fe;
+      color: var(--purple);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .tag.purple { background: #ede9fe; color: var(--purple); }
+    .flow { display: grid; gap: 12px; margin-top: 16px; }
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--purple);
+      background: #f4f0ff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Maintenance Loop · Model Update</span>
+      <h1>Fine-tune — ปรับ model เดิมด้วยข้อมูลใหม่</h1>
+      <p class="lead">
+        บทนี้อธิบายหน้า Fine-tune: โหลด model ที่ train ไว้แล้วมา train ต่อด้วย data ใหม่
+        โดยผสม data เก่าไว้ ~30% เพื่อกันลืมของเดิม ใช้ steps น้อยกว่าและเร็วกว่า train scratch มาก
+        พร้อมเกณฑ์ว่าเคสไหนควร fine-tune และเคสไหนต้องกลับไป train ใหม่ทั้งตัว
+      </p>
+      <nav>
+        <a href="#goal">เป้าหมาย</a>
+        <a href="#vs">Fine-tune vs Retrain</a>
+        <a href="#when">เลือกเมื่อไหร่</a>
+        <a href="#workflow">ขั้นตอนใช้งาน</a>
+        <a href="#fields">ค่าในหน้า Fine-tune</a>
+        <a href="#contract">Base Model Contract</a>
+        <a href="#files">ไฟล์ที่ใช้</a>
+        <a href="#quickeval">Quick Eval</a>
+        <a href="#decision">ตัดสินใจ</a>
+        <a href="#gotchas">Gotchas</a>
+      </nav>
+    </header>
+
+    <section id="goal">
+      <h2>Fine-tune คืออะไรใน flow นี้</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">Continue</span>
+          <h3>train ต่อ ไม่ใช่เริ่มใหม่</h3>
+          <p>
+            Fine-tune โหลด weights ของ model เดิมมาเป็นจุดตั้งต้น
+            แล้ว train ต่ออีก ~50k steps ด้วย learning rate ต่ำ
+            ความรู้เดิมยังอยู่ แค่ปรับให้เข้ากับ data ใหม่
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Cheap</span>
+          <h3>ประหยัด compute ~4 เท่า</h3>
+          <p>
+            Train scratch ใช้ ~200k steps แต่ fine-tune ใช้ ~50k steps
+            เพราะไม่ต้องเรียนทุกอย่างจากศูนย์ ใน GUI ประเมินไว้ราว 10 นาที
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Gate</span>
+          <h3>ยังต้องสอบใหม่เสมอ</h3>
+          <p>
+            model ที่ fine-tune แล้วคือ model ใหม่ตัวหนึ่ง
+            ต้องผ่าน Backtest และ Walk-Forward ก่อนคิดเรื่อง export/live
+            เหมือน model ที่ train ใหม่ทุกตัว
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="vs">
+      <h2>Fine-tune ต่างจาก Train from Scratch อย่างไร</h2>
+      <p>
+        จุดสำคัญคือ fine-tune ไม่ได้ train ด้วย "data ใหม่อย่างเดียว"
+        เพราะแบบนั้นจะเกิด <strong>catastrophic forgetting</strong> —
+        network ปรับ weights ไปหาข้อมูลใหม่จนลืม pattern เก่าที่เคยใช้ได้
+        ระบบจึงใช้โหมด <code>mixed</code> เป็นค่าเริ่มต้น: สุ่ม data เก่ามาผสม ~30%
+        รวมกับ data ใหม่ทั้งหมด ~70% แล้วเรียงตาม timestamp ก่อน train
+      </p>
+      <div class="grid two">
+        <div class="card blue">
+          <span class="tag blue">Train Scratch</span>
+          <h3>เริ่ม weights ใหม่หมด</h3>
+          <p>
+            สุ่ม weights ใหม่ แล้วเรียนจาก data ทั้งหมด (เก่า+ใหม่) ~200k steps
+            ด้วย learning rate ปกติ (<code>3e-4</code>)
+          </p>
+          <p>
+            ได้ model ที่สะอาดที่สุด เปลี่ยนอะไรก็ได้ทั้ง feature, window, action profile, reward
+            แลกกับเวลาและ compute ที่มากกว่า
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">Fine-tune (mixed)</span>
+          <h3>ต่อยอดจาก weights เดิม</h3>
+          <p>
+            โหลด model เดิม ปรับ learning rate ลงเหลือ <code>1e-4</code>
+            แล้ว train ต่อ ~50k steps บน mix เก่า 30% / ใหม่ 70%
+          </p>
+          <p>
+            เร็วและถูกกว่า แต่ต้องคง "สัญญา" ของ model เดิมไว้ทุกอย่าง:
+            feature เดิม, window เดิม, action profile เดิม, reward เดิม
+          </p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>อยากเห็นภาพว่า weights เปลี่ยนต่างกันยังไง:</strong>
+        เปิด explainer <a href="../explainers/09_train_vs_finetune.html">09_train_vs_finetune.html</a>
+        เป็น interactive เปรียบเทียบ Train Scratch / Pure Fine-tune / Smart Fine-tune (Mixed)
+        ทีละ cycle — เห็นชัดว่าทำไม pure fine-tune ถึงลืมของเก่า และทำไม mixed ถึงจำได้
+        บทนี้จะไม่เล่าซ้ำ แต่เน้นการใช้งานหน้า Fine-tune จริง
+      </div>
+    </section>
+
+    <section id="when">
+      <h2>เคสไหน Fine-tune เคสไหนต้อง Retrain</h2>
+      <p>
+        กฎง่ายที่สุด: fine-tune ใช้ได้เฉพาะตอนที่ "ข้อมูลใหม่ขึ้น แต่โจทย์เดิม"
+        ถ้าโจทย์เปลี่ยน (feature เปลี่ยน, action เปลี่ยน, reward เปลี่ยน) ต้อง train scratch เท่านั้น
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>สถานการณ์</th>
+            <th>วิธีที่ถูก</th>
+            <th>เหตุผล</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>เก็บ data ใหม่มาเพิ่มอีก 2-3 เดือน โครงสร้างเหมือนเดิม</td>
+            <td><span class="status ok">Fine-tune</span></td>
+            <td>เคสตรงตัวที่สุด — ให้ model รู้จักช่วงตลาดล่าสุดโดยไม่ทิ้งของเดิม</td>
+          </tr>
+          <tr>
+            <td>ตลาดเปลี่ยน regime แบบอ่อน ๆ (volatility ขยับ, trend เปลี่ยนทิศ)</td>
+            <td><span class="status ok">Fine-tune</span></td>
+            <td>weights เดิมยังใกล้คำตอบ แค่ปรับจูนด้วย data ช่วงใหม่ก็พอ</td>
+          </tr>
+          <tr>
+            <td>ตลาดเปลี่ยนโครงสร้างแรง (เหตุการณ์ระดับ COVID/Brexit) หรือ backtest ตัวเดิมพังยาว</td>
+            <td><span class="status maybe">ลองทั้งสอง</span></td>
+            <td>fine-tune อาจดึงไม่ไหว — รัน fine-tune เทียบกับ train scratch แล้วให้ Backtest ตัดสิน</td>
+          </tr>
+          <tr>
+            <td>เพิ่ม/ลบ/เปลี่ยน feature columns หรือเปลี่ยน window size</td>
+            <td><span class="status no">Retrain</span></td>
+            <td>observation shape ไม่ตรงกับ model เดิม ระบบจะ error ตั้งแต่ตรวจ contract</td>
+          </tr>
+          <tr>
+            <td>เปลี่ยน action profile (เช่นจาก 3 actions เป็น 5 actions)</td>
+            <td><span class="status no">Retrain</span></td>
+            <td>เป็นไปไม่ได้ทาง fine-tune — output layer ของ network มีจำนวนช่องคงที่ตาม profile เดิม</td>
+          </tr>
+          <tr>
+            <td>เปลี่ยน reward mode / reward profile / reward formula</td>
+            <td><span class="status no">Retrain</span></td>
+            <td>fine-tune อ่าน reward settings จาก metadata ของ base model เสมอ เปลี่ยนกลางทางไม่ได้</td>
+          </tr>
+          <tr>
+            <td>เปลี่ยน symbol หรือ timeframe (เช่น USDJPY H4 → EURUSD H1)</td>
+            <td><span class="status no">Retrain</span></td>
+            <td>ถือเป็นโจทย์ใหม่ทั้งตัว การกระจายของ data ต่างกันมากเกินกว่าจะจูน</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>จำง่าย ๆ:</strong>
+        Fine-tune = "data ใหม่ โจทย์เดิม" ·
+        Retrain = "โจทย์เปลี่ยน" —
+        ถ้าไม่แน่ใจว่าโจทย์เปลี่ยนไหม ให้ดูว่า Backtest/Quality Check บอกอะไร
+        และถ้าลังเลระหว่างสองทาง ให้ทำทั้งคู่แล้วเทียบผลบน data ชุดเดียวกัน
+      </div>
+    </section>
+
+    <section id="workflow">
+      <h2>ขั้นตอน Fine-tune ใน Dashboard</h2>
+      <p>
+        หน้า Fine-tune ตั้งใจให้เรียบที่สุด: เลือก 3 อย่าง (base model, old CSV, new CSV)
+        ตั้งชื่อใหม่ แล้วกดปุ่มเดียว ที่เหลือระบบดึงจาก metadata ของ base model ให้หมด
+      </p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag purple">Base</span>
+            <h3>เลือก Base Model</h3>
+            <p>
+              เลือก model เดิมจาก dropdown <code>Existing Model</code> —
+              ควรเป็น model ที่เคยผ่าน Backtest แล้ว
+              เพราะ fine-tune ต่อยอดจากของเดิม ถ้าฐานแย่ ผลลัพธ์ก็แย่ตาม
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Data</span>
+            <h3>เลือก Old CSV และ New CSV</h3>
+            <p>
+              <code>Old Data CSV</code> = ไฟล์ที่ใช้ train base model (ไว้สุ่มมาผสมกันลืม)
+              และ <code>New Data CSV</code> = data ช่วงใหม่ที่อยากให้ model เรียนเพิ่ม
+              ทั้งสองไฟล์ต้องมี feature columns ครบตามที่ base model ใช้
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag green">Settings</span>
+            <h3>ตั้ง Mix Ratio, Steps, ชื่อใหม่</h3>
+            <p>
+              ค่าเริ่มต้น <code>Mix Ratio = 0.3</code>, <code>Steps = 50000</code> ใช้ได้เลยเกือบทุกเคส
+              ที่สำคัญคือ <code>New Model Name</code> — ตั้งชื่อใหม่เสมอ (เช่น <code>rl_uj_h4_v2</code>)
+              อย่าใช้ชื่อเดียวกับ base เพราะจะเสีย model เดิมที่ไว้เทียบ/rollback
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag purple">Run</span>
+            <h3>กด Start Fine-tuning แล้วอ่าน log</h3>
+            <p>
+              ระบบจะพิมพ์ base contract (features, window, action profile) ให้ตรวจก่อน train
+              จากนั้น train ~50k steps (ราว 10 นาที) จบแล้วรัน quick eval บน data ใหม่ให้อัตโนมัติ
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag warn">Gate</span>
+            <h3>Backtest + Walk-Forward ก่อนใช้จริง</h3>
+            <p>
+              quick eval เป็นแค่ sanity check — ตัวตัดสินจริงคือหน้า
+              Backtest (เทียบ base vs fine-tuned บน data ชุดเดียวกัน) และ Walk-Forward
+              ถ้าตัวใหม่ไม่ชนะตัวเก่า ให้ใช้ตัวเก่าต่อ
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="fields">
+      <h2>ค่าในหน้า Fine-tune</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ค่า</th>
+            <th>ความหมาย</th>
+            <th>คำแนะนำเริ่มต้น</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Base Model (Existing Model)</td>
+            <td>model เดิมที่จะโหลด weights มา train ต่อ</td>
+            <td>เลือกตัวที่ผ่าน Backtest แล้ว — ระบบอ่าน window, action profile, reward จาก metadata ของตัวนี้ทั้งหมด</td>
+          </tr>
+          <tr>
+            <td>Old Data CSV</td>
+            <td>data ชุดเดิม (ที่เคยใช้ train base) — ระบบสุ่มบางส่วนมาผสมเพื่อกัน catastrophic forgetting</td>
+            <td>ใช้ไฟล์เดียวกับตอน train base model เพื่อให้ "ความจำเก่า" ตรงของจริง</td>
+          </tr>
+          <tr>
+            <td>New Data CSV</td>
+            <td>data ช่วงใหม่ที่อยากให้ model ปรับตัวเข้าหา — ถูกใช้ทั้งไฟล์</td>
+            <td>ควรเป็นช่วงเวลาต่อจาก old CSV จาก broker/collector เดียวกัน feature ครบชุดเดิม</td>
+          </tr>
+          <tr>
+            <td>Mix Ratio (old %)</td>
+            <td>สัดส่วน data เก่าใน training mix เช่น <code>0.3</code> = เก่า 30% / ใหม่ 70% (ต้องอยู่ในช่วง 0 ถึงน้อยกว่า 1)</td>
+            <td>เริ่ม <code>0.3</code>; ถ้า regime ใหม่ต่างจากเดิมมากลองลดเป็น <code>0.2</code>, ถ้ากลัวลืมของเดิมเพิ่มเป็น <code>0.4</code></td>
+          </tr>
+          <tr>
+            <td>Steps</td>
+            <td>จำนวน timesteps ที่ train ต่อ</td>
+            <td>เริ่ม <code>50000</code> (~1/4 ของ train scratch); data ใหม่เยอะมากค่อยขยับเป็น <code>100000</code></td>
+          </tr>
+          <tr>
+            <td>New Model Name</td>
+            <td>ชื่อ model ใหม่ — ระบบสร้างโฟลเดอร์ <code>artifacts/models/&lt;name&gt;/</code> แยกจาก base</td>
+            <td>ตั้งชื่อแบบมี version เช่น <code>rl_uj_h4_v2</code> อย่าทับชื่อ base model เดิม</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        หน้า GUI เรียก <code>rl_finetune.py</code> ให้เบื้องหลัง โดยค่าที่ไม่มีช่องให้กรอก
+        จะใช้ default ของ CLI ซึ่งออกแบบมาสำหรับ fine-tune โดยเฉพาะ:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ค่า (CLI default)</th>
+            <th>ค่าที่ใช้</th>
+            <th>ทำไม</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Learning rate</td>
+            <td><code>1e-4</code></td>
+            <td>ต่ำกว่า train scratch (<code>3e-4</code>) ~3 เท่า เพื่อ "ค่อย ๆ ขยับ" weights เดิม ไม่ทุบทิ้ง</td>
+          </tr>
+          <tr>
+            <td>Mode</td>
+            <td><code>mixed</code></td>
+            <td>ผสมเก่า+ใหม่กันลืม (CLI มี <code>pure</code>/<code>replay</code> ให้เลือกด้วย แต่ GUI ใช้ mixed เสมอ)</td>
+          </tr>
+          <tr>
+            <td>Window / Max Hold / Ep Len</td>
+            <td>ตาม base model</td>
+            <td>อ่านจาก <code>train_meta.json</code> ของ base — เปลี่ยนไม่ได้เพราะผูกกับ observation shape</td>
+          </tr>
+          <tr>
+            <td>Reward mode / profile / formula</td>
+            <td>ตาม base model</td>
+            <td>เปลี่ยน reward กลางทาง = ย้ายเป้าหมายให้ policy เดิม ผลจะเพี้ยน จึงล็อกตาม base</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>คำสั่งที่ GUI รันจริง:</strong>
+        <code>python rl_finetune.py &lt;base&gt; --old_csv &lt;old&gt; --new_csv &lt;new&gt; --mix_ratio 0.3 --steps 50000 --name &lt;new_name&gt;</code>
+        — ถ้าอยากใช้โหมดพิเศษ (<code>--mode pure</code>, <code>--lr</code>, <code>--ep_len</code>)
+        รันเองจาก command line ได้ด้วย argument เดียวกัน
+      </div>
+    </section>
+
+    <section id="contract">
+      <h2>Base Model Contract: อะไรถูกล็อกไว้บ้าง</h2>
+      <p>
+        ก่อน train ระบบจะโหลด base model ขึ้นมา probe แล้วตรวจ "สัญญา" 4 ข้อ
+        ถ้าข้อไหนไม่ตรง จะหยุดพร้อม error ทันที ไม่ train ต่อให้เสียเวลา —
+        ตารางนี้คือสิ่งที่ต้องเหมือน base model ทุกประการ:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>สิ่งที่ล็อก</th>
+            <th>ระบบตรวจอย่างไร</th>
+            <th>ถ้าไม่ตรงจะเจอ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Feature columns</td>
+            <td>อ่านรายชื่อ features จาก metadata ของ base แล้วเช็คว่า old/new CSV มีครบทุกคอลัมน์</td>
+            <td><code>ERROR: ... missing N base-model features</code> พร้อมรายชื่อคอลัมน์ที่หาย</td>
+          </tr>
+          <tr>
+            <td>Window / Observation shape</td>
+            <td>คำนวณ <code>window × features + 3</code> เทียบกับ observation space จริงของ model</td>
+            <td><code>ERROR: observation shape mismatch</code> — ต้องกลับไปใช้ feature set/window เดิม</td>
+          </tr>
+          <tr>
+            <td>Action profile</td>
+            <td>เทียบจำนวน actions ใน profile กับ output ของ network (<code>action_space.n</code>)</td>
+            <td><code>ERROR: action profile has X actions but base model outputs Y</code></td>
+          </tr>
+          <tr>
+            <td>Reward settings</td>
+            <td>ไม่มีช่องให้แก้ — ดึง reward mode/profile/formula จาก metadata ของ base มาใช้ตรง ๆ</td>
+            <td>(ไม่ error เพราะแก้ไม่ได้ตั้งแต่แรก)</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>ทำไมเปลี่ยน action profile ทาง fine-tune ไม่ได้:</strong>
+        output layer ของ neural network มีจำนวน neuron เท่ากับจำนวน actions ตอน train ครั้งแรก
+        เช่น model 3 actions มีช่อง output 3 ช่อง — จะยัด profile 5 actions เข้าไปไม่ได้
+        เพราะโครงสร้าง network เปลี่ยนไม่ได้หลังสร้างแล้ว
+        อยากได้ action ชุดใหม่ = train from scratch เท่านั้น ไม่มีทางลัด
+      </div>
+      <p>
+        นอกจาก contract แล้ว ระบบยังช่วยจัดการ data ให้อัตโนมัติ:
+        ตัดคอลัมน์ leaky/target (<code>future_*</code>, <code>forward_*</code>, <code>next_*</code>, <code>target</code>) ทิ้ง,
+        เรียงตาม timestamp, และ normalize features ด้วย <strong>สถิติของ base model</strong>
+        (mean/std จาก <code>norm.csv</code> เดิม) — ไม่คำนวณใหม่ เพราะ weights เดิมถูก train
+        บน scale นั้น ถ้าเปลี่ยน scale weights จะอ่าน input ผิดความหมายทันที
+      </p>
+    </section>
+
+    <section id="files">
+      <h2>ไฟล์ที่ Fine-tune ใช้และสร้างออกมา</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ไฟล์ / ค่า</th>
+            <th>หน้าที่</th>
+            <th>หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>&lt;base&gt;.zip</code> + <code>train_meta.json</code> ของ base</td>
+            <td>input: weights ตั้งต้น + metadata ที่ใช้ resolve contract</td>
+            <td>ถ้า metadata หาย ระบบพยายาม infer window จาก observation shape ให้ แต่ควรมีครบ</td>
+          </tr>
+          <tr>
+            <td>Old CSV / New CSV</td>
+            <td>input: data สำหรับ mix (เก่า ~30% / ใหม่ทั้งไฟล์)</td>
+            <td>จำนวนแถวเก่าที่สุ่ม = <code>new_rows × ratio ÷ (1−ratio)</code> ไม่เกินจำนวนแถวเก่าที่มีจริง</td>
+          </tr>
+          <tr>
+            <td><code>artifacts/models/&lt;name&gt;/&lt;name&gt;.zip</code></td>
+            <td>output: model ใหม่หลัง fine-tune</td>
+            <td>โผล่ใน dropdown ของหน้า Backtest / Walk-Forward / Export อัตโนมัติ</td>
+          </tr>
+          <tr>
+            <td><code>&lt;name&gt;_norm.csv</code></td>
+            <td>สถิติ normalize ของ model ใหม่</td>
+            <td>copy มาจาก norm ของ base model (ต้องเป็นชุดเดียวกัน — ดู Gotchas)</td>
+          </tr>
+          <tr>
+            <td><code>&lt;name&gt;.params.json</code></td>
+            <td>sidecar สำหรับ Export/EA (spread, lot, symbol settings)</td>
+            <td>forward ต่อจาก base model เป็นอันดับแรก (ถ้าไม่มี ค่อย fallback ไป sidecar ของ new/old CSV)</td>
+          </tr>
+          <tr>
+            <td><code>train_meta.json</code> ของ model ใหม่</td>
+            <td>บันทึกว่าเป็น fine-tune (<code>fine_tune: true</code>), ชื่อ base model, mix ratio, ช่วงเวลา data, quick eval stats</td>
+            <td>ใช้ตามรอยได้เสมอว่า model ตัวนี้ต่อยอดมาจากตัวไหนด้วย data ชุดไหน</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="quickeval">
+      <h2>Quick Eval หลัง Fine-tune อ่านยังไง</h2>
+      <p>
+        พอ train จบ ระบบจะรัน model ใหม่บน <strong>data ใหม่ทั้งไฟล์</strong> แบบ deterministic
+        แล้วพิมพ์ block <code>Quick eval on NEW data</code> ใน log (return, trades, win rate ฯลฯ)
+        พร้อมบันทึกลง <code>train_meta.json</code> — มีไว้ตอบคำถามเดียว:
+        "model ปรับตัวเข้ากับ data ใหม่ได้จริงไหม" ยังไม่ใช่ผลที่เอาไปตัดสิน deploy
+      </p>
+      <div class="grid">
+        <div class="card blue">
+          <span class="tag blue">ข้อจำกัด 1</span>
+          <h3>eval บน data ที่เพิ่งเรียน</h3>
+          <p>
+            data ใหม่ถูกใช้ train ไปแล้ว (70% ของ mix) — ผลนี้จึงเป็น in-sample
+            ตัวเลขดูดีเกินจริงได้เสมอ
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">ข้อจำกัด 2</span>
+          <h3>ไม่มี confidence filter / risk</h3>
+          <p>
+            quick eval ใช้ action ตรงจาก policy ไม่มี SL/TP ไม่มี filter —
+            เทียบได้กับ Backtest แบบ <code>Pure Agent, Confidence = 0</code> เท่านั้น
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">วิธีใช้ที่ถูก</span>
+          <h3>ใช้เป็น sanity check</h3>
+          <p>
+            ถ้า quick eval ยังแย่ (return ติดลบหนัก, แทบไม่ trade)
+            ไม่ต้องเสียเวลา Backtest — กลับไปดู data/mix ratio ก่อนเลย
+          </p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>ขั้นถัดไปที่ log แนะนำ:</strong>
+        <code>python backtest_live.py &lt;name&gt; &lt;csv&gt; --conf 0 --mode pure_agent</code>
+        — คือ baseline backtest แบบเดียวกับที่สอนไว้ในหน้า
+        <a href="05_backtest_page_detail.html">Backtest Detail</a>
+        (ใช้หน้า Backtest ใน GUI แทนก็ได้ ตั้งค่าให้ตรงกัน)
+      </div>
+    </section>
+
+    <section id="decision">
+      <h2>Decision: Fine-tune เสร็จแล้วทำอะไรต่อ</h2>
+      <p>
+        เกณฑ์ตัดสินไม่ใช่ "model ใหม่ดีไหม" แต่คือ <strong>"model ใหม่ชนะ base model ไหม"</strong>
+        — รัน Backtest ทั้งสองตัวบน data ทดสอบชุดเดียวกัน setting เดียวกัน แล้วเทียบ:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>สถานะ</th>
+            <th>ความหมาย</th>
+            <th>ตัดสินใจ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status ok">Go</span></td>
+            <td>ตัวใหม่ชนะ base ชัดบน data ใหม่ (PF/return/DD ดีกว่า) และไม่แย่ลงบน data เก่า</td>
+            <td>ไป Walk-Forward ต่อ ผ่านแล้วค่อยคิดเรื่อง Export แทนตัวเดิม</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">Review</span></td>
+            <td>ดีขึ้นบน data ใหม่ แต่แย่ลงบน data เก่า (อาการเริ่มลืม) หรือผลใกล้เคียง base มาก</td>
+            <td>ลองเพิ่ม mix ratio (0.4), ลด steps, หรือรัน train scratch มาเทียบเป็นตัวเลือกที่สาม</td>
+          </tr>
+          <tr>
+            <td><span class="status no">Stop</span></td>
+            <td>แพ้ base model ทั้งสองช่วง หรือ quick eval พังตั้งแต่ต้น</td>
+            <td>ใช้ base model ต่อไปก่อน แล้วสอบสวนว่า data ใหม่มีปัญหา (Quality Check) หรือ regime เปลี่ยนแรงจนต้อง retrain</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Checklist ก่อนถือว่า fine-tune "ผ่าน" จริง:</p>
+      <ol>
+        <li>Backtest model ใหม่บน <strong>data ใหม่</strong> (out-of-sample ถ้าแบ่งได้) — ต้องชนะ base</li>
+        <li>Backtest model ใหม่บน <strong>data เก่า</strong> — ต้องไม่ทรุดหนักจาก base (เช็ค forgetting)</li>
+        <li>Walk-Forward model ใหม่ — edge ต้องทนหลายช่วงเวลา ไม่ใช่ดีเฉพาะช่วงที่เพิ่งเรียน</li>
+        <li>เก็บ base model ไว้เสมอจนกว่าตัวใหม่จะพิสูจน์ตัวเองครบทุกด่าน</li>
+      </ol>
+      <div class="callout">
+        <strong>ประโยคสอน user:</strong>
+        Fine-tune คือการส่ง model ไปเรียนคอร์สเสริม ไม่ใช่การได้ปริญญาใหม่อัตโนมัติ —
+        เรียนจบต้องสอบ (Backtest + Walk-Forward) เหมือนเดิมทุกครั้ง
+        และถ้าสอบแพ้รุ่นพี่ (base model) ก็ยังไม่มีเหตุผลต้องเปลี่ยนตัว
+      </div>
+    </section>
+
+    <section id="gotchas">
+      <h2>Gotchas ที่เจอบ่อย</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>อาการ</th>
+            <th>สาเหตุ</th>
+            <th>ทางแก้</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Error <code>missing base-model features</code> ตั้งแต่เริ่ม</td>
+            <td>CSV ใหม่สร้างจาก feature set คนละชุดกับตอน train base (เช่น เปลี่ยน indicator ใน collector)</td>
+            <td>สร้าง CSV ใหม่ด้วย pipeline/feature ชุดเดิมของ base — หรือถ้าตั้งใจเปลี่ยน feature จริง ให้ไป train scratch</td>
+          </tr>
+          <tr>
+            <td>Error <code>observation shape mismatch</code></td>
+            <td>window หรือจำนวน features ที่ resolve ได้ไม่ตรงกับ observation space ของ base model</td>
+            <td>อย่า override window เอง ปล่อยให้ระบบอ่านจาก metadata; เช็คว่า CSV มีคอลัมน์ครบไม่ขาดไม่เกิน</td>
+          </tr>
+          <tr>
+            <td>Log ขึ้น <code>base stats not found; recomputing</code></td>
+            <td><code>norm.csv</code> ของ base model หาย ระบบเลยคำนวณ mean/std ใหม่จาก data fine-tune</td>
+            <td>อันตราย — scale input จะไม่ตรงกับที่ weights เดิมเคยเห็น ให้หา norm ของ base กลับมาก่อนแล้วรันใหม่</td>
+          </tr>
+          <tr>
+            <td>ผลดีบน data ใหม่ แต่พังบน data เก่า</td>
+            <td>catastrophic forgetting — mix ratio ต่ำไป หรือ steps เยอะไปสำหรับ data ใหม่ที่มีน้อย</td>
+            <td>เพิ่ม mix ratio เป็น 0.4, ลด steps, หรือใช้ old CSV ที่ยาวขึ้นให้มีตัวอย่างเก่าหลากหลายกว่าเดิม</td>
+          </tr>
+          <tr>
+            <td>Export แล้ว EA ใช้ค่า spread/lot ไม่ตรงกับ data ใหม่</td>
+            <td><code>params.json</code> ถูก forward จาก base model เป็นอันดับแรก ไม่ได้อ่านจาก CSV ใหม่</td>
+            <td>เปิด <code>&lt;name&gt;.params.json</code> ตรวจก่อน Export ทุกครั้ง ถ้า broker/เงื่อนไขเปลี่ยนให้แก้ไฟล์นี้ให้ตรง</td>
+          </tr>
+          <tr>
+            <td>ตั้งชื่อใหม่ทับชื่อ base model</td>
+            <td>ใช้ค่า default หรือพิมพ์ชื่อซ้ำโดยไม่ตั้งใจ</td>
+            <td>model เดิมถูกเขียนทับ = เสียตัวเทียบและตัว rollback — ตั้งชื่อแบบ version (<code>_v2</code>, <code>_ft1</code>) เสมอ</td>
+          </tr>
+          <tr>
+            <td>Fine-tune ซ้ำหลายรอบต่อกันแล้วผลเพี้ยนขึ้นเรื่อย ๆ</td>
+            <td>chain แบบ v1 → v2 → v3 สะสม drift ที่ละรอบ โดยเฉพาะถ้า old CSV ที่ใช้ผสมสั้นลงเรื่อย ๆ</td>
+            <td>fine-tune ต่อเนื่องได้ 2-3 รอบพอ หลังจากนั้นควร train scratch ด้วย data ทั้งหมดสักครั้งเพื่อ reset ฐาน</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>สรุปใจความ:</strong>
+        Fine-tune คือทางลัดที่ปลอดภัยเฉพาะเมื่อ "สัญญาเดิมครบ" — feature เดิม, window เดิม,
+        action profile เดิม, norm เดิม, params ตรวจแล้ว
+        ขาดข้อใดข้อหนึ่งเมื่อไหร่ ทางลัดจะกลายเป็นทางอ้อมที่แพงกว่า train ใหม่เสมอ
+      </div>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="04_train_page_detail.html">Train Page Detail</a> ·
+      <a href="05_backtest_page_detail.html">Backtest Detail</a> ·
+      <a href="06_walk_forward_detail.html">Walk-Forward Detail</a> ·
+      <a href="../explainers/09_train_vs_finetune.html">Train vs Fine-tune (Visual)</a>
+    </p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Model Library — เปรียบเทียบและเลือก model อย่างมีหลักฐาน</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+      --purple: #6d28d9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ede9fe;
+      color: var(--purple);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .tag.purple { background: #ede9fe; color: var(--purple); }
+    .flow { display: grid; gap: 12px; margin-top: 16px; }
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--purple);
+      background: #f4f0ff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Flow Step · Model Library</span>
+      <h1>Model Library — เปรียบเทียบและเลือก model อย่างมีหลักฐาน</h1>
+      <p class="lead">
+        บทนี้อธิบายหน้า Models: ตารางเปรียบเทียบทุก model กับผล backtest ล่าสุดของแต่ละตัว,
+        ความหมายของแต่ละคอลัมน์ (รวมคอลัมน์ใหม่ Realism และ Params),
+        equity curve viewer, ปุ่มต่าง ๆ, โครงสร้าง artifacts บนดิสก์
+        และหลักการเลือก model ไป deploy โดยไม่หลงกับ PF สวย ๆ ตัวเดียว
+      </p>
+      <nav>
+        <a href="#goal">หน้านี้คืออะไร</a>
+        <a href="#workflow">ขั้นตอนใช้งาน</a>
+        <a href="#columns">คอลัมน์ในตาราง</a>
+        <a href="#realism">คอลัมน์ Realism</a>
+        <a href="#params">คอลัมน์ Params</a>
+        <a href="#viewer">Equity Viewer + ปุ่ม</a>
+        <a href="#artifacts">Artifacts บนดิสก์</a>
+        <a href="#selection">เลือก model ไป deploy</a>
+        <a href="#gotcha">Gotcha</a>
+      </nav>
+    </header>
+
+    <section id="goal">
+      <h2>หน้า Models คืออะไรใน flow นี้</h2>
+      <p>
+        หน้า Backtest ให้ผลทีละ model ทีละรอบ — แต่หน้า Models คือ "ศูนย์รวม":
+        มันสแกนผล backtest ล่าสุดของทุก model ที่เคยรัน แล้ววางเทียบกันในตารางเดียว
+        เพื่อให้ตอบคำถามสำคัญได้เร็ว: <strong>ตอนนี้มี model ไหนบ้าง ตัวไหนมีหลักฐานดีที่สุด
+        และหลักฐานนั้นเชื่อได้แค่ไหน</strong>
+      </p>
+      <div class="grid">
+        <div class="card blue">
+          <span class="tag blue">Compare</span>
+          <h3>เทียบทุก model ในตารางเดียว</h3>
+          <p>
+            ระบบรวบรวมไฟล์ trades ของทุก model (ทั้งใน <code>artifacts/models/*/backtests/</code>
+            และไฟล์ legacy ที่ root) แล้วคำนวณ metrics สด ๆ จาก trade log จริง
+            เรียงจาก Return สูงสุดลงมา
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">Evidence</span>
+          <h3>แต่ละแถวคือ "ผลล่าสุด" ของ model นั้น</h3>
+          <p>
+            ถ้า model มีไฟล์ trades หลายชุด ระบบใช้ชุดที่ใหม่ที่สุด
+            model ที่ยังไม่เคย backtest จะโผล่เป็นแถว <code>model only</code>
+            (มีแต่ zip ไม่มี metrics) — เตือนว่ายังไม่มีหลักฐาน
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Trust</span>
+          <h3>ไม่ใช่แค่ตัวเลข แต่บอกความน่าเชื่อด้วย</h3>
+          <p>
+            คอลัมน์ <code>Realism</code> บอกว่าผลนั้นพึ่งข้อมูล M1 จริงหรือพึ่งการเดา
+            และคอลัมน์ <code>Params</code> บอกว่า config ฝั่ง MT5 ตรงกับตอน train ไหม
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow">
+      <h2>ขั้นตอนใช้งานหน้า Models</h2>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag blue">Scan</span>
+            <h3>เปิดหน้า Models แล้วกวาดตาดูตาราง</h3>
+            <p>
+              ตารางเรียงตาม Return จากมากไปน้อย แถวบนสุดถูกเลือกให้อัตโนมัติ
+              ถ้าเพิ่งรัน backtest เสร็จแต่ตารางยังไม่อัปเดต ให้กด <code>Refresh table</code>
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag purple">Read</span>
+            <h3>อ่านแต่ละคอลัมน์อย่างเข้าใจ</h3>
+            <p>
+              อย่าอ่านแค่ PF กับ Return — ดู <code>Result source</code> ว่าผลมาจาก backtest แบบไหน,
+              <code>Trades</code> ว่ามากพอไหม และ <code>Realism</code> ว่าผลนั้นเชื่อได้แค่ไหน
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag green">Look</span>
+            <h3>คลิกแถว → ดู equity curve ใต้ตาราง</h3>
+            <p>
+              คลิกแถวไหน viewer ด้านล่างจะแสดง equity chart ของ model นั้นทันที
+              ใช้เช็คว่ากำไรเรียบหรือมาจาก trade เดียว และ drawdown ลึกช่วงไหน
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag blue">Drill</span>
+            <h3>เจาะรายละเอียดด้วยปุ่ม Open</h3>
+            <p>
+              <code>Open equity image</code> เปิดภาพเต็ม, <code>Open HTML chart</code>
+              เปิด chart แบบ interactive ที่มีจุดเข้า-ออกทุก trade บนราคา
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag warn">Decide</span>
+            <h3>เลือกตัวที่จะไป Walk-Forward / Deploy</h3>
+            <p>
+              ใช้เกณฑ์ใน section <a href="#selection">เลือก model ไป deploy</a> —
+              และถ้าจะส่งผลให้คนอื่นดู ใช้ <code>Export report PDF</code>
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="columns">
+      <h2>คอลัมน์ในตาราง Model Comparison ทีละตัว</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>คอลัมน์</th>
+            <th>ความหมาย</th>
+            <th>วิธีอ่าน / ข้อควรระวัง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Model</strong></td>
+            <td>ชื่อ model (ชื่อเดียวกับโฟลเดอร์ <code>artifacts/models/&lt;name&gt;/</code>)</td>
+            <td>ตั้งชื่อให้สื่อ symbol + timeframe + version เช่น <code>rl_uj_h4_v3</code> จะเทียบง่ายมาก</td>
+          </tr>
+          <tr>
+            <td><strong>Result source</strong></td>
+            <td>ที่มาของตัวเลขในแถวนั้น:
+              <code>live backtest</code> = ผลจาก backtest แบบ live logic (SL/TP, risk, slippage),
+              <code>env backtest</code> = ผลจาก backtest แบบ environment เดียวกับตอน train,
+              <code>model only</code> = มีแค่ไฟล์ model ยังไม่เคย backtest</td>
+            <td>เทียบข้าม source ตรง ๆ ไม่แฟร์ — <code>env backtest</code> มักดูดีกว่าเพราะไม่มี cost แบบ live
+              ตัวที่จะ deploy ควรมีผลจาก <code>live backtest</code> เสมอ</td>
+          </tr>
+          <tr>
+            <td><strong>Trades</strong></td>
+            <td>จำนวน trade ทั้งหมดใน trade log ล่าสุด</td>
+            <td>ตัวเลขอื่นทุกตัวยืนอยู่บน sample size นี้ — trades น้อย (เช่น &lt; 30)
+              ทำให้ PF/Win rate เป็นแค่เรื่องบังเอิญได้ง่าย</td>
+          </tr>
+          <tr>
+            <td><strong>Win rate</strong></td>
+            <td>สัดส่วน trade ที่กำไร (%)</td>
+            <td>Win rate สูงแต่ avg loss ใหญ่ = ยังเจ๊งได้; ต้องอ่านคู่กับ PF เสมอ</td>
+          </tr>
+          <tr>
+            <td><strong>PF</strong> (Profit Factor)</td>
+            <td>กำไรรวมจาก trade ชนะ ÷ ขาดทุนรวมจาก trade แพ้</td>
+            <td><code>PF &lt; 1</code> = ขาดทุนสุทธิ; <code>inf</code> = ไม่มี trade แพ้เลย
+              ซึ่งมักแปลว่า trades น้อยเกินไป ไม่ใช่ model เทพ</td>
+          </tr>
+          <tr>
+            <td><strong>Return</strong></td>
+            <td>ผลตอบแทนรวม (%) คำนวณจาก trade log (base equity 10,000)</td>
+            <td>ตารางเรียงตามคอลัมน์นี้ — แต่ Return สูงสุด ≠ ตัวที่ควร deploy (ดู <a href="#selection">section เลือก model</a>)</td>
+          </tr>
+          <tr>
+            <td><strong>Max DD</strong></td>
+            <td>drawdown ลึกสุดของ equity curve (%)</td>
+            <td>คือ "ราคาที่ต้องจ่าย" ระหว่างทาง — Return ดีแต่ DD เกินที่ใจรับได้ = ใช้จริงไม่รอด</td>
+          </tr>
+          <tr>
+            <td><strong>Realism</strong> ⭐ ใหม่</td>
+            <td>ความน่าเชื่อของผล backtest ในแถวนั้น (intrabar SL/TP ตัดสินด้วยข้อมูลจริงหรือการเดา)</td>
+            <td>สำคัญมากจนแยกไปอธิบายเต็ม ๆ ใน <a href="#realism">section ถัดไป</a></td>
+          </tr>
+          <tr>
+            <td><strong>Chart</strong></td>
+            <td><code>yes</code> = มีไฟล์ HTML chart แบบ interactive ให้เปิดดู</td>
+            <td>ถ้า <code>-</code> ให้ไป generate จากหน้า Backtest ก่อน ถึงจะกด Open HTML chart ได้</td>
+          </tr>
+          <tr>
+            <td><strong>Params</strong></td>
+            <td>สถานะ parameter parity ระหว่าง training pipeline กับ config ฝั่ง MT5</td>
+            <td>สามค่า: <code>✓ sidecar</code> / <code>✓ embedded</code> / <code>— defaults</code>
+              — อธิบายเต็มใน <a href="#params">section Params</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="realism">
+      <h2>คอลัมน์ Realism: ผลนี้ "จริง" แค่ไหน</h2>
+      <p>
+        Backtest บน H4 เดินทีละ bar แต่ราคาจริงวิ่งภายใน bar — ถ้าทั้ง SL และ TP
+        อยู่ใน range ของ bar เดียวกัน (ambiguous bar) ระบบต้องเดาว่าโดนอะไรก่อน
+        เว้นแต่จะมีข้อมูล M1 ให้ replay จริง (รายละเอียดใน
+        <a href="05_backtest_page_detail.html#execution">Backtest Detail → Execution Realism</a>)
+        คอลัมน์ Realism สรุปเรื่องนี้ของ "ผลล่าสุดที่เก็บไว้" ให้เห็นในตารางเลย
+        โดยอ่านจากไฟล์ <code>&lt;model&gt;_live_bt.meta.json</code> ของ backtest รอบนั้น
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ค่าในคอลัมน์</th>
+            <th>แปลว่าอะไร</th>
+            <th>ควรทำอะไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status ok">M1 ✓</span></td>
+            <td>backtest รอบนั้นใช้ข้อมูล M1 จริง resolve เคส intrabar SL/TP
+              — เคสกำกวมถูกตอบด้วยราคาระดับนาที ไม่ใช่สมมติฐาน</td>
+            <td>เชื่อถือได้มากที่สุด ใช้เทียบ/ตัดสินใจได้เลย</td>
+          </tr>
+          <tr>
+            <td><span class="status ok">ok</span></td>
+            <td>ไม่มี ambiguity เลย (ไม่มี bar ไหนที่ SL+TP ตกใน bar เดียวกัน)
+              — มักเกิดเมื่อ SL/TP กว้างเทียบ bar range หรือ exit ส่วนใหญ่มาจาก agent Close</td>
+            <td>ใช้ได้เลย แม้ไม่มี M1 เพราะไม่มีอะไรต้องเดาตั้งแต่แรก</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">guess N%</span></td>
+            <td>N% ของ SL/TP exits ถูกตัดสินด้วยการเดา (สมมติฐาน pessimistic/optimistic)
+              — <strong>ยิ่ง N สูง ผลรวมยิ่งเชื่อไม่ได้</strong> เพราะแค่เปลี่ยนสมมติฐาน
+              ตัวเลขก็เปลี่ยนตาม</td>
+            <td>N เกิน ~10% ให้รัน backtest ใหม่พร้อมไฟล์ M1 Data ก่อนใช้ผลตัดสินใจ</td>
+          </tr>
+          <tr>
+            <td><span class="status no">-</span></td>
+            <td>ผลเก่าที่รันก่อนระบบ execution realism จะมี — ไม่มี metadata ให้ตรวจ</td>
+            <td>ถ้า model ตัวนั้นยังอยู่ใน shortlist ให้รัน backtest ใหม่เพื่อให้ได้ค่า Realism</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>ตัวอย่างที่เจอจริง:</strong> model เดียวกัน SL/TP แคบ ๆ
+        รันแบบ pessimistic ได้ -53% แต่ optimistic ได้ -21% (ambiguous 27%)
+        — สองตัวเลขนี้มาจาก trade log เดียวกันแท้ ๆ ต่างกันแค่ "การเดา"
+        พอใส่ M1 จริงได้ -38% นี่คือเหตุผลที่ <code>guess N%</code> สูง ๆ
+        ต้องรันใหม่ก่อนเชื่อ ไม่ว่าตัวเลข PF/Return จะสวยแค่ไหน
+      </div>
+    </section>
+
+    <section id="params">
+      <h2>คอลัมน์ Params: MT5 ใช้ค่าตรงกับตอน train ไหม</h2>
+      <p>
+        เวลา deploy ไป MT5 EA ต้องใช้ feature parameters (เช่น period ของ indicator, spec ของ dataset)
+        ชุดเดียวกับตอน train เป๊ะ — เรียกว่า <strong>parameter parity</strong>
+        ถ้า MT5 คำนวณ feature ด้วยค่า default ที่ไม่ตรงกับตอน train, observation ที่ส่งเข้า model
+        จะเพี้ยนทั้งเส้น และผลเทรดจริงจะไม่เกี่ยวอะไรกับผล backtest เลย
+        คอลัมน์นี้เช็คให้ว่าหลักฐาน parity อยู่ตรงไหน
+      </p>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">✓ sidecar</span>
+          <h3>มีไฟล์ params.json คู่ model</h3>
+          <p>
+            พบ <code>&lt;model&gt;.params.json</code> ใน artifacts —
+            เป็น source of truth ของ parameters ที่ใช้ train
+            export package จะดึงค่าชุดนี้ไปฝังใน config ฝั่ง MT5 ได้ตรงแน่นอน
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">✓ embedded</span>
+          <h3>ค่าถูกฝังใน config.mqh แล้ว</h3>
+          <p>
+            ไม่มี sidecar แต่ไฟล์ <code>&lt;model&gt;_config.mqh</code> ใน package MT5
+            มี helper <code>RL_ApplyDataCollectorConfig</code> อยู่ — แปลว่า config
+            ฝั่ง EA มี parameters ฝังไว้ให้ apply เองแล้ว parity ยังโอเค
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">— defaults</span>
+          <h3>ไม่มีหลักฐาน parity เลย</h3>
+          <p>
+            ไม่เจอทั้ง sidecar และ embedded config — ถ้า deploy ตอนนี้ EA จะใช้ค่า default
+            ซึ่ง<strong>อาจไม่ตรงกับตอน train</strong> ห้าม deploy จนกว่าจะ export package ใหม่
+            หรือหาไฟล์ params ของ model นั้นเจอ
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="viewer">
+      <h2>Equity Curve Viewer และปุ่มทั้ง 4</h2>
+      <p>
+        ใต้ตารางคือ viewer: <strong>คลิกแถวไหนในตาราง กราฟ equity ของ model นั้นแสดงทันที</strong>
+        (ภาพถูกย่อให้พอดีจอ ~920×360) ใช้เช็คด้วยตาว่า Return ที่เห็นในตารางมีคุณภาพจริงไหม —
+        เส้นไต่เรียบ ๆ กับเส้นที่พุ่งจาก trade เดียวให้ Return เท่ากันได้ แต่คุณค่าไม่เท่ากัน
+        ถ้า model ยังไม่เคย backtest จะขึ้นข้อความ <code>No equity image found... Run backtest first</code>
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ปุ่ม</th>
+            <th>ทำอะไร</th>
+            <th>ใช้เมื่อไหร่</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Refresh table</code></td>
+            <td>สแกนไฟล์ trades/artifacts ใหม่ทั้งหมดแล้วสร้างตารางใหม่</td>
+            <td>หลังรัน backtest / train / export เสร็จ แล้วอยากเห็นผลล่าสุดในตาราง</td>
+          </tr>
+          <tr>
+            <td><code>Open equity image</code></td>
+            <td>เปิดไฟล์ <code>*_live_bt_equity.png</code> ของแถวที่เลือกด้วยโปรแกรมดูภาพ</td>
+            <td>อยากเห็น equity + drawdown ขนาดเต็ม ซูมดูช่วงที่ DD ลึก</td>
+          </tr>
+          <tr>
+            <td><code>Open HTML chart</code></td>
+            <td>เปิด <code>*_backtest_chart.html</code> ใน browser — chart interactive
+              ที่ plot จุดเข้า/ออกของทุก trade บนราคา</td>
+            <td>อยาก audit trade รายตัว: เข้าตรงไหน ออกเพราะอะไร ช่วงไหนที่ model พัง</td>
+          </tr>
+          <tr>
+            <td><code>Export report PDF</code></td>
+            <td>สร้าง <code>pipeline_report_&lt;timestamp&gt;.pdf</code> — หน้าแรกเป็นตารางเปรียบเทียบ
+              (สูงสุด 18 แถว), หน้าสองเป็น equity curve ของแถวที่เลือกอยู่</td>
+            <td>เก็บ snapshot ผลการทดลอง หรือส่งสรุปให้คนอื่นดูโดยไม่ต้องเปิดโปรแกรม</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>ทริคเล็ก ๆ:</strong> ก่อนกด Export PDF ให้คลิกเลือกแถว model
+        ที่อยากโชว์ equity curve ก่อน — PDF จะใช้กราฟของแถวที่เลือกอยู่ ณ ตอนกด
+      </div>
+    </section>
+
+    <section id="artifacts">
+      <h2>Artifacts บนดิสก์: ตารางนี้อ่านมาจากไหน</h2>
+      <p>
+        ทุกอย่างที่หน้า Models แสดง มาจากไฟล์จริงใน <code>artifacts/models/&lt;name&gt;/</code>
+        (ไฟล์ legacy ที่เคยอยู่ root โปรเจกต์ ระบบยังหาเจอและใช้ได้)
+        เข้าใจโครงสร้างนี้แล้วจะ debug ได้เอง เช่น "ทำไม Chart เป็น -" หรือ "ทำไม Params เป็น defaults"
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ไฟล์ใน <code>artifacts/models/&lt;name&gt;/</code></th>
+            <th>คืออะไร</th>
+            <th>โยงกับหน้า Models ยังไง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>&lt;name&gt;.zip</code></td>
+            <td>ตัว model (PPO policy) ที่ train เสร็จ</td>
+            <td>แค่มีไฟล์นี้ก็ขึ้นในตารางแล้ว (เป็น <code>model only</code> ถ้ายังไม่ backtest)</td>
+          </tr>
+          <tr>
+            <td><code>&lt;name&gt;_norm.csv</code></td>
+            <td>ค่า normalization ของ feature ตอน train</td>
+            <td>ทุกการ backtest/deploy ต้องใช้ไฟล์นี้คู่กับ zip เสมอ</td>
+          </tr>
+          <tr>
+            <td><code>&lt;name&gt;.params.json</code></td>
+            <td>parameters ของ dataset/feature ตอน train (sidecar)</td>
+            <td>ต้นทางของค่า <code>✓ sidecar</code> ในคอลัมน์ Params</td>
+          </tr>
+          <tr>
+            <td><code>&lt;name&gt;.train.json</code></td>
+            <td>metadata ของรอบ train — รวมผล <code>quick_eval_mc</code>
+              (Monte Carlo ของ quick eval หลัง train)</td>
+            <td>ใช้ย้อนดูว่า model นี้ train ด้วย setting อะไร และ quick eval แข็งแรงแค่ไหน</td>
+          </tr>
+          <tr>
+            <td><code>backtests/&lt;name&gt;_live_bt.meta.json</code></td>
+            <td>metadata ของ backtest ล่าสุด: settings + result รวมค่า ambiguity/M1</td>
+            <td>ต้นทางของคอลัมน์ <strong>Realism</strong> ทั้งคอลัมน์</td>
+          </tr>
+          <tr>
+            <td><code>backtests/&lt;name&gt;_live_bt_trades.csv</code></td>
+            <td>trade log รายตัวของ backtest</td>
+            <td>ต้นทางของ Trades / Win rate / PF / Return / Max DD (คำนวณสดจากไฟล์นี้)</td>
+          </tr>
+          <tr>
+            <td><code>backtests/&lt;name&gt;_live_bt_equity.png</code></td>
+            <td>ภาพ equity curve + drawdown</td>
+            <td>สิ่งที่ Equity Viewer และปุ่ม Open equity image แสดง</td>
+          </tr>
+          <tr>
+            <td><code>backtests/&lt;name&gt;_backtest_chart.html</code></td>
+            <td>chart interactive มีจุดเข้า-ออกทุก trade</td>
+            <td>ทำให้คอลัมน์ Chart เป็น <code>yes</code> และปุ่ม Open HTML chart ใช้ได้</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        นอกจากนี้ยังมี <code>best/best_model.zip</code> (checkpoint ที่ eval ดีสุดระหว่าง train)
+        และ <code>logs/</code> (log ระหว่าง train) อยู่ในโฟลเดอร์เดียวกัน
+      </p>
+    </section>
+
+    <section id="selection">
+      <h2>เลือก model ไป deploy: อย่าดูแค่ PF</h2>
+      <p>
+        ตารางเรียงตาม Return และสายตาคนชอบวิ่งไปหา PF สูงสุด — แต่ model ที่ "ตัวเลขสวยสุด"
+        กับ model ที่ "มีหลักฐานแน่นสุด" มักไม่ใช่ตัวเดียวกัน ให้ไล่เช็คตามลำดับนี้ก่อนตัดสิน:
+      </p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag warn">Realism</span>
+            <h3>ผลนี้เชื่อได้ไหมตั้งแต่แรก</h3>
+            <p>
+              <code>M1 ✓</code> หรือ <code>ok</code> = ไปต่อได้;
+              <code>guess N%</code> สูง หรือ <code>-</code> = ตัวเลขทุกช่องในแถวนั้นยังไม่นิ่ง
+              รัน backtest ใหม่พร้อม M1 ก่อนค่อยเทียบ
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Sample</span>
+            <h3>Trades มากพอไหม</h3>
+            <p>
+              PF 3.0 จาก 12 trades แพ้ PF 1.5 จาก 300 trades เกือบทุกกรณี —
+              trades น้อยหมายถึงตัวเลขทุกตัวมี noise สูง และ <code>PF = inf</code>
+              คือธงแดง ไม่ใช่ธงเขียว
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag purple">Significance</span>
+            <h3>เปิด backtest report ดู MC / significance</h3>
+            <p>
+              ตารางนี้เป็นแค่หน้าสรุป — ก่อน deploy ให้กลับไปดูผลเต็มของ backtest รอบนั้น:
+              random baseline (model ชนะ agent สุ่ม ≥ 95% ไหม) และ Monte Carlo shuffle
+              (worst-case DD กับ P(hard stop) รับได้ไหม) รวมถึง <code>quick_eval_mc</code>
+              ใน train.json
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag green">Parity + Curve</span>
+            <h3>เช็ค Params และ equity curve ปิดท้าย</h3>
+            <p>
+              Params ต้องเป็น <code>✓ sidecar</code> หรือ <code>✓ embedded</code>
+              (ห้าม deploy ตัวที่เป็น <code>— defaults</code>)
+              และ equity curve ต้องกำไรกระจายหลาย trade หลายช่วงเวลา ไม่ใช่พุ่งครั้งเดียว
+            </p>
+          </div>
+        </article>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>สถานะ</th>
+            <th>เงื่อนไข</th>
+            <th>ตัดสินใจ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status ok">Deploy candidate</span></td>
+            <td>live backtest + Realism <code>M1 ✓</code>/<code>ok</code> + trades มากพอ +
+              ผ่าน MC/baseline + Params ✓ + curve สุขภาพดี</td>
+            <td>ไป Walk-Forward / export package ต่อได้</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">Re-verify</span></td>
+            <td>ตัวเลขดีแต่ Realism เป็น <code>guess N%</code> หรือ <code>-</code>,
+              หรือมีแต่ผล <code>env backtest</code></td>
+            <td>รัน live backtest ใหม่พร้อม M1 ก่อน แล้วค่อยกลับมาเทียบ</td>
+          </tr>
+          <tr>
+            <td><span class="status no">Not ready</span></td>
+            <td><code>model only</code>, trades น้อยมาก, PF &lt; 1, หรือ Params <code>— defaults</code></td>
+            <td>ยังไม่มีสิทธิ์เข้ารอบ — กลับไป backtest/แก้ params ก่อน</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>ประโยคสอน user:</strong> ตาราง Models คือกระดานคะแนน ไม่ใช่กรรมการตัดสิน —
+        มันบอกว่า "ตัวไหนน่าไปดูต่อ" แต่การตัดสิน deploy ต้องอ่านหลักฐานเต็ม
+        (Realism, MC, significance, parity) ของตัวนั้นเสมอ
+      </div>
+    </section>
+
+    <section id="gotcha">
+      <h2>Gotcha ที่เจอบ่อยในหน้านี้</h2>
+      <div class="grid two">
+        <div class="card warn">
+          <span class="tag red">Overwrite</span>
+          <h3>ตั้งชื่อ model ซ้ำ = ทับ artifacts เดิม</h3>
+          <p>
+            ทุกไฟล์ผูกกับชื่อ model — ถ้า train ใหม่ด้วยชื่อเดิม
+            zip, norm, params, train.json และผล backtest ทั้งหมดใน
+            <code>artifacts/models/&lt;name&gt;/</code> จะถูกเขียนทับ
+            ผลเก่าหายถาวรโดยไม่มีคำเตือน
+          </p>
+          <p>
+            <strong>วิธีป้องกัน:</strong> ใส่ version ต่อท้ายชื่อเสมอ เช่น
+            <code>rl_uj_h4_v1</code>, <code>rl_uj_h4_v2</code> —
+            ได้ประโยชน์สองต่อ: ผลเก่าไม่หาย และทุก version โผล่เทียบกันในตารางนี้เอง
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Stale row</span>
+          <h3>ตัวเลขในแถวคือ "ผลล่าสุด" ไม่ใช่ "ผลดีสุด"</h3>
+          <p>
+            ถ้ารัน backtest ซ้ำหลายรอบด้วย setting ต่างกัน แถวในตารางแสดงเฉพาะรอบล่าสุด —
+            เช่น รอบแรก confidence 0 ได้ PF 1.6 แล้วรอบสอง confidence 0.85 ได้ PF 0.9
+            ตารางจะโชว์ 0.9 อยากเก็บผลหลาย setting ให้จด/Export PDF ไว้ก่อนรันทับ
+          </p>
+        </div>
+      </div>
+      <div class="callout warn">
+        <strong>เช็คเร็วก่อน train ชื่อใหม่:</strong> เปิดหน้า Models ดูก่อนว่าชื่อที่จะใช้
+        มีอยู่ในตารางแล้วหรือยัง — เห็นชื่อซ้ำเมื่อไหร่ เปลี่ยน version ทันที
+      </div>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="05_backtest_page_detail.html">Backtest Page Detail</a> ·
+      <a href="06_walk_forward_detail.html">Walk-Forward Detail</a> ·
+      <a href="90_project_folder_map.html">Project Folder Map</a>
+    </p>
+  </main>
+</body>
+</html>

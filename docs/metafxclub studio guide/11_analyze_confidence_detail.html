@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Confidence Analysis Detail</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+      --purple: #6d28d9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    pre {
+      background: #101828;
+      color: #e6efe9;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 14px;
+      overflow-x: auto;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    pre code { background: transparent; border: 0; padding: 0; color: inherit; white-space: pre; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ede9fe;
+      color: var(--purple);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .tag.purple { background: #ede9fe; color: var(--purple); }
+    .flow { display: grid; gap: 12px; margin-top: 16px; }
+    .step {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfdf9;
+    }
+    .num {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--dark);
+      color: white;
+      font-weight: 900;
+    }
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--purple);
+      background: #f4f0ff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .status {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .ok { background: #def5ea; color: var(--green); }
+    .maybe { background: #fff2bf; color: var(--yellow); }
+    .no { background: #ffe4e0; color: var(--red); }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Diagnostic · Confidence</span>
+      <h1>Confidence Analysis — หา threshold ที่ model มั่นใจแล้วแม่นจริง</h1>
+      <p class="lead">
+        หน้า Analyze ตอบคำถามเดียว: model ทายแม่นขึ้นเมื่อมั่นใจสูงไหม?
+        ถ้าใช่ แปลว่ามี edge ซ่อนอยู่ในบางสถานการณ์ และเราหา confidence threshold
+        ที่คุ้มที่สุดมาใช้เป็น order gate ได้ — บทนี้สอนว่า confidence คำนวณยังไง,
+        อ่านตาราง threshold scan ยังไง และทำไมผลจากหน้านี้ยังไม่ใช่คำตอบสุดท้าย
+      </p>
+      <nav>
+        <a href="#goal">เป้าหมาย</a>
+        <a href="#confidence">Confidence คืออะไร</a>
+        <a href="#workflow">ขั้นตอนใช้งาน</a>
+        <a href="#inputs">ช่องในหน้า / ไฟล์ที่ใช้</a>
+        <a href="#buckets">อ่าน Bucket Table</a>
+        <a href="#scan">อ่าน Threshold Scan</a>
+        <a href="#patterns">Pattern ที่เจอบ่อย</a>
+        <a href="#limits">ข้อจำกัด</a>
+        <a href="#decision">ขั้นต่อไป</a>
+      </nav>
+    </header>
+
+    <section id="goal">
+      <h2>หน้านี้มีไว้ตอบคำถามอะไร</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">Question</span>
+          <h3>มั่นใจสูง = แม่นขึ้นจริงไหม</h3>
+          <p>
+            ทุกครั้งที่ model เลือก Buy/Sell มันมีระดับ "ความมั่นใจ" ติดมาด้วย
+            หน้านี้เอา trade ทั้งหมดมาแยกตามความมั่นใจ แล้วดูว่า trade
+            ที่มั่นใจสูงชนะบ่อยกว่าและกำไรดีกว่าจริงหรือเปล่า
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Output</span>
+          <h3>ได้ threshold candidate</h3>
+          <p>
+            ถ้าความมั่นใจสัมพันธ์กับความแม่นจริง ระบบจะ scan หา threshold
+            ที่ให้ Profit Factor ดีที่สุด — ค่านี้คือ "ผู้สมัคร" ที่จะเอาไปใส่ช่อง
+            Confidence Threshold ในหน้า Backtest ต่อ
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Not a verdict</span>
+          <h3>ยังไม่ใช่ผลตัดสิน</h3>
+          <p>
+            Analyze รันบน <code>TradingEnv</code> โลกอุดมคติ — ไม่มี spread,
+            ไม่มี slippage, ไม่มี swap ตัวเลข PnL ที่เห็นจึงสวยกว่าความจริงเสมอ
+            ต้องยืนยันบนหน้า Backtest ก่อนเชื่อ
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="confidence">
+      <h2>Confidence มาจากไหน (และไม่ใช่อะไร)</h2>
+      <p>
+        PPO policy ของเราจบด้วย layer ที่ให้คะแนนดิบ (logits) กับ 4 action:
+        Hold, Buy, Sell, Close จากนั้น softmax แปลงคะแนนเป็นสัดส่วนความน่าจะเป็นที่รวมกันได้ 1
+        — "confidence" ของ trade คือความน่าจะเป็นของ action ที่ชนะ (argmax prob) เช่น
+        ถ้า Buy ได้ 0.72 และตัวอื่นแบ่งที่เหลือ confidence ของ trade นั้นคือ 0.72
+      </p>
+      <pre><code>dist  = model.policy.get_distribution(obs)      # softmax over policy logits
+probs = dist.distribution.probs                 # เช่น [0.11, 0.72, 0.08, 0.09]
+action     = argmax(probs)                      # 1 = Buy
+confidence = probs[action]                      # 0.72</code></pre>
+      <div class="grid">
+        <div class="card blue">
+          <span class="tag blue">คือ</span>
+          <h3>ระดับความเด็ดขาดของ policy</h3>
+          <p>
+            ค่าสูง = policy ชี้ไปทางเดียวชัดเจน, ค่าต่ำ (ใกล้ 0.25 สำหรับ 4 action)
+            = policy ลังเล แทบจะสุ่ม — มันบอก "ความชัดของการตัดสินใจ" ไม่ใช่โอกาสชนะ
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">ไม่ใช่</span>
+          <h3>ไม่ใช่ calibrated probability</h3>
+          <p>
+            confidence 0.72 <strong>ไม่ได้</strong> แปลว่า trade นี้มีโอกาสชนะ 72%
+            PPO ไม่เคยถูก train ให้ค่านี้ตรงกับ win rate แบบ classifier ที่ calibrate แล้ว
+            — ความหมายของตัวเลขต้องพิสูจน์จากข้อมูล ซึ่งคือหน้าที่ของหน้านี้
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">พิสูจน์</span>
+          <h3>เชื่อมด้วยหลักฐาน</h3>
+          <p>
+            หน้านี้จับคู่ confidence ตอนเข้า trade กับผล PnL ของ trade นั้นจริง ๆ
+            ทีละไม้ ถ้า model ไหน confidence มีความหมาย มันจะโผล่ในตารางเอง
+            ถ้าไม่มีความหมาย ตารางก็จะฟ้องเหมือนกัน
+          </p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>วิธีอธิบายให้ user เข้าใจง่าย:</strong>
+        confidence เหมือน "น้ำเสียง" ตอน model ตอบ — เสียงหนักแน่นไม่ได้แปลว่าถูกเสมอ
+        หน้า Analyze คือการเช็คย้อนหลังว่า model ตัวนี้ เวลาพูดเสียงหนักแน่นแล้วถูกบ่อยขึ้นจริงไหม
+      </div>
+    </section>
+
+    <section id="workflow">
+      <h2>ขั้นตอนใช้งานใน Dashboard</h2>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag purple">Model</span>
+            <h3>เลือก Model</h3>
+            <p>
+              เลือกโมเดลจาก dropdown ระบบจะหาไฟล์ <code>&lt;model&gt;.zip</code> และ
+              <code>&lt;model&gt;_norm.csv</code> ให้เองผ่าน <code>artifact_paths</code>
+              (รองรับทั้ง layout ใหม่ <code>artifacts/models/&lt;model&gt;/</code> และไฟล์เก่าที่ repo root)
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Data</span>
+            <h3>เลือก CSV ที่ feature ตรงกับ model</h3>
+            <p>
+              ต้องเป็น dataset ที่มีชุด feature เดียวกับตอน train
+              (ง่ายสุดคือใช้ไฟล์เดียวกับที่ใช้ train — ระบบ test เฉพาะ 20% ท้ายไฟล์ให้อยู่แล้ว)
+              ถ้า feature ไม่ตรงจะเจอ error <code>model/dataset feature mismatch</code> ทันที
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag green">Run</span>
+            <h3>กด Analyze</h3>
+            <p>
+              ระบบ load model, auto-detect window size จาก observation space ของ model
+              (ไม่ต้องจำเองว่า train ด้วย window เท่าไร) แล้วเดิน agent ผ่านช่วง test
+              พร้อมบันทึก confidence ของทุก trade ที่เปิด
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag purple">Read</span>
+            <h3>อ่าน 2 ตารางใน Output</h3>
+            <p>
+              ตารางแรก (Confidence Bucket) แยก trade เป็นช่วงความมั่นใจ,
+              ตารางสอง (Threshold Scan) จำลองว่า "ถ้าเทรดเฉพาะตอนมั่นใจ ≥ X" ผลจะเป็นยังไง
+              — ตารางสองคือตัวหลักที่ใช้ตัดสินใจ
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">5</div>
+          <div>
+            <span class="tag warn">Verify</span>
+            <h3>เอา threshold ไปยืนยันที่หน้า Backtest</h3>
+            <p>
+              ได้ sweet spot แล้วอย่าเพิ่งเชื่อ — เอาค่านั้นไปใส่ช่อง Confidence Threshold
+              ในหน้า Backtest ที่มี costs, M1 replay, Monte Carlo และ significance test
+              ครบ ถ้ารอดที่นั่นด้วยค่อยถือว่าใช้ได้จริง
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="inputs">
+      <h2>ช่องในหน้า Analyze และไฟล์ที่เกี่ยวข้อง</h2>
+      <p>
+        หน้านี้ตั้งใจให้เรียบที่สุดใน dashboard: มีแค่ 2 dropdown กับปุ่มเดียว
+        เพราะค่าอื่นระบบตัดสินใจให้เองหมด
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ช่อง / ไฟล์</th>
+            <th>หน้าที่</th>
+            <th>หมายเหตุ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Model (dropdown)</td>
+            <td>โมเดล PPO ที่ train สำเร็จแล้ว</td>
+            <td>ระบบ resolve path ของ zip ให้เองผ่าน <code>find_model_path</code></td>
+          </tr>
+          <tr>
+            <td>CSV (dropdown)</td>
+            <td>dataset สำหรับวิเคราะห์</td>
+            <td><strong>ชุด feature ต้องตรงกับตอน train</strong> ไม่งั้นเจอ feature-mismatch error — เลือกไฟล์ที่ใช้ train model ตัวนั้นปลอดภัยสุด</td>
+          </tr>
+          <tr>
+            <td><code>&lt;model&gt;_norm.csv</code></td>
+            <td>mean/std ตอน train ใช้ normalize feature ให้ scale ตรงกัน</td>
+            <td>หาให้อัตโนมัติ ถ้าไม่เจอระบบหยุดพร้อม error ชัดเจน (ไม่รันต่อแบบผลเพี้ยน)</td>
+          </tr>
+          <tr>
+            <td>Window Size</td>
+            <td>ขนาด state window ของ environment</td>
+            <td>auto-detect จาก <code>obs_dim = window × n_features + 3</code> ของ model — ไม่มีช่องให้กรอกในหน้านี้</td>
+          </tr>
+          <tr>
+            <td>ช่วง test</td>
+            <td>ใช้ 20% ท้ายไฟล์ (start fraction 0.8)</td>
+            <td>ช่วงเดียวกับที่ quick eval หลัง train ใช้ จึงเทียบกันได้</td>
+          </tr>
+          <tr>
+            <td>Output</td>
+            <td>ตารางผลใน log ของหน้า (ไม่มีไฟล์ output)</td>
+            <td>อยากเก็บผล ให้ copy จาก log — รันซ้ำได้เร็วมากอยู่แล้ว</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>เบื้องหลัง:</strong> ปุ่ม Analyze รัน <code>python rl_analyze.py &lt;model&gt; &lt;csv&gt;</code>
+        — script เดียวกับที่รันจาก command line ได้ และก่อนวิเคราะห์ระบบจะ drop คอลัมน์ที่ชื่อส่อว่า leak อนาคต
+        (<code>future_</code>, <code>next_</code>, <code>target</code> ฯลฯ) ให้อัตโนมัติเหมือนตอน train
+      </div>
+    </section>
+
+    <section id="buckets">
+      <h2>ตารางแรก: Performance by Confidence Bucket</h2>
+      <p>
+        ตารางนี้แบ่ง trade ทั้งหมดตามช่วงความมั่นใจ เช่น [0.50-0.60), [0.60-0.70) ...
+        แล้วโชว์จำนวน trade, win rate, PnL เฉลี่ย และ PnL รวมของแต่ละช่วง
+        — ใช้ดู "รูปร่าง" ของความสัมพันธ์ก่อนไปดู threshold scan
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>คอลัมน์</th>
+            <th>ความหมาย</th>
+            <th>วิธีใช้</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conf range</td>
+            <td>ช่วงความมั่นใจตอนเข้า trade เช่น <code>[0.60-0.70)</code></td>
+            <td>ช่วงที่ไม่มี trade เลยจะไม่ถูกพิมพ์ — บอกได้ว่า model กระจุกความมั่นใจแถวไหน</td>
+          </tr>
+          <tr>
+            <td>#trades</td>
+            <td>จำนวน trade ในช่วงนั้น</td>
+            <td>bucket ที่มี trade หลักหน่วย อย่าเพิ่งตีความ win rate ของมัน</td>
+          </tr>
+          <tr>
+            <td>WinRate / AvgPnL / TotalPnL</td>
+            <td>คุณภาพ trade ของ bucket นั้น</td>
+            <td>รูปที่อยากเห็น: bucket สูงมี WinRate/AvgPnL ดีกว่า bucket ต่ำอย่างเป็นระบบ</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        ข้อสังเกตที่เจอบ่อย: model ที่ train มาดีมักกระจุก confidence อยู่โซนกลาง-สูง
+        (0.4-0.8) ถ้าเกือบทุก trade อยู่ bucket เดียว แปลว่า policy "เสียงโทนเดียว"
+        — threshold filter จะช่วยอะไรไม่ได้มาก เพราะไม่มีความต่างให้กรอง
+      </p>
+    </section>
+
+    <section id="scan">
+      <h2>ตารางหลัก: Threshold Scan</h2>
+      <p>
+        ตารางนี้จำลองคำถาม "ถ้ายอมเทรดเฉพาะไม้ที่ confidence ≥ X ผลจะเป็นยังไง?"
+        โดยไล่ X ตั้งแต่ 0.30 ถึง 0.90 ทีละ 0.05 แถวไหนทำ Profit Factor สูงสุดเท่าที่เจอมา
+        จะติดดาว ⭐ และดาวดวงสุดท้ายคือ threshold ที่ดีที่สุดของ scan นี้
+        (แถวที่เหลือ trade ไม่ถึง 30 ไม้ ระบบไม่พิมพ์เลย เพราะสถิติเชื่อไม่ได้)
+      </p>
+      <p>ตัวอย่างผลจริงจาก model ที่ confidence มีความหมาย — อ่านไล่จากบนลงล่าง:</p>
+      <pre><code>  Conf&gt;=      #trades    WinRate     TotalPnL         PF
+----------------------------------------------------------------------
+  &gt;=0.50          115     59.1%       +9.67%        1.45
+  &gt;=0.60           90     60.0%       +9.99%        1.66
+  &gt;=0.65           71     57.8%       +9.07%        1.80  &lt;- sweet spot
+  &gt;=0.70           59     52.5%       +0.98%        1.09  &lt;- edge หาย</code></pre>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag blue">0.50 → 0.60</span>
+            <h3>ขยับ threshold ขึ้น คุณภาพดีขึ้น</h3>
+            <p>
+              ตัด trade ออก 25 ไม้ (115 → 90) แต่ WinRate ขึ้น, PnL รวม<strong>ไม่ลด</strong>
+              และ PF กระโดด 1.45 → 1.66 — แปลว่าไม้ที่ถูกตัดคือไม้แย่จริง
+              นี่คือสัญญาณว่า confidence กับคุณภาพ trade สัมพันธ์กัน
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag green">0.65</span>
+            <h3>Sweet spot: PF สูงสุด ก่อนที่ trade จะบางเกิน</h3>
+            <p>
+              ที่ 0.65 เหลือ 71 ไม้ PF ขึ้นถึง 1.80 — สังเกตว่า WinRate ลดนิดหน่อย (57.8%)
+              แต่ PF กลับสูงขึ้น เพราะไม้ที่เหลือ "ชนะครั้งใหญ่ แพ้ครั้งเล็ก"
+              PF จึงเป็นตัวชี้ sweet spot ที่ดีกว่า WinRate เดี่ยว ๆ
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag red">0.70</span>
+            <h3>เลย sweet spot แล้ว edge หาย</h3>
+            <p>
+              ขยับอีกแค่ 0.05 ทุกอย่างพังพร้อมกัน: WR ร่วงเหลือ 52.5%, PnL เกือบศูนย์, PF 1.09
+              — ไม้ดี ๆ ถูกกรองทิ้งไปด้วย และ 59 ไม้ที่เหลือเริ่มบางจน noise ครอบ
+              บทเรียนคือ threshold ที่สูงกว่าไม่ได้ดีกว่าเสมอ
+            </p>
+          </div>
+        </article>
+      </div>
+      <p>ท้ายตาราง ระบบสรุปคำตัดสินให้จากค่า PF ที่ดีที่สุด:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>ข้อความสรุป</th>
+            <th>เงื่อนไข</th>
+            <th>ความหมาย</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status ok">✅ Edge มีจริง</span></td>
+            <td>best PF &gt; 1.2</td>
+            <td>ใช้ threshold ที่แนะนำเป็น candidate แล้วไปยืนยันที่หน้า Backtest</td>
+          </tr>
+          <tr>
+            <td><span class="status maybe">🟡 มี edge เล็กน้อย</span></td>
+            <td>best PF อยู่ระหว่าง 1.0 - 1.2</td>
+            <td>edge บางมาก — costs จริง (spread/slippage/swap) อาจกินหมด อย่าคาดหวังสูง</td>
+          </tr>
+          <tr>
+            <td><span class="status no">❌ ไม่มี edge</span></td>
+            <td>best PF ≤ 1.0 ทุก threshold</td>
+            <td>confidence filter ช่วย model ตัวนี้ไม่ได้ — ต้องกลับไปแก้ features / instrument / training</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="patterns">
+      <h2>Pattern ที่เจอบ่อย และแปลว่าอะไร</h2>
+      <div class="grid">
+        <div class="card green">
+          <span class="tag green">Edge จริง</span>
+          <h3>ไต่ขึ้น แล้วร่วง</h3>
+          <p>
+            WR/PF ไต่ขึ้นตาม threshold ถึงจุดหนึ่งแล้วร่วง (เพราะ trades บางเกิน)
+            — รูป "ภูเขา" แบบตัวอย่างข้างบนคือรูปที่ดีที่สุดที่หวังได้
+            ยอดเขาคือ sweet spot
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">ไม่มีความหมาย</span>
+          <h3>เส้นแบน</h3>
+          <p>
+            ขยับ threshold แล้ว WR/PF แทบไม่เปลี่ยน = confidence ไม่มีความหมายกับ model นั้น
+            มั่นใจมากหรือน้อยก็แม่นพอ ๆ กัน — ใช้ filter ไปก็แค่ลดจำนวน trade เปล่า ๆ
+            ตั้ง Confidence = 0 ในหน้า Backtest ไปเลยดีกว่า
+          </p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">หลอกตา</span>
+          <h3>สวยเพราะ noise</h3>
+          <p>
+            PF พุ่งเฉพาะแถวที่เหลือ trade น้อย ๆ — sample เล็กทำให้เลขสวิงแรง
+            trade ชนะใหญ่ไม้เดียวก็ดัน PF ขึ้นทั้งแถวได้ อย่าเลือก threshold
+            จากแถวแบบนี้
+          </p>
+        </div>
+      </div>
+      <div class="callout warn">
+        <strong>Sample-size caveat:</strong>
+        แถวที่เหลือ trade ต่ำกว่า ~100 ไม้ ให้ถือว่า noise สูง — ตัวเลข WR/PF
+        ของแถวนั้นเปลี่ยนได้มากแค่เพราะ trade 2-3 ไม้พลิกผล ระบบตัดแถวที่ต่ำกว่า 30 ไม้ทิ้งให้แล้ว
+        แต่ช่วง 30-100 ไม้ยังต้องอ่านด้วยความระวัง: ใช้ดูแนวโน้มได้ อย่าใช้ฟันธง
+      </div>
+    </section>
+
+    <section id="limits">
+      <h2>ข้อจำกัดของหน้านี้ (ต้องรู้ก่อนเชื่อผล)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ข้อจำกัด</th>
+            <th>รายละเอียด</th>
+            <th>ผลต่อการตีความ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>รันบน TradingEnv โลกอุดมคติ</td>
+            <td>ไม่มี spread, commission, slippage, swap — environment เดียวกับตอน train</td>
+            <td>PnL ทุกตัวในตารางสวยกว่าความจริง ใช้เทียบ<strong>ระหว่าง threshold</strong> ได้ แต่อย่าเอาตัวเลขไปอ้างเป็นผลตอบแทนคาดหวัง</td>
+          </tr>
+          <tr>
+            <td>นับเฉพาะ entry decision</td>
+            <td>confidence ที่วิเคราะห์คือตอนเปิด position เท่านั้น ไม่รวมจังหวะ Close</td>
+            <td>threshold ที่ได้ใช้เป็น entry gate — หน้า Backtest ก็ใช้แบบเดียวกัน (ไม่ filter Close)</td>
+          </tr>
+          <tr>
+            <td>ช่วง test เดียว</td>
+            <td>ใช้ 20% ท้ายไฟล์ ไม่มี walk-forward หลายช่วง</td>
+            <td>sweet spot อาจเลื่อนไปตามช่วงตลาด — Walk-Forward คือด่านที่ตรวจเรื่องนี้</td>
+          </tr>
+          <tr>
+            <td>ไม่มี significance test</td>
+            <td>ไม่มี random baseline / Monte Carlo ในหน้านี้</td>
+            <td>PF 1.8 จาก 71 ไม้อาจเป็นโชค — หน้า Backtest มีเครื่องมือแยกโชคออกจาก edge ให้</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>Gotcha ที่เจอบ่อยสุด:</strong>
+        <code>0.85</code> ไม่ใช่ค่าศักดิ์สิทธิ์ — ทุก model มี sweet spot ของตัวเอง
+        model ตัวอย่างข้างบน sweet spot คือ 0.65 และที่ 0.70 edge หายไปแล้ว
+        ถ้าเอา 0.85 ไปใช้กับ model นี้จะแทบไม่เหลือ trade เลย
+        ห้าม copy threshold ข้าม model และห้ามใช้ค่า default โดยไม่ scan ก่อน
+      </div>
+      <div class="callout">
+        <strong>Error ที่เจอบ่อย:</strong>
+        <code>model/dataset feature mismatch</code> = จำนวน feature ใน CSV
+        ไม่ตรงกับที่ model คาดหวัง (obs_dim หารไม่ลงตัว)
+        — แก้โดยเลือก CSV ที่ใช้ train model ตัวนั้น ไม่ใช่แก้ window
+        ส่วน window size ไม่ต้องกังวลเลย เพราะระบบ auto-detect จาก model ให้แล้ว
+      </div>
+    </section>
+
+    <section id="decision">
+      <h2>ได้ threshold แล้วทำอะไรต่อ</h2>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div>
+            <span class="tag purple">Confirm</span>
+            <h3>ยืนยันที่หน้า Backtest ก่อนเชื่อ</h3>
+            <p>
+              เอา sweet spot ไปใส่ช่อง Confidence Threshold ในหน้า Backtest
+              ซึ่งมีของที่หน้านี้ไม่มีครบ: costs จริง, M1 replay สำหรับ SL/TP,
+              Monte Carlo shuffle และ random baseline — ถ้า PF ยังยืนได้หลังหัก
+              costs ค่อยถือว่า threshold นั้นใช้จริงได้
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">2</div>
+          <div>
+            <span class="tag blue">Compare</span>
+            <h3>Backtest เทียบ 2 ค่า: 0 กับ sweet spot</h3>
+            <p>
+              รัน Backtest ด้วย <code>Confidence = 0</code> (baseline ไม่กรอง)
+              และด้วย sweet spot จากหน้านี้ — ถ้าค่า filter แล้ว PF/DD ดีขึ้นจริงในโลกที่มี costs
+              ถึงจะเป็นหลักฐานครบวงจร
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">3</div>
+          <div>
+            <span class="tag green">Robustness</span>
+            <h3>Walk-Forward ด้วย threshold เดิม</h3>
+            <p>
+              ตรวจว่า sweet spot ยังทำงานหลายช่วงเวลา ไม่ใช่ fit กับช่วง test
+              ช่วงเดียว — ถ้า threshold ที่ดีของแต่ละ fold ต่างกันมาก แปลว่ายังพึ่งไม่ได้
+            </p>
+          </div>
+        </article>
+        <article class="step">
+          <div class="num">4</div>
+          <div>
+            <span class="tag warn">Fallback</span>
+            <h3>ถ้าเส้นแบนหรือไม่มี edge</h3>
+            <p>
+              อย่าฝืนหา threshold จากตารางที่ไม่มี pattern — ปัญหาไม่ได้อยู่ที่ filter
+              แต่อยู่ที่ตัว model: กลับไปดู features (หน้า Custom Feature),
+              regime ของข้อมูล หรือ train ใหม่
+            </p>
+          </div>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>ประโยคสอน user:</strong>
+        หน้า Analyze คือ "เครื่องจับโกหก" ของ confidence — มันบอกว่า model ตัวนี้
+        เวลามั่นใจแล้วเชื่อได้แค่ไหน และควรตั้ง filter ตรงไหน
+        แต่คำตัดสินสุดท้ายว่า threshold นั้นทำเงินได้จริงไหม ต้องไปสอบที่หน้า Backtest
+        ที่มีต้นทุนจริงครบเสมอ
+      </div>
+    </section>
+
+    <p class="footer">
+      Related:
+      <a href="01_dashboard_user_flow_guide.html">Dashboard User Flow</a> ·
+      <a href="04_train_page_detail.html">Train Page Detail</a> ·
+      <a href="05_backtest_page_detail.html">Backtest Page Detail</a> ·
+      <a href="06_walk_forward_detail.html">Walk-Forward Detail</a>
+    </p>
+  </main>
+</body>
+</html>

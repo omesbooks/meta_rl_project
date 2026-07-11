@@ -50,7 +50,7 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Task | Command |
 |------|---------|
 | Launch GUI | `run_rl_app.bat` or `.venv/Scripts/python.exe rl_app.py` |
-| Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--reward_profile balanced] [--action_profile basic_4] [--eval_csv <csv>]` |
+| Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--reward_profile balanced] [--action_profile basic_4] [--mc_eval 1000 --mc_skip_frac 0.10] [--eval_csv <csv>]` |
 | Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent [--intrabar {pessimistic,optimistic}] [--stop_slippage 0.0001] [--m1_csv <m1.csv>] [--swap_long -0.00005 --swap_short -0.00003] [--random_baseline 20] [--mc 1000]` |
 | Backtest chart | `python backtest_chart.py <model> <csv> --limit 5000` |
 | Walk-forward | `python rl_walkforward.py <csv> --windows 5 --steps 50000` |
@@ -156,7 +156,7 @@ reference/                 MIT-Quant-Bible.md, ml4t/  (quant theory)
 | File | Role |
 |------|------|
 | `Indicators/CandlePatterns.mq5` | 10 candlestick patterns indicator (exposed via iCustom). |
-| `Experts/DataCollector_RL.mq5` | Export bars + current RL feature stack -> CSV + `.params` sidecar for train/deploy parity. With `InpCollectM1=true` (default) also dumps `<out>_m1.csv` (raw M1 OHLCV over the collected period, chunked `CopyRates`) for `backtest_live.py --m1_csv`; partial M1 coverage is logged, not fatal. |
+| `Experts/DataCollector_RL.mq5` | Export bars + current RL feature stack -> CSV + `.params` sidecar for train/deploy parity. With `InpCollectM1=true` (default) also dumps `<out>_m1.csv` (raw M1 OHLCV over the collected period, chunked `CopyRates`) for `backtest_live.py --m1_csv`; partial M1 coverage is logged, not fatal. **Never put `_m1` in `InpOutFile` yourself** — the suffix is added automatically; a hand-typed `_m1` name makes the GUI treat the feature dataset as M1 data (seen in the field). Data Tools Import has an "Import M1" checkbox (default on), and `_find_matching_m1` walks name ancestry so derived datasets (`_train/_test/_relabeled/_clean/_from_<date>/training_data_`) inherit the original M1 file — M1Resolver slices by timestamp, so nothing is copied. |
 | `Experts/ML_RL_Trader_template.mq5` | **TEMPLATE** — placeholders filled by `export_to_onnx.py`. Required for MT5 EA export; do not hand-edit for a specific model. |
 | `Include/RL_Indicators.mqh` | Feature library: 75-feature master list, dynamic feature mapping, iCustom auto-load. Shared by all models. |
 | `Experts/*_EA.mq5`, `Include/*_config.mqh` | **Generated per model** by export script. |
@@ -226,6 +226,20 @@ Three statistical-validation layers on top (all in `backtest_live.py`):
   order → distribution of max drawdown + P(hitting the hard stop). Final
   balance is order-independent (product commutes), so only DD is reported.
   Answers sizing/survival risk, not strategy quality.
+
+MC also runs at **train time**: `rl_train.py --mc_eval N` (default 1000, 0=off)
++ `--mc_skip_frac` (default 0.10) probe the quick-eval trade list — shuffle-DD
+plus SQX-style skip-retention (drop N% of trades → profit retention + flip
+rate + verdict). Configurable from the Train page ("MC Eval Runs" / "MC Skip
+%"); results persist in `<name>.train.json` under `quick_eval_mc`. Train-MC
+runs on idealized TradingEnv trades (no costs/SL-TP) → use it for recipe
+screening only; the backtest MC is the one that sizes real capital.
+The Pipeline's backtest stage passes `--random_baseline 20` and auto-attaches
+`--m1_csv` when a companion M1 file exists, matching the Backtest page
+defaults. GUI surfaces: Backtest page renders a full report panel (equity PNG
++ settings/realism/baseline/MC/significance/analytics) from the meta JSON, and
+the Models page has a **Realism** column (`M1 ✓` / `ok` / `guess N%` / `-`)
+showing how each stored result resolved intrabar exits.
 
 ### Steps rule of thumb
 `total_timesteps ≈ train_rows × 5–10`. Monitor `ep_rew_mean`: rising→keep going,

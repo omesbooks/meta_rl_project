@@ -416,6 +416,16 @@
             <td>ใช้ <code>85</code> ได้สำหรับเริ่มต้น และห้ามคิดว่าเป็น random split</td>
           </tr>
           <tr>
+            <td>MC Eval Runs</td>
+            <td>Monte Carlo หลัง quick eval: shuffle ลำดับ trade ดูการกระจาย DD + สุ่มตัด trade ดู profit retention (เกณฑ์แบบ SQX) — วัดความ robust ของ recipe ตั้งแต่ model เกิด</td>
+            <td>ใช้ <code>1000</code> (default); ใส่ <code>0</code> เพื่อปิด · ผลบันทึกใน <code>&lt;model&gt;.train.json</code> · DD ที่ได้เป็นโลกอุดมคติ (env ไม่มี costs) — ใช้คัดกรอง recipe เท่านั้น ทุนจริงดูจาก MC ฝั่ง Backtest</td>
+          </tr>
+          <tr>
+            <td>MC Skip %</td>
+            <td>สัดส่วน trade ที่สุ่มตัดทิ้งต่อรอบ skip-MC — ถ้าตัดแล้วกำไรพัง แปลว่า edge กระจุกอยู่ไม่กี่ไม้ (เปราะ)</td>
+            <td>ใช้ <code>10</code> (default) · verdict ผ่านเมื่อ retention ≥ 70% และ P(flip) &lt; 5%</td>
+          </tr>
+          <tr>
             <td>Model Name</td>
             <td>ชื่อ artifact ที่จะถูกสร้าง เช่น <code>rl_usdjpy_h4_v1</code></td>
             <td>ใส่ symbol/timeframe/version ให้ชัด และระวังชื่อซ้ำเพราะจะ overwrite</td>

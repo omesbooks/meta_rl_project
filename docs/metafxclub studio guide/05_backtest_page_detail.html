@@ -409,6 +409,21 @@
             <td>DataCollector_RL เก็บให้อัตโนมัติเป็น <code>&lt;dataset&gt;_m1.csv</code> (import พร้อม dataset จาก Data Tools) — เลือกจาก dropdown ได้เลย broker ตรงกันแน่นอน</td>
           </tr>
           <tr>
+            <td>Swap Long / Short %/night</td>
+            <td>ต้นทุน (หรือ carry) ข้ามคืนต่อ rollover — ติดลบ = โดนเก็บ, บวก = ได้รับ · คืนวันพุธคิด 3 เท่า (T+2)</td>
+            <td>ดูค่าจริงจาก broker (specification ของ symbol) — H4 ถือถึง 5 วัน swap มีผลจริง ค่า default <code>0</code> = ยังไม่คิด</td>
+          </tr>
+          <tr>
+            <td>Random Baseline Runs</td>
+            <td>รัน agent สุ่ม action ผ่าน engine เดียวกัน N รอบ แล้วดูว่า model ชนะกี่ % — แยก "edge จริง" ออกจาก "ผลของ risk rules"</td>
+            <td><code>20</code> (default) · model ต้องชนะ ≥ 95% ถึงถือว่ามี edge · <code>0</code> = ปิด</td>
+          </tr>
+          <tr>
+            <td>Monte Carlo Shuffles</td>
+            <td>สลับลำดับ trade N รอบ → การกระจายของ Max DD + P(โดน hard stop) — กำไรรวมไม่เปลี่ยน (คณิตศาสตร์) เปลี่ยนเฉพาะเส้นทาง DD</td>
+            <td><code>1000</code> (default) · เกณฑ์: 95% worst-case DD ≤ 1.5× DD ปกติ และ P(hard stop) &lt; 5-10% · <code>0</code> = ปิด</td>
+          </tr>
+          <tr>
             <td>Window Size</td>
             <td>ขนาด state window</td>
             <td>ปล่อย blank/auto เพราะ backtest auto-detect จาก observation space ของ model</td>

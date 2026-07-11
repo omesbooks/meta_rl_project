@@ -2213,6 +2213,9 @@ class RLTradingStudio(ctk.CTk):
             m1_file = self._find_matching_m1(bt_csv)
             if m1_file:
                 backtest_cmd += ["--m1_csv", m1_file]
+            # Statistical validation — same defaults as the Backtest page
+            # (--mc 1000 is already the CLI default; baseline is opt-in on CLI)
+            backtest_cmd += ["--random_baseline", "20"]
             self._pipeline_run_cmd(backtest_cmd, stage, "Backtest", stages_total)
             stage += 1
 

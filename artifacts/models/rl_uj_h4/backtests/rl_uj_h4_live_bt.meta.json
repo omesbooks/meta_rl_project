@@ -1,17 +1,17 @@
 {
   "model": "rl_uj_h4",
-  "created_at": "2026-06-25T19:54:43",
+  "created_at": "2026-07-07T19:50:47",
   "data_csv": "uj_h4_dataset.csv",
   "data_rows_before_start": 17845,
   "data_period_before_start": {
     "start": "2014-12-31T20:00:00",
     "end": "2026-06-12T16:00:00"
   },
-  "start_fraction": 0.8,
-  "start_index": 14276,
-  "backtest_rows": 3569,
+  "start_fraction": 0.85,
+  "start_index": 15168,
+  "backtest_rows": 2677,
   "backtest_period": {
-    "start": "2024-02-28T00:00:00",
+    "start": "2024-09-23T16:00:00",
     "end": "2026-06-12T16:00:00"
   },
   "feature_count": 75,
@@ -24,9 +24,9 @@
     "backtest_meta": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\rl_uj_h4\\backtests\\rl_uj_h4_live_bt.meta.json"
   },
   "settings": {
-    "conf": 0.85,
+    "conf": 0.0,
     "risk": 0.01,
-    "max_positions": 3,
+    "max_positions": 1,
     "max_hold": 30,
     "hard_dd": 0.15,
     "atr_sl": 2.0,
@@ -35,41 +35,156 @@
     "balance": 10000,
     "spread": 0.0002,
     "commission": 0.0001,
-    "window": 0
+    "intrabar": "pessimistic",
+    "stop_slippage": 0.0001,
+    "swap_long": 0.0,
+    "swap_short": 0.0,
+    "random_baseline": 20,
+    "mc": 1000,
+    "window": 0,
+    "action_profile": "basic_4",
+    "action_profile_label": "Basic 4 (Hold/Buy/Sell/Close)",
+    "action_profile_json": null,
+    "action_profile_params": {
+      "breakeven_min_profit": 0.001,
+      "trail_atr_period": 14,
+      "trail_atr_mult": 2.0,
+      "trail_min_profit": 0.001,
+      "management_action_penalty": 0.0002,
+      "invalid_action_penalty": 0.001
+    },
+    "action_profile_actions": [
+      {
+        "id": 0,
+        "label": "Hold",
+        "description": "Do nothing.",
+        "role": "hold",
+        "name": "hold"
+      },
+      {
+        "id": 1,
+        "label": "Buy",
+        "description": "Open a long position when flat.",
+        "role": "entry",
+        "name": "buy"
+      },
+      {
+        "id": 2,
+        "label": "Sell",
+        "description": "Open a short position when flat.",
+        "role": "entry",
+        "name": "sell"
+      },
+      {
+        "id": 3,
+        "label": "Close",
+        "description": "Close current position.",
+        "role": "exit",
+        "name": "close"
+      }
+    ]
   },
   "status": "complete",
   "result": {
-    "total_trades": 307,
-    "long_trades": 33,
-    "short_trades": 274,
-    "win_rate": 0.39087947882736157,
-    "profit_factor": 0.581990715907004,
-    "avg_win": 0.0033932660267968324,
-    "avg_loss": -0.0037414633190463002,
-    "total_pnl": -2567.0574179534133,
-    "final_balance": 7432.942582046584,
-    "return_pct": -0.25670574179534156,
-    "max_drawdown": -0.3052233157446204,
-    "sharpe": -14.410809364181636,
+    "total_trades": 364,
+    "long_trades": 69,
+    "short_trades": 295,
+    "win_rate": 0.3708791208791209,
+    "profit_factor": 0.7081810273675656,
+    "avg_win": 0.0030389260706080896,
+    "avg_loss": -0.0025297297813394776,
+    "total_pnl": -1579.6702420743843,
+    "final_balance": 8420.329757925621,
+    "return_pct": -0.1579670242074379,
+    "max_drawdown": -0.18926309239572486,
+    "sharpe": -9.135301088756824,
     "exit_reasons": {
-      "signal": 299,
-      "hard_stop": 5,
-      "max_hold": 3
+      "signal": 360,
+      "max_hold": 2,
+      "hard_stop": 1,
+      "end": 1
     },
     "signals": {
-      "0": 367,
-      "1": 285,
-      "2": 1100,
-      "3": 1784
+      "0": 262,
+      "1": 205,
+      "2": 840,
+      "3": 1338
     },
     "executed": {
-      "1": 33,
-      "2": 274,
-      "3": 299
+      "1": 69,
+      "2": 295,
+      "3": 360
     },
-    "skipped_low_confidence": 1014,
-    "skipped_max_positions": 64,
-    "force_closed_max_hold": 3,
-    "hard_stops": 2
+    "skipped_low_confidence": 0,
+    "skipped_max_positions": 681,
+    "force_closed_max_hold": 2,
+    "hard_stops": 1,
+    "intrabar_mode": "pessimistic",
+    "ambiguous_bars": 0,
+    "m1_resolved": 0,
+    "m1_resolved_sl": 0,
+    "m1_resolved_tp": 0,
+    "m1_still_ambiguous": 0,
+    "m1_no_data": 0,
+    "ambiguous_fills": 0,
+    "ambiguous_share_of_sl_tp": 0.0,
+    "swap_rollovers": 0,
+    "swap_net_impact": 0.0,
+    "random_baseline": {
+      "runs": 20,
+      "random_return_median": -0.193535617139809,
+      "random_return_p5": -0.29556304564486313,
+      "random_return_p95": -0.08452006848496019,
+      "model_return": -0.1579670242074379,
+      "beats": 15,
+      "percentile": 0.75,
+      "verdict": "weak evidence of edge (75th-95th percentile)"
+    },
+    "monte_carlo": {
+      "shuffles": 1000,
+      "dd_median": -0.17582443510064932,
+      "dd_p95_worst_case": -0.2054630981969396,
+      "dd_worst": -0.2561838810993854,
+      "p_hit_hard_dd": 1.0
+    },
+    "significance": {
+      "n_trades": 364,
+      "mean_per_trade": -0.00046443159449079195,
+      "t_stat": -2.2380531535384653,
+      "p_value_one_sided": 0.9870882578406994,
+      "sharpe_per_trade": -0.11730585923160222,
+      "sharpe_ci95": 0.1030847230314987,
+      "psr": 0.016179469618297974,
+      "verdict": "mean trade return is NOT statistically > 0"
+    },
+    "equity_analytics": {
+      "longest_underwater_bars": 1853,
+      "winners_avg_mae": 0.0010015326452371656,
+      "losers_avg_mfe": -0.0005423661634227489,
+      "monthly_returns": {
+        "2024-09-30": 0.0,
+        "2024-10-31": -0.015941116076140682,
+        "2024-11-30": 0.018781444835345384,
+        "2024-12-31": 0.0020371665151219798,
+        "2025-01-31": 0.0014601263211633242,
+        "2025-02-28": -0.011142119032732767,
+        "2025-03-31": 0.006280692537286914,
+        "2025-04-30": -0.024554939814098176,
+        "2025-05-31": -0.016123258831555187,
+        "2025-06-30": -0.03720137293367698,
+        "2025-07-31": 0.010066515312082913,
+        "2025-08-31": -0.03552674351931051,
+        "2025-09-30": -0.004634891771014393,
+        "2025-10-31": -0.023133988476677025,
+        "2025-11-30": -0.015777828514397463,
+        "2025-12-31": -0.013261263511499477,
+        "2026-01-31": -0.009940169050432601,
+        "2026-02-28": 0.006774288036639042,
+        "2026-03-31": -0.008538690749595013,
+        "2026-04-30": 0.0164549886766856,
+        "2026-05-31": -0.013750118554040958,
+        "2026-06-30": -0.0008587665155198598
+      }
+    }
   }
 }

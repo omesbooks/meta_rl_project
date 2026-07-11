@@ -12,7 +12,7 @@ ProcessRunner ที่หลายข้อใน Batch 3 อ้างถึง
 ```text
 กติกาการทำงาน:
 - อ่าน docs/bug_audit_2026-07-12.md ก่อนเริ่ม — ทุก item มี Trigger และ Fix sketch ให้แล้ว
-  ให้ยึด fix sketch เป็นแนวทาง แต่ถ้าเจอวิธีที่ดีกว่าให้อธิบายเหตุผลใน commit message
+  ให้ยึด fix sketch เป็นแนวทาง แต่ถ้าเจอวิธีที่ดีกว่าให้อธิบายเหตุผลไว้ในบันทึกท้าย item
 - python ใช้ .venv\Scripts\python.exe เสมอ และตั้ง PYTHONIOENCODING=utf-8
 - ห้ามรัน training จริง (rl_train/rl_walkforward/rl_finetune แบบเต็ม) — ถ้าต้องพิสูจน์ end-to-end
   ให้ใช้ steps จิ๋ว (--steps 300 --n_steps 256) กับ uj_h4_dataset.csv แล้วลบ artifacts ทดสอบทิ้ง
@@ -26,11 +26,14 @@ ProcessRunner ที่หลายข้อใน Batch 3 อ้างถึง
   - artifacts/ ถูก gitignore แต่มีบางไฟล์ tracked อยู่ — ใช้ git add -u artifacts/ ถ้าจำเป็น
   - ห้ามเปลี่ยนชื่อ/ความหมาย CLI flag เดิมของ engine scripts (GUI กับ pipeline เรียกใช้อยู่)
   - ข้อความ UI ใหม่ให้เขียนไทยปนอังกฤษตามสไตล์เดิมของหน้า
+- **ห้าม commit / ห้าม push** — แก้ไฟล์ใน working tree อย่างเดียว
+  จะมีการตรวจบั๊กซ้ำ (re-audit) หลังแก้ครบทุก batch แล้วค่อย commit ทีเดียว
+  ห้ามใช้คำสั่ง git ที่ทำลายงานค้าง (reset --hard / checkout -- / stash drop / clean)
 - เมื่อแก้ item ไหนเสร็จและเทสผ่าน: ติ๊ก checkbox `- [x] **fix**` ของ item นั้นใน
-  docs/bug_audit_2026-07-12.md ใน commit เดียวกัน
+  docs/bug_audit_2026-07-12.md (แก้ในไฟล์เลย ยังไม่ต้อง commit) พร้อมต่อท้ายบรรทัดสั้น ๆ
+  ว่าแก้ที่ไฟล์/ฟังก์ชันไหน เทสด้วยอะไร — บันทึกนี้คือ input ของรอบตรวจซ้ำ
 - ถ้าบั๊กไหนเป็น gotcha ที่คนจะเจอซ้ำ ให้เพิ่มแถวในตาราง Gotchas ของ AGENTS.md (section 9)
-- commit เป็น logical group (1 commit ต่อ 1-3 items ที่เกี่ยวกัน) แล้ว push ขึ้น origin main ได้เลย
-- เช็คก่อนจบทุก commit:
+- เช็คก่อนจบทุก batch:
   .venv\Scripts\python.exe -B -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['rl_app.py','rl_train.py','backtest_live.py','rl_walkforward.py','rl_finetune.py','rl_analyze.py','export_to_onnx.py','regime_compare.py','trading_env.py']]; print('ast ok')"
 - สรุปตอนจบ: ไฟล์ที่แก้, item ที่ปิดได้/ปิดไม่ได้เพราะอะไร, มีอะไรที่ user ต้องทำเอง
   (เช่น recompile ใน MetaEditor, re-export package)
@@ -212,15 +215,25 @@ Export — item 15: sanitize deploy name ฝั่ง export_to_onnx.py (MQL5 id
 [แนบ "กติกาการทำงาน" จากหัวไฟล์นี้ต่อท้ายด้วย]
 ```
 
-## หลังทุก batch เสร็จ
+## หลังทุก batch เสร็จ (ยังไม่ commit!)
 
 ```text
-เช็คสุดท้ายหลังปิดครบทุก batch:
+เช็คสุดท้ายหลังปิดครบทุก batch — ทั้งหมดนี้ทำใน working tree ห้าม commit:
 1. ทุก checkbox ใน docs/bug_audit_2026-07-12.md ต้องเป็น [x] หรือมีหมายเหตุว่าทำไมข้าม
+   พร้อมบรรทัดบันทึกว่าแก้ที่ไหน/เทสยังไงต่อท้ายทุกข้อ
 2. อัปเดต AGENTS.md: เพิ่ม gotchas ที่เจอระหว่างแก้ + อัปเดต section ที่พฤติกรรมเปลี่ยน
    (เช่น Backtest ส่ง --max_hold จาก meta แล้ว, WF verdict 4 ระดับ)
 3. รัน smoke ทั้งแอป: .venv\Scripts\python.exe -c "import rl_app; app = rl_app.RLTradingStudio();
    [app.show_page(k) for k in list(app.PAGE_TITLES)]; app.destroy(); print('all pages ok')"
-4. แจ้งรายการที่ user ต้องทำเอง: recompile EA template ใน MetaEditor,
-   re-export packages ที่ได้รับผลจาก item 1/15, model ไหนควร backtest ซ้ำ
+4. รายงานสรุป: git status --short + git diff --stat, item ที่ปิดได้/ข้าม,
+   และรายการที่ user ต้องทำเอง (recompile EA template ใน MetaEditor,
+   re-export packages ที่ได้รับผลจาก item 1/15, model ไหนควร backtest ซ้ำ)
+5. หยุดตรงนี้ — งานทั้งหมดค้างเป็น uncommitted changes โดยตั้งใจ
 ```
+
+## ขั้นตอนหลังจากนั้น (ฝั่งเจ้าของโปรเจกต์)
+
+1. สั่ง Claude ตรวจบั๊กซ้ำ (re-audit) บน working tree ที่ Codex แก้ไว้ —
+   ตรวจว่าทุก item ปิดจริงตาม trigger เดิม และไม่มี regression ใหม่
+2. ผ่านแล้วค่อย commit เป็นชุด (แบ่งตาม batch หรือรวมก้อนเดียวก็ได้) แล้ว push ขึ้น origin main
+3. ถ้าตรวจไม่ผ่านบางข้อ ส่งรายการข้อที่เหลือกลับเข้า Codex เป็นรอบเก็บงาน

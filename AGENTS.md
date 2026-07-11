@@ -384,6 +384,10 @@ the post-Brexit subset removes the distribution shift.
 - `docs/codex_git_update_prompts.md` — safe "pull + reinstall deps" prompt for Codex.
 - `docs/codex_custom_action_prompts.md` — prompt for asking Codex to add/change an Action
   Profile across train/backtest/fine-tune/walk-forward/export/EA consistently.
+- `docs/bug_audit_2026-07-12.md` — full-flow bug audit backlog (47 confirmed findings with
+  trigger + fix sketch each; checkboxes track fix status).
+- `docs/codex_bug_fix_prompts.md` — copy-paste Codex prompts to work that backlog in 4 batches
+  (HIGH data-corruption → ProcessRunner/threading structural → per-page MEDIUM → LOW).
 - `docs/explainers/11_production_readme.md` — full 5-step production deployment guide.
 - `docs/metafxclub studio guide/12_monte_carlo_deep_dive.html` — what the MC process is, the two probes (shuffle-DD, skip-retention), and the Train-MC vs Backtest-MC comparison (idealized env trades vs full-cost SimAccount trades; screening vs capital sizing).
 - `docs/metafxclub studio guide/13_regime_check_deep_dive.html` — regime detection algorithms (HMM/K-Means/PELT), per-method parameter tables (each method takes a DIFFERENT param set: States vs k+Window vs Penalty), fixed in-code constants (daily resample, 25-of-30-day persistence, ±90d match tolerance), tuning recipes and limits.

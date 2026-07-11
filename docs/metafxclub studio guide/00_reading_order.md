@@ -62,6 +62,8 @@
   - prompt สำหรับสั่ง Codex ดึงอัปเดตจาก GitHub และติดตั้ง dependencies ล่าสุดแบบปลอดภัย
 - [Codex Custom Action Prompts](../codex_custom_action_prompts.md)
   - prompt สำหรับสั่ง Codex เพิ่มหรือปรับ RL Action Profile ให้ครบ train/backtest/fine-tune/walk-forward/full pipeline/export/EA live
+- [Codex Bug Fix Prompts](../codex_bug_fix_prompts.md)
+  - prompt 4 batch สำหรับสั่ง Codex ไล่แก้ backlog จาก [Bug Audit 2026-07-12](../bug_audit_2026-07-12.md) (47 ข้อ พร้อม fix sketch)
 
 ## Reference Files
 

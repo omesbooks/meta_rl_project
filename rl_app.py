@@ -2676,6 +2676,24 @@ class RLTradingStudio(ctk.CTk):
             metrics = self._metrics_from_trades(trades_path)
             chart_path = find_chart_path(model)
             equity_path = self._equity_path_for_model(model)
+
+            # Execution realism of the stored result: did it resolve intrabar
+            # SL/TP with M1 data, or lean on the pessimistic/optimistic guess?
+            realism = ""
+            try:
+                from artifact_paths import backtest_meta_path
+                mp = backtest_meta_path(model)
+                if mp.exists():
+                    bres = (json.loads(mp.read_text(encoding="utf-8-sig"))
+                            .get("result") or {})
+                    amb = bres.get("ambiguous_share_of_sl_tp")
+                    if bres.get("m1_resolved", 0) > 0:
+                        realism = "M1 ✓"
+                    elif amb is not None:
+                        realism = "ok" if amb == 0 else f"guess {amb:.0%}"
+            except Exception:
+                pass
+
             rows.append({
                 "iid": str(trades_path),
                 "model": model,
@@ -2683,6 +2701,7 @@ class RLTradingStudio(ctk.CTk):
                 "trades_path": trades_path,
                 "chart_path": chart_path,
                 "equity_path": equity_path,
+                "realism": realism,
                 **metrics,
             })
 
@@ -2832,6 +2851,7 @@ class RLTradingStudio(ctk.CTk):
                 self._fmt_num(row.get("profit_factor")),
                 self._fmt_pct(row.get("return_pct")),
                 self._fmt_pct(row.get("max_dd")),
+                row.get("realism") or "-",
                 "yes" if row.get("chart_path") else "-",
                 params_label,
             )
@@ -7946,7 +7966,7 @@ class RLTradingStudio(ctk.CTk):
         style.map("Pipeline.Treeview", background=[("selected", COLOR_SELECTED)])
 
         columns = ("model", "source", "trades", "win_rate", "profit_factor",
-                   "return", "max_dd", "chart", "params")
+                   "return", "max_dd", "realism", "chart", "params")
         self.model_tree = ttk.Treeview(
             tree_frame, columns=columns, show="headings", height=12,
             style="Pipeline.Treeview")
@@ -7958,13 +7978,14 @@ class RLTradingStudio(ctk.CTk):
             "profit_factor": "PF",
             "return": "Return",
             "max_dd": "Max DD",
+            "realism": "Realism",
             "chart": "Chart",
             "params": "Params",
         }
         widths = {
             "model": 180, "source": 140, "trades": 70, "win_rate": 75,
-            "profit_factor": 60, "return": 80, "max_dd": 80, "chart": 60,
-            "params": 95,
+            "profit_factor": 60, "return": 80, "max_dd": 80, "realism": 80,
+            "chart": 60, "params": 95,
         }
         for col in columns:
             self.model_tree.heading(col, text=headings[col])

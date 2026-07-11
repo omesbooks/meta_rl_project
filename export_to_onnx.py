@@ -159,18 +159,31 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
         train_meta = train_meta_path(model_name)
         action_profile_value = None
         if train_meta.exists():
-            meta = json.loads(train_meta.read_text(encoding="utf-8-sig"))
-            hparams = meta.get("hyperparameters", {})
-            action_profile_value = hparams.get("action_profile_config") or hparams.get("action_profile")
+            try:
+                meta = json.loads(train_meta.read_text(encoding="utf-8-sig"))
+                hparams = meta.get("hyperparameters", {})
+                action_profile_value = hparams.get("action_profile_config") or hparams.get("action_profile")
+            except Exception as meta_exc:
+                # e.g. truncated JSON from a re-train killed mid-write —
+                # the zip is the ground truth, so auto-detect instead
+                print(f"  ⚠ train meta unreadable ({meta_exc}); "
+                      f"auto-detecting action profile from the model file.")
         if action_profile_value is None:
             action_profile_key, action_profile_cfg = profile_for_action_count(n_actions)
         else:
             action_profile_key, action_profile_cfg = get_action_profile(action_profile_value)
         if len(action_profile_cfg["actions"]) != n_actions:
-            raise ValueError(
-                f"action profile has {len(action_profile_cfg['actions'])} actions, "
-                f"model has {n_actions}"
-            )
+            # The .zip is the ground truth — a mismatched meta usually means a
+            # later training run with the same name was started (meta is
+            # written at train start) but never finished. Export the model
+            # that actually exists, with that profile's default params.
+            stale_label = action_profile_cfg["label"]
+            action_profile_key, action_profile_cfg = profile_for_action_count(n_actions)
+            print(f"  ⚠ meta says '{stale_label}' but the model file outputs "
+                  f"{n_actions} actions — meta is stale (likely an aborted "
+                  f"re-train with the same name).")
+            print(f"  ⚠ using '{action_profile_cfg['label']}' with DEFAULT "
+                  f"action params; retrain or fix the meta if you customized them.")
     except Exception as exc:
         print(f"❌ Action profile mismatch: {exc}")
         return 1
@@ -251,10 +264,18 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     feat_count = len(norm)
     extras = 3
     if (obs_dim - extras) % feat_count != 0:
-        print(f"⚠️  obs_dim mismatch — cannot determine window size!")
-        window = 0
-    else:
-        window = (obs_dim - extras) // feat_count
+        # A config with window 0 / a wrong feature list is garbage the EA
+        # would happily run — fail instead. Norm stats are written at train
+        # START (like the meta), so an aborted re-train with a different
+        # dataset leaves them stale relative to the surviving zip.
+        print(f"❌ obs_dim mismatch: model expects obs_dim={obs_dim} but "
+              f"{norm_path.name} has {feat_count} features "
+              f"((obs_dim-3) must divide evenly).")
+        print(f"   Likely a stale {norm_path.name} from an aborted re-train "
+              f"with a different dataset — retrain, or restore the norm file "
+              f"that matches this zip.")
+        return 1
+    window = (obs_dim - extras) // feat_count
     print(f"  Features: {feat_count}, Window: {window}")
 
     # === Generate config.mqh ===

@@ -422,10 +422,12 @@
           </tr>
           <tr>
             <td>Mode</td>
-            <td><code>mixed</code> ผสมเก่า+ใหม่ตาม ratio · <code>pure</code> ใช้ data ใหม่ล้วน
-            (Mix Ratio ไม่ถูกใช้) · <code>replay</code> ทบทวน data เก่าอย่างเดียว</td>
+            <td><code>mixed</code> สุ่ม data เก่ามาผสมตาม ratio + data ใหม่ทั้งหมด ·
+            <code>pure</code> ใช้ data ใหม่ล้วน (Mix Ratio ไม่ถูกใช้) ·
+            <code>replay</code> ใช้ old+new ทั้งหมดแบบไม่สุ่ม (Mix Ratio ไม่ถูกใช้)</td>
             <td>ใช้ <code>mixed</code> เกือบทุกเคส — <code>pure</code> เฉพาะเมื่อ regime
-            เปลี่ยนจริงจนของเก่าเป็นพิษ, <code>replay</code> ไว้กู้ model ที่เริ่มเพี้ยน</td>
+            เปลี่ยนจริงจนของเก่าเป็นพิษ, <code>replay</code> เมื่ออยากกันลืมสุด ๆ
+            และยอมให้ data ใหม่มีน้ำหนักน้อย</td>
           </tr>
           <tr>
             <td>Learning Rate</td>

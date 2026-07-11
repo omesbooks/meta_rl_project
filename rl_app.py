@@ -7575,7 +7575,7 @@ class RLTradingStudio(ctk.CTk):
         hints = {
             "mixed": "mixed: ผสม data เก่าตาม ratio กันลืมของเดิม · LR ต่ำ (1e-4) คือหัวใจของ fine-tune — สูงไป = ลืมของเก่า (catastrophic forgetting)",
             "pure": "pure: เทรนต่อด้วย data ใหม่ล้วน (Mix Ratio ไม่ถูกใช้) — เร็วแต่เสี่ยง catastrophic forgetting ที่สุด ใช้เมื่อ regime เปลี่ยนจริงเท่านั้น",
-            "replay": "replay: ทบทวน data เก่าอย่างเดียว (New CSV ไม่ถูกใช้ในการเทรน) — ไว้กู้ model ที่เริ่มเพี้ยนให้กลับมานิสัยเดิม",
+            "replay": "replay: ใช้ old+new ทั้งหมดแบบไม่สุ่ม (Mix Ratio ไม่ถูกใช้) — กันลืมได้สุดแต่ช้าสุด และ data ใหม่มีน้ำหนักน้อยสุดเพราะโดนของเก่าท่วม",
         }
         self.ft_mode_hint.configure(text=hints.get(mode, hints["mixed"]))
 

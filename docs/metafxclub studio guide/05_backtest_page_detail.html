@@ -188,6 +188,7 @@
         <a href="#settings">ค่าหลัก</a>
         <a href="#execution">Execution Realism</a>
         <a href="#baseline">Random Baseline</a>
+        <a href="#montecarlo">Monte Carlo</a>
         <a href="#confidence">Confidence Filter</a>
         <a href="#metrics">อ่าน Metrics</a>
         <a href="#decision">ตัดสินใจ</a>
@@ -641,6 +642,101 @@
         · Full Pipeline รันให้อัตโนมัติ 20 รอบ · ผลอยู่ใน log block "Random-agent baseline",
         Full Report panel และ meta JSON (<code>result.random_baseline</code>)
         · เร็วมากเพราะ agent สุ่มไม่ต้องผ่าน neural network (~1-2 วินาที/รอบ)
+      </p>
+    </section>
+
+    <section id="montecarlo">
+      <h2>Monte Carlo: อ่านผลยังไง — ความเสี่ยงจาก "ลำดับ" ของ trades</h2>
+      <p>
+        Max DD จาก backtest ครั้งเดียวคือผลของ <strong>ลำดับ trade ที่บังเอิญเกิดครั้งเดียว</strong>
+        — ถ้า trades ชุดเดิมเรียงลำดับต่างไป (ซึ่งเป็นไปได้พอๆ กันในตลาดจริง) DD อาจลึกกว่านี้มาก
+        Monte Carlo สลับลำดับ trades N รอบ (default 1,000) แล้วดูการกระจายของ DD
+        เพื่อตอบคำถาม <strong>"ทุนเท่านี้ รอดไหม"</strong> — ไม่ใช่คำถาม "กลยุทธ์ดีไหม"
+      </p>
+      <div class="callout warn">
+        <strong>ข้อเท็จจริงทางคณิตศาสตร์ที่ต้องรู้ก่อนอ่าน:</strong>
+        กำไรรวมไม่ขึ้นกับลำดับ (ผลคูณ (1+r) สลับที่ได้) — สลับกี่รอบกำไรปลายทางก็เท่าเดิม
+        สิ่งเดียวที่เปลี่ยนคือ <strong>เส้นทางระหว่างทาง (drawdown path)</strong>
+        report จึงแสดงเฉพาะ DD ไม่แสดงกำไร ส่วนเกณฑ์แบบ SQX ที่ "กำไรหลัง MC ต่างไม่เกิน X%"
+        มาจาก MC คนละชนิด (สุ่มตัด trades) ซึ่งอยู่ที่หน้า Train (MC Skip %)
+      </p>
+      <p>ตัวอย่าง block ในผล backtest และวิธีอ่านทีละบรรทัด:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>บรรทัดใน report</th>
+            <th>ตัวอย่างค่า</th>
+            <th>วิธีอ่าน</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Max DD (this ordering)</td>
+            <td>-12.74%</td>
+            <td>DD ของลำดับจริงที่เกิดใน backtest — จุดอ้างอิง</td>
+          </tr>
+          <tr>
+            <td>Max DD across orderings: median</td>
+            <td>-12.74%</td>
+            <td>DD "ทั่วไป" ของโลกที่เป็นไปได้ — ถ้าใกล้ค่าจริง แปลว่าลำดับจริงไม่ได้โชคดีพิเศษ</td>
+          </tr>
+          <tr>
+            <td>95% worst-case</td>
+            <td>-16.54%</td>
+            <td><strong>ตัวชี้วัดหลัก</strong> — DD ที่แย่ที่สุดใน 95% ของการเรียงลำดับ ใช้ตั้งขนาดทุน/risk</td>
+          </tr>
+          <tr>
+            <td>worst</td>
+            <td>-20.76%</td>
+            <td>หายนะสุดที่สุ่มเจอ — ใช้ประกอบ ไม่ใช่เกณฑ์หลัก (เพิ่ม N แล้วค่านี้จะลึกขึ้นเรื่อยๆ)</td>
+          </tr>
+          <tr>
+            <td>P(hit hard stop 15%)</td>
+            <td>16.0%</td>
+            <td>โอกาสที่สักลำดับหนึ่งพา equity ชน hard stop — <strong>ตัวเลข survival ตรงๆ</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>เกณฑ์ผ่าน</th>
+            <th>ค่าที่ควรเป็น</th>
+            <th>ถ้าไม่ผ่าน ทำอะไร</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>95% worst-case DD</td>
+            <td>≤ 1.5× ของ DD จริง และไม่เกิน tolerance ของทุน (เช่น ≤ 20%)</td>
+            <td>ลด Risk % ต่อ trade — DD scale ตาม risk เกือบตรงตัว</td>
+          </tr>
+          <tr>
+            <td>P(hit hard stop)</td>
+            <td>&lt; 5–10%</td>
+            <td>ลด Risk % หรือขยาย Hard DD ให้ห่างจาก p95 DD — <strong>ห้าม live จนกว่าจะผ่าน</strong></td>
+          </tr>
+          <tr>
+            <td>median vs DD จริง</td>
+            <td>ใกล้เคียงกัน</td>
+            <td>ถ้า DD จริงต่ำกว่า median มาก = ลำดับจริงโชคดี อย่ายึดเป็นตัวแทน</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>ตัวอย่างจริงจาก <code>rl_uj_h4</code>: P(hit hard stop 15%) = <strong>16%</strong>
+        — แปลว่า trades ชุดเดียวกันนี้ มีถึง 16 ใน 100 โลกที่โดนบังคับหยุดเทรดกลางทาง
+        ทั้งที่ backtest ลำดับจริง "รอด" → ยัง live ไม่ได้ ต้องลด risk/trade
+        หรือขยาย hard_dd ก่อน แล้วรันใหม่ให้ P ต่ำกว่า 5-10%</p>
+      <div class="callout warn">
+        <strong>ข้อจำกัด:</strong> MC แบบสลับลำดับสมมุติว่า trades เป็นอิสระต่อกัน
+        (ตลาดจริงมี clustering ของช่วงแพ้/ชนะตาม regime) ตัวเลขจึงเป็น estimate ไม่ใช่คำพยากรณ์
+        และมันวัด "sizing/survival" เท่านั้น — กลยุทธ์ห่วยที่ P(hard stop) ต่ำก็มี
+        ต้องดูคู่กับ Random Baseline + Significance เสมอ
+      </div>
+      <p>
+        ตั้งค่าที่ Risk card → <code>Monte Carlo Shuffles</code> (default <code>1000</code>, <code>0</code> = ปิด,
+        ต้องมี ≥10 trades) · Pipeline รันอัตโนมัติ · ผลอยู่ใน log block "Monte Carlo",
+        Full Report panel และ meta JSON (<code>result.monte_carlo</code>)
       </p>
     </section>
 

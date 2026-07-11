@@ -187,6 +187,7 @@
         <a href="#modes">Backtest Mode</a>
         <a href="#settings">ค่าหลัก</a>
         <a href="#execution">Execution Realism</a>
+        <a href="#baseline">Random Baseline</a>
         <a href="#confidence">Confidence Filter</a>
         <a href="#metrics">อ่าน Metrics</a>
         <a href="#decision">ตัดสินใจ</a>
@@ -536,6 +537,111 @@
         ถ้า bar ไหนไม่มี M1 ครอบคลุม ระบบจะ fallback ไปใช้สมมติฐานให้เอง (นับแยกใน log ไม่เงียบหาย)
         และก่อน live จริงยังต้องผ่าน MT5 Strategy Tester แบบ real ticks เป็นด่านสุดท้ายเสมอ
       </div>
+    </section>
+
+    <section id="baseline">
+      <h2>Random Baseline: แข่งกับ agent สุ่ม เพื่อพิสูจน์ว่า edge มาจาก model จริง</h2>
+      <p>
+        false positive ที่พบบ่อยที่สุดใน algo trading คือ: ผล backtest สวยเพราะ
+        <strong>โครงสร้าง risk management</strong> (SL/TP, max hold, sizing) ไม่ใช่เพราะสัญญาณของ model
+        — ระบบ SL 2×ATR / TP 4×ATR ที่ดี สามารถทำ PF ดูดีได้เองแม้จังหวะเข้า order เป็นการโยนเหรียญ
+        Random Baseline คือเครื่องมือแยกสองอย่างนี้ออกจากกัน แนวคิดเดียวกับ placebo control
+        ในการทดลองยา: ยาต้องชนะยาหลอกก่อน ถึงจะสรุปว่ายาได้ผล
+      </p>
+      <div class="grid three">
+        <div class="card blue">
+          <span class="tag blue">วิธีทำงาน</span>
+          <h3>ลิงเทรดผ่าน engine เดียวกัน</h3>
+          <p>
+            ระบบสร้าง agent ที่สุ่ม action มั่วๆ แล้วให้เทรดผ่าน engine เดียวกับ model
+            <strong>ทุกอย่าง</strong> — spread, commission, swap, SL/TP, max hold, hard stop,
+            lot sizing — ทำซ้ำ N รอบ (default 20) ได้การกระจายผลของ "ความมั่ว"
+          </p>
+        </div>
+        <div class="card green">
+          <span class="tag green">การเทียบ</span>
+          <h3>model ชนะลิงกี่ตัว</h3>
+          <p>
+            เทียบ return ของ model กับการกระจายของลิงทั้ง N ตัว
+            รายงานเป็น percentile เช่น "beats 19/20 (95%)"
+            ยิ่งสูง = สัญญาณของ model แยกจากความมั่วได้ชัด
+          </p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">ข้อดีแฝง</span>
+          <h3>กันการสรุปผิดทั้งสองทาง</h3>
+          <p>
+            ไม่ใช่แค่จับ "ผลดีปลอม" — กรณี model ขาดทุนแต่ขาดทุน
+            <strong>น้อยกว่าลิงมาก</strong> ก็บอกว่า model มี signal จริง
+            แค่โดน costs/regime กิน → ควรแก้ costs ไม่ใช่ทิ้ง model
+          </p>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Model ชนะ random agents</th>
+            <th>Verdict</th>
+            <th>สิ่งที่ควรทำ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>≥ 95% (เช่น 19-20 จาก 20)</td>
+            <td>✅ edge แยกจากความมั่วได้จริง</td>
+            <td>ไปต่อ: ดู significance + Walk-Forward</td>
+          </tr>
+          <tr>
+            <td>75–95%</td>
+            <td>🟡 หลักฐานอ่อน</td>
+            <td>เพิ่มจำนวน runs, ยืนยันบน OOS ช่วงอื่น / symbol อื่น</td>
+          </tr>
+          <tr>
+            <td>&lt; 75%</td>
+            <td>🔴 ผลมาจาก risk rules ไม่ใช่ model</td>
+            <td>สัญญาณเข้าไม่มีค่า — กลับไปแก้ features/reward/regime</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>ตัวอย่างจริงจาก <code>rl_uj_h4</code> (backtest ท้าย 15% ของ dataset):</p>
+      <table>
+        <thead>
+          <tr>
+            <th>ตัวเลขใน report</th>
+            <th>ค่า</th>
+            <th>วิธีอ่าน</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>random return (20 runs)</td>
+            <td>median -22.7% · p5 -26.4% · p95 -18.9%</td>
+            <td>ช่วงผลของ "ความมั่ว" ภายใต้ costs + risk rules เดียวกัน</td>
+          </tr>
+          <tr>
+            <td>model return</td>
+            <td>-9.3% → beats 20/20 (100%)</td>
+            <td>model ขาดทุน แต่ชนะลิงทุกตัวขาดลอย</td>
+          </tr>
+          <tr>
+            <td>verdict</td>
+            <td>edge distinguishable from random</td>
+            <td>มี signal จริง — ปัญหาอยู่ที่ costs/regime ไม่ใช่ตัว model</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>ถ้าไม่มี baseline นี้:</strong>
+        เคสข้างบนจะถูกสรุปผิดว่า "model ห่วย ทิ้งแล้วเทรนใหม่" ทั้งที่ความจริงคือ
+        model ดีกว่าความมั่วถึง 13% — สิ่งที่ต้องแก้คือต้นทุนและ regime ของข้อมูล
+        ในทางกลับกัน ระบบที่ "กำไรสวย" แต่ชนะลิงแค่ 60% ก็คือระบบที่ลิงเทรดแทนได้
+      </div>
+      <p>
+        ตั้งค่าที่ Risk card → <code>Random Baseline Runs</code> (default <code>20</code>, ใส่ <code>0</code> เพื่อปิด)
+        · Full Pipeline รันให้อัตโนมัติ 20 รอบ · ผลอยู่ใน log block "Random-agent baseline",
+        Full Report panel และ meta JSON (<code>result.random_baseline</code>)
+        · เร็วมากเพราะ agent สุ่มไม่ต้องผ่าน neural network (~1-2 วินาที/รอบ)
+      </p>
     </section>
 
     <section id="confidence">

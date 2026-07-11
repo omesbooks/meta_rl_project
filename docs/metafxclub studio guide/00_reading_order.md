@@ -52,6 +52,10 @@
     - Deep dive แนวคิด Monte Carlo: กระบวนการคืออะไร, 2 probes ที่ระบบใช้ (shuffle DD / skip retention)
     - ตารางเทียบ MC ตอน Train (ตาชั่งเปรียบเทียบสูตร) vs ตอน Backtest (เครื่องวัดความปลอดภัยของเงิน)
 
+13. [13_regime_check_deep_dive.html](13_regime_check_deep_dive.html)
+    - Deep dive อัลกอริทึม regime detection: HMM / K-Means / PELT มองตลาดคนละมุมยังไง
+    - ตาราง parameter ของแต่ละ method (คนละชุดกัน ไม่ได้ใช้ร่วมกัน), ค่า fix ในโค้ด, วิธีจูน penalty/window/states และข้อจำกัด
+
 ## Codex Prompt Files
 
 - [Codex Git Update Prompt](../codex_git_update_prompts.md)
@@ -80,7 +84,7 @@
 
 ไฟล์ที่จะทำต่อในโฟลเดอร์นี้ควรเป็นไฟล์ที่แตกจาก flow หลักโดยตรง:
 
-- `13_export_mt5_detail.html` สำหรับสอน export ONNX, config, EA และการเอาไปใช้ใน MT5 Strategy Tester (ยังไม่เขียน — เลขถัดจาก 12)
+- `14_export_mt5_detail.html` สำหรับสอน export ONNX, config, EA และการเอาไปใช้ใน MT5 Strategy Tester (ยังไม่เขียน — เลขถัดจาก 13)
 
 ## Rule For This Folder
 

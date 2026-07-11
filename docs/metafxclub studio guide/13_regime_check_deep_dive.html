@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Regime Check Deep Dive</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+      --purple: #6d28d9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    pre {
+      background: var(--dark);
+      color: #e5eef9;
+      border-radius: 8px;
+      padding: 16px 18px;
+      overflow-x: auto;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.55;
+      margin: 14px 0 0;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ede9fe;
+      color: var(--purple);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .tag.purple { background: #ede9fe; color: var(--purple); }
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--purple);
+      background: #f4f0ff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Deep Dive · Regime Detection</span>
+      <h1>Regime Check — อัลกอริทึมข้างในทำงานยังไง และตั้งค่า parameter ยังไง</h1>
+      <p class="lead">
+        บทนี้เจาะหน้า Regime Check ลึกกว่าคู่มือหน้า 10: regime คืออะไรในเชิงสถิติ,
+        HMM / K-Means / PELT แต่ละตัวมองตลาดคนละมุมยังไง,
+        และคำตอบของคำถามสำคัญ — <strong>แต่ละอัลกอใช้ parameter คนละชุดกัน ไม่ใช่ชุดเดียวกัน</strong>
+      </p>
+      <nav>
+        <a href="#concept">Regime คืออะไร</a>
+        <a href="#families">2 ตระกูลอัลกอ</a>
+        <a href="#hmm">HMM</a>
+        <a href="#kmeans">K-Means</a>
+        <a href="#pelt">PELT</a>
+        <a href="#params">ตาราง Parameter</a>
+        <a href="#reading">วิธีอ่านผล + ใช้ต่อ</a>
+        <a href="#limits">ข้อจำกัด</a>
+      </nav>
+    </header>
+
+    <section id="concept">
+      <h2>Regime คืออะไร แล้วทำไม RL ต้องแคร์</h2>
+      <p>
+        "Regime" คือช่วงเวลาที่ <strong>พฤติกรรมเชิงสถิติของตลาดคงที่</strong> —
+        ค่าเฉลี่ยการเคลื่อนไหว ความผันผวน และโครงสร้าง trend อยู่ในโหมดเดิมต่อเนื่อง
+        เช่น bull ที่ค่อย ๆ ไต่ / sideways เด้งในกรอบ / panic ที่ vol พุ่งและราคาดิ่ง
+        จุดที่ตลาดสลับโหมด (Lehman 2008, Brexit 2016, Truss mini-budget 2022)
+        เรียกว่า <strong>regime break</strong>
+      </p>
+      <div class="callout">
+        <strong>ทำไมสำคัญกับ RL:</strong> PPO เรียนรู้จาก distribution ของ
+        state → action → reward ในข้อมูลเทรน ถ้า dataset คร่อม regime ที่ตายไปแล้ว
+        (เช่น GBP ยุคก่อน Brexit ที่ vol ต่ำและ range แคบกว่าปัจจุบันมาก)
+        โมเดลจะเสียงบ "ความจุสมอง" ไปเรียนพฤติกรรมที่ไม่มีอีกแล้ว —
+        หน้า Regime Check มีไว้ตอบคำถามว่า <em>"ควรตัดข้อมูลเทรนตั้งแต่ตรงไหน"</em>
+        ผ่านปุ่ม Use as Train Cutoff
+      </div>
+      <div class="grid">
+        <div class="card blue">
+          <span class="tag blue">Input</span>
+          <h3>ใช้แค่ timestamp + close</h3>
+          <p>ทุกอัลกอในหน้านี้อ่านแค่ 2 คอลัมน์จาก CSV — ไม่สน feature อื่นเลย
+          ใช้ dataset ตัวเดียวกับที่จะเทรนได้ทันที ไม่ต้องเตรียมไฟล์พิเศษ</p>
+        </div>
+        <div class="card green">
+          <span class="tag green">Resample</span>
+          <h3>ยุบเป็น daily ก่อนเสมอ</h3>
+          <p>H4 ถูก resample เป็น close รายวัน (1 จุด/วัน) ก่อนเข้าอัลกอ —
+          เร็วขึ้นหลายเท่าและลด noise ระดับ intraday ที่ไม่เกี่ยวกับ regime</p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Output</span>
+          <h3>Breakpoints + Match score</h3>
+          <p>ได้ลิสต์วันที่ตลาดเปลี่ยนโหมด + คะแนนว่าจับเหตุการณ์จริง
+          (Lehman/Brexit/Truss หรือ events จาก Gemini) ได้กี่ตัว + chart HTML</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="families">
+      <h2>อัลกอ 3 ตัว = 2 ตระกูลที่มองปัญหาคนละมุม</h2>
+      <div class="grid two">
+        <div class="card blue">
+          <span class="tag blue">ตระกูล 1 · State Assignment</span>
+          <h3>HMM และ K-Means</h3>
+          <p>ติด "ป้ายโหมด" ให้ทุกวันก่อน (วันนี้อยู่ state 0/1/2)
+          แล้วนิยาม break = วันที่ป้ายเปลี่ยน ข้อดีคือได้ทั้ง breakpoints
+          และรู้ด้วยว่าแต่ละช่วงเป็นโหมดอะไร ข้อเสียคือป้ายอาจกระพริบไปมา
+          จึงต้องมี persistence filter กรอง</p>
+        </div>
+        <div class="card green">
+          <span class="tag green">ตระกูล 2 · Changepoint Detection</span>
+          <h3>PELT</h3>
+          <p>ไม่ติดป้าย แต่มองทั้งเส้นราคาแล้วถามว่า "ถ้าต้องหั่นเส้นนี้เป็นท่อน ๆ
+          ให้แต่ละท่อนมีสถิติภายในนิ่งที่สุด ควรหั่นตรงไหน" —
+          เป็น optimization ที่หาคำตอบ exact ไม่ใช่ประมาณ จึงช้ากว่ามาก</p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>Persistence filter (HMM + K-Means):</strong> transition จะถูกนับเป็น break จริง
+        ก็ต่อเมื่อ state ใหม่อยู่ต่อไปอย่างน้อย <code>25 จาก 30 วัน</code> ถัดไป —
+        กันเคสป้ายกระพริบวันสองวันแล้วเด้งกลับ (flapping) ซึ่งไม่ใช่ regime change จริง
+        ตัวเลขนี้ fix อยู่ในโค้ด ไม่ใช่ช่องให้กรอกใน GUI
+      </div>
+      <p>
+        ทุก method ให้คะแนนตัวเองด้วย <strong>Match score</strong>:
+        breakpoint ที่เจอห่างจากเหตุการณ์จริงไม่เกิน <code>±90 วัน</code> นับเป็น match
+        (เหตุการณ์จริงมาจาก <code>known_events.json</code> ที่ Gemini สร้าง
+        หรือ fallback เป็น Lehman/Brexit/Truss ที่ hardcode ไว้)
+      </p>
+    </section>
+
+    <section id="hmm">
+      <h2>HMM 3-state ⭐ (ตัวแนะนำ — default)</h2>
+      <h3>แนวคิด</h3>
+      <p>
+        Hidden Markov Model ตั้งสมมติฐานว่าตลาดมี "สถานะซ่อนเร้น" ที่เรามองไม่เห็นตรง ๆ
+        เห็นได้แค่ <em>ผลของมัน</em> — เหมือนอยู่ในห้องไม่มีหน้าต่าง แต่เดาได้ว่าข้างนอก
+        ฝนตกหรือแดดออกจากการดูคนที่เดินเข้ามาว่าตัวเปียกไหม
+        HMM ทำ inference ย้อนกลับ: จาก return + volatility รายวัน
+        คำนวณว่าแต่ละวัน "น่าจะ" อยู่ state ไหนที่สุด
+      </p>
+      <h3>สิ่งที่มันเห็นจริง ๆ</h3>
+      <p>Observation ต่อวันคือเวกเตอร์ 2 ตัว:</p>
+      <pre>obs[วัน i] = [ log_return รายวัน,  rolling std 20 วันของ % change ]
+
+model = GaussianHMM(n_components=n_states,   # <- ช่อง "States" ใน GUI
+                    covariance_type="diag",
+                    n_iter=100, random_state=42)
+states = model.fit(obs).predict(obs)          # ป้าย state ต่อวัน
+break  = วันที่ states[i] != states[i-1] และผ่าน persistence filter</pre>
+      <p>
+        การใช้คู่ [return, vol] ทำให้ HMM แยกโหมดจาก <strong>joint distribution</strong> —
+        เช่น "ขึ้นช้า vol ต่ำ" (bull เนียน ๆ) กับ "ลงแรง vol สูง" (panic)
+        เป็นคนละ state กันชัดเจน แม้ราคาเฉลี่ยจะใกล้กัน
+        นี่คือเหตุผลที่มันเก็บครบ 3/3 events ในการทดสอบ (ดีสุดใน 6 methods ที่เคยเทียบ)
+        และใช้เวลาแค่ ~3 วินาที
+      </p>
+      <h3>Parameter เดียวที่ต้องกรอก: States</h3>
+      <table>
+        <tr><th style="width:20%">ค่า</th><th>ความหมาย / ผลที่ตามมา</th></tr>
+        <tr><td><strong>3 (default ⭐)</strong></td>
+            <td>ตีความง่ายสุด: bull / bear / sideways — ผ่านการทดสอบกับ forex H4 มาแล้ว
+            เริ่มที่ค่านี้เสมอ</td></tr>
+        <tr><td>2</td>
+            <td>หยาบลงเหลือ calm / panic — break น้อยลง เหมาะถ้าอยากเห็นเฉพาะ
+            วิกฤติใหญ่จริง ๆ</td></tr>
+        <tr><td>4–5</td>
+            <td>ละเอียดขึ้น แต่ state เริ่มซ้ำความหมายกัน (bull อ่อน/bull แรง)
+            → transition ถี่ขึ้น, break เยอะเกินใช้งาน และ fit ไม่เสถียรขึ้นเรื่อย ๆ</td></tr>
+      </table>
+      <div class="callout warn">
+        <strong>อย่าลืม:</strong> จำนวน state ไม่ใช่ "ยิ่งเยอะยิ่งแม่น" —
+        เป้าหมายของหน้านี้คือหา cutoff ไม่กี่จุด ไม่ใช่จำแนกตลาดให้ละเอียดที่สุด
+      </div>
+    </section>
+
+    <section id="kmeans">
+      <h2>K-Means rolling (ตัวเร็ว)</h2>
+      <h3>แนวคิด</h3>
+      <p>
+        ไม่มีโมเดลความน่าจะเป็นอะไรเลย — แค่สร้าง "รูปพรรณ" ของแต่ละวันจากหน้าต่างย้อนหลัง
+        แล้วจับกลุ่มวันที่หน้าตาคล้ายกันเข้า cluster เดียวกัน:
+      </p>
+      <pre>รูปพรรณ[วัน i] = [ rolling mean(win),    # ราคาเฉลี่ยช่วงหลัง
+                   rolling std(win),      # ความผันผวนช่วงหลัง
+                   slope = diff(win)/win ] # ความชันของ trend
+
+labels = KMeans(n_clusters=k, random_state=42).fit_predict(รูปพรรณ)
+break  = วันที่ labels เปลี่ยน และผ่าน persistence filter เดียวกับ HMM</pre>
+      <p>
+        ต่างจาก HMM ตรงที่ K-Means <strong>ไม่รู้เรื่องลำดับเวลา</strong> —
+        มันไม่รู้ว่าวันนี้มาหลังเมื่อวาน แค่ดูว่าช่วง <code>win</code> วันหลังสุด
+        "หน้าตา" เข้ากลุ่มไหน ข้อแลกคือเร็วมาก (~60ms) แต่จับเหตุการณ์ได้ 2/3
+        ในการทดสอบ — เหมาะไว้รันเช็คไว ๆ ก่อนยิง HMM ยืนยัน
+      </p>
+      <h3>Parameter 2 ตัว: Clusters (k) และ Window (days)</h3>
+      <table>
+        <tr><th style="width:24%">Parameter</th><th style="width:16%">Default</th><th>วิธีคิดตอนปรับ</th></tr>
+        <tr><td><strong>Clusters (k)</strong></td><td>3</td>
+            <td>ความหมายเดียวกับ States ของ HMM (จำนวนโหมดตลาด) —
+            แต่เป็นคนละช่องกรอกกัน ค่าที่ใส่ให้ HMM ไม่ได้ถูกส่งมาที่นี่</td></tr>
+        <tr><td><strong>Window (days)</strong></td><td>60</td>
+            <td>ความยาวหน้าต่างที่ใช้สร้างรูปพรรณ · <strong>สั้น (20–30)</strong> =
+            ไวต่อการเปลี่ยนแต่ noise เยอะ break ถี่ ·
+            <strong>ยาว (90–120)</strong> = นิ่งแต่รู้ตัวช้า
+            (lag โดยประมาณ ≈ ครึ่งหนึ่งของ window)</td></tr>
+      </table>
+    </section>
+
+    <section id="pelt">
+      <h2>PELT (ตัวเป๊ะแต่ช้า)</h2>
+      <h3>แนวคิด</h3>
+      <p>
+        PELT (Pruned Exact Linear Time) แก้โจทย์ optimization ตรง ๆ:
+        หั่นเส้นราคาเป็นกี่ท่อนก็ได้ โดยจ่าย "ค่าปรับ" (penalty) ทุกครั้งที่หั่นเพิ่ม 1 จุด
+        แล้วหาคำตอบที่ <em>ผลรวมของความไม่นิ่งภายในแต่ละท่อน + ค่าปรับรวม</em> ต่ำที่สุด
+      </p>
+      <pre>ต้นทุนรวม = Σ cost(segment ที่ j)  +  penalty × จำนวนจุดหั่น
+                  ↑ ใช้ RBF kernel: จับการเปลี่ยนของ "distribution ทั้งก้อน"
+                    ไม่ใช่แค่ค่าเฉลี่ยขยับ (จับ vol shift ได้ด้วย)
+
+algo = ruptures.Pelt(model="rbf").fit(daily_close)
+breaks = algo.predict(pen=penalty)   # <- ช่อง "Penalty" ใน GUI</pre>
+      <p>
+        จุดขายคือคำตอบเป็น <strong>global optimum แบบ exact</strong> ไม่ใช่การไล่หาแบบ greedy —
+        แลกกับเวลาเป็นหลักนาทีบนข้อมูล 10+ ปี (เทียบกับ ~3s ของ HMM)
+        ผลทดสอบ 2/3 events
+      </p>
+      <h3>Parameter เดียว: Penalty — และมันทำงานกลับด้านกับที่หลายคนเดา</h3>
+      <table>
+        <tr><th style="width:20%">Penalty</th><th>ผล</th></tr>
+        <tr><td>ต่ำ (10–20)</td>
+            <td>หั่นถี่ — จับ shift เล็ก ๆ ด้วย ได้ break เป็นสิบจุด ส่วนใหญ่ไม่ใช่ regime จริง</td></tr>
+        <tr><td><strong>50 (default)</strong></td>
+            <td>สมดุลที่ทดสอบมากับ forex daily 10+ ปี — ได้ break หลักหน่วย</td></tr>
+        <tr><td>สูง (100–200)</td>
+            <td>หั่นเฉพาะ shift ใหญ่มาก — เหลือเฉพาะวิกฤติระดับ Lehman/COVID</td></tr>
+      </table>
+      <div class="callout">
+        <strong>วิธีจูนที่แนะนำ:</strong> เริ่ม 50 → ถ้า break เยอะจนอ่านไม่ไหว
+        คูณสอง (100, 200) → ถ้าไม่เจออะไรเลย หารสอง (25, 10)
+        Penalty ไม่ได้กำหนดจำนวน break ตรง ๆ (ไม่เหมือน BinSeg ใน CLI ที่สั่ง
+        <code>n_bkps=3</code> ได้เลย) — มันกำหนด "ความคุ้มค่า" ของการหั่นแต่ละครั้งแทน
+      </div>
+    </section>
+
+    <section id="params">
+      <h2>สรุปตรงคำถาม: แต่ละอัลกอใช้ parameter ชุดเดียวกันไหม → ไม่</h2>
+      <p>
+        <strong>ทั้ง 3 method รับ parameter คนละชุดกันโดยสิ้นเชิง</strong> —
+        GUI จึงสลับโชว์เฉพาะช่องของ method ที่เลือกอยู่ (เลือก HMM จะเห็นแค่ States,
+        เลือก K-Means เห็น k + Window, เลือก PELT เห็น Penalty)
+        ค่าที่กรอกค้างไว้ใน method อื่นไม่ถูกส่งไปด้วย
+      </p>
+      <table>
+        <tr>
+          <th style="width:16%">Method</th>
+          <th style="width:22%">Parameter ที่กรอกได้</th>
+          <th style="width:12%">Default</th>
+          <th>ปรับขึ้น = ?</th>
+          <th>ปรับลง = ?</th>
+        </tr>
+        <tr>
+          <td><strong>HMM ⭐</strong></td>
+          <td>States</td>
+          <td>3</td>
+          <td>โหมดละเอียดขึ้น แต่ซ้ำความหมาย + break ถี่</td>
+          <td>หยาบลง เหลือ calm/panic</td>
+        </tr>
+        <tr>
+          <td rowspan="2"><strong>K-Means</strong></td>
+          <td>Clusters (k)</td>
+          <td>3</td>
+          <td>เหมือน States ของ HMM</td>
+          <td>เหมือน States ของ HMM</td>
+        </tr>
+        <tr>
+          <td>Window (days)</td>
+          <td>60</td>
+          <td>นิ่งขึ้น แต่รู้ตัวช้า (lag ≈ ครึ่ง window)</td>
+          <td>ไวขึ้น แต่ noise เยอะ</td>
+        </tr>
+        <tr>
+          <td><strong>PELT</strong></td>
+          <td>Penalty</td>
+          <td>50</td>
+          <td>break น้อยลง เหลือเฉพาะ shift ใหญ่</td>
+          <td>break ถี่ขึ้น จับ shift เล็กด้วย</td>
+        </tr>
+      </table>
+      <h3>ค่าที่ fix ในโค้ด (แก้จาก GUI ไม่ได้)</h3>
+      <p>อยู่ใน <code>regime_compare.py</code> ถ้าอยากเปลี่ยนต้องแก้ไฟล์:</p>
+      <table>
+        <tr><th style="width:34%">ค่า</th><th style="width:18%">ตอนนี้</th><th>ใช้ทำอะไร</th></tr>
+        <tr><td>Daily resample</td><td>เปิดเสมอ</td>
+            <td>ยุบ H4 → close รายวันก่อนเข้าทุกอัลกอ</td></tr>
+        <tr><td>Rolling std window (HMM)</td><td>20 วัน</td>
+            <td>แกน volatility ใน observation ของ HMM</td></tr>
+        <tr><td>Persistence filter</td><td>25 จาก 30 วัน</td>
+            <td>กรอง break กระพริบของ HMM/K-Means</td></tr>
+        <tr><td>Match tolerance</td><td>±90 วัน</td>
+            <td>เกณฑ์นับว่า break ตรงกับเหตุการณ์จริง</td></tr>
+        <tr><td><code>random_state</code></td><td>42</td>
+            <td>ทำให้ HMM/K-Means รันซ้ำแล้วได้ผลเดิมทุกครั้ง</td></tr>
+      </table>
+      <div class="callout">
+        <strong>สูตรใช้งานจริงสำหรับ forex H4 ข้อมูล 8–15 ปี:</strong>
+        รัน HMM States=3 เป็นหลัก → ถ้าอยาก cross-check รัน K-Means k=3, win=60 ต่อ
+        (เสร็จในไม่กี่วินาที) → PELT pen=50 เก็บไว้เป็นตัวตัดสินตอนสองตัวแรกให้คำตอบไม่ตรงกัน
+        เพราะช้าแต่ objective ชัดเจนสุด
+      </div>
+    </section>
+
+    <section id="reading">
+      <h2>วิธีอ่านผล และเอาไปใช้ต่อ</h2>
+      <h3>อ่านจาก log</h3>
+      <pre>=== HMM Regime Detection ===
+  Bars:       3,912 daily
+  Range:      2010-01-04 -> 2025-06-30
+  Breaks:     5
+  Match:      3/3 known events        <- จับเหตุการณ์จริงครบ = เชื่อถือได้
+
+  Breakpoints:
+    2016-06-27  <- Brexit referendum (4d)
+    2020-03-09
+    2022-09-28  <- Truss mini-budget (2d)
+    ...</pre>
+      <ul>
+        <li><strong>Match score</strong> ใช้เช็คว่า method + parameter ที่เลือก "จับของจริงเป็น" —
+        ถ้าได้ 0–1/3 อย่าเพิ่งเชื่อ breakpoints ที่เหลือ ลองเปลี่ยน method หรือปรับ parameter ก่อน</li>
+        <li><strong>Breakpoint ล่าสุด</strong> คือตัวที่มีผลกับการตัดสินใจจริง —
+        มันคือ candidate ของ train cutoff</li>
+        <li>ปุ่ม <strong>Open Chart</strong> เปิด <code>regime_single.html</code> —
+        เส้นแดงประ = break ที่เจอ, เส้นขาว = เหตุการณ์จริง ดูด้วยตาว่า break
+        เกาะช่วงที่กราฟเปลี่ยนพฤติกรรมจริงไหม</li>
+      </ul>
+      <h3>Auto-update events ด้วย Gemini</h3>
+      <p>
+        เหตุการณ์อ้างอิงตั้งต้นมีแค่ 3 ตัว (Lehman/Brexit/Truss — เหมาะกับ GBP)
+        ถ้าใช้คู่เงินอื่นให้กดปุ่ม Gemini refresh: ระบบจะ auto-detect price shocks
+        ใน dataset แล้วให้ Gemini ระบุว่าแต่ละ shock คือเหตุการณ์อะไร
+        ผลถูกเก็บใน <code>known_events.json</code> และใช้แทนชุด hardcode ทันที
+        (ต้องใส่ Gemini API key ใน Settings ก่อน)
+      </p>
+      <h3>Use as Train Cutoff</h3>
+      <p>
+        เลือก breakpoint แล้วกดปุ่มนี้ → ระบบสร้าง dataset ใหม่ที่ตัดข้อมูลก่อน break ทิ้ง
+        (ไฟล์ลงท้าย <code>_from_YYYY-MM-DD</code>) เอาไปเข้าหน้า Train ได้เลย —
+        และไฟล์ที่ตัดแล้วยังสืบทอดไฟล์ M1 คู่ของต้นฉบับโดยอัตโนมัติ
+        (ระบบ backtest ตามหา M1 จากชื่อบรรพบุรุษให้เอง)
+      </p>
+      <div class="callout">
+        <strong>เทคนิคเพิ่มความมั่นใจ:</strong> รัน 2–3 methods แล้วดูว่า breakpoint
+        ล่าสุดตกที่ช่วงเดียวกัน (±1–2 เดือน) ไหม — ถ้า HMM กับ K-Means ชี้จุดเดียวกัน
+        ทั้งที่มองตลาดคนละมุม นั่นคือสัญญาณว่า break นั้นจริง ไม่ใช่ artifact ของอัลกอ
+      </div>
+    </section>
+
+    <section id="limits">
+      <h2>ข้อจำกัดที่ต้องรู้ก่อนใช้</h2>
+      <div class="grid two">
+        <div class="card warn">
+          <span class="tag warn">Retrospective เท่านั้น</span>
+          <h3>มันบอกอดีต ไม่ใช่ปัจจุบัน</h3>
+          <p>ทุก method วิเคราะห์ข้อมูลย้อนหลังทั้งก้อน — HMM/K-Means ยังต้องรอ
+          persistence 30 วันกว่าจะยืนยัน break ได้ แปลว่าโดย design มันรู้ regime change
+          <em>ช้าอย่างน้อย 1 เดือน</em> ใช้กำหนด cutoff ได้ แต่ใช้เป็นสัญญาณเทรด realtime ไม่ได้</p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">Daily resolution</span>
+          <h3>ไม่เห็น shift ระดับ intraday</h3>
+          <p>เพราะยุบเป็น daily ก่อน regime ที่เปลี่ยนเฉพาะบาง session
+          (เช่น Asia นิ่งลงแต่ London เหมือนเดิม) จะมองไม่เห็น —
+          สำหรับ H4 model เรื่องนี้ยอมรับได้ แต่ต้องรู้ว่า trade-off อยู่ตรงไหน</p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">Break ≠ ต้องตัดเสมอ</span>
+          <h3>บาง regime วนกลับมาซ้ำ</h3>
+          <p>ถ้าตลาดสลับไปมาระหว่างโหมดเดิม ๆ (mean-reverting ระหว่าง 2-3 states)
+          การตัดข้อมูลทิ้งตั้งแต่ break ล่าสุดอาจโยนตัวอย่างดี ๆ ทิ้ง —
+          ตัดเมื่อ regime เก่า "ตายแล้วไม่กลับมา" (structural change เช่น Brexit)
+          ไม่ใช่ทุกครั้งที่เห็นเส้นแดง</p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">ไม่มีจำนวน break ที่ "ถูก"</span>
+          <h3>เกณฑ์คือ useful ไม่ใช่ exact</h3>
+          <p>อัลกอต่างกันให้จำนวน break ต่างกันเป็นเรื่องปกติ —
+          คำถามที่ถูกไม่ใช่ "อันไหนนับถูก" แต่คือ "อันไหนให้ cutoff
+          ที่ทำให้โมเดลเทรนแล้ว backtest ดีขึ้น" ซึ่งพิสูจน์ได้ทางเดียว: ลองเทรนเทียบ</p>
+        </div>
+      </div>
+      <p class="footer">
+        อ่านคู่กับ <a href="10_regime_check_detail.html">10 · Regime Check Page Detail</a> (การใช้งานหน้าจอ)
+        · กลับไป <a href="00_reading_order.md">สารบัญซีรีส์</a>
+      </p>
+    </section>
+  </main>
+</body>
+</html>

@@ -382,6 +382,7 @@ the post-Brexit subset removes the distribution shift.
   Profile across train/backtest/fine-tune/walk-forward/export/EA consistently.
 - `docs/explainers/11_production_readme.md` — full 5-step production deployment guide.
 - `docs/metafxclub studio guide/12_monte_carlo_deep_dive.html` — what the MC process is, the two probes (shuffle-DD, skip-retention), and the Train-MC vs Backtest-MC comparison (idealized env trades vs full-cost SimAccount trades; screening vs capital sizing).
+- `docs/metafxclub studio guide/13_regime_check_deep_dive.html` — regime detection algorithms (HMM/K-Means/PELT), per-method parameter tables (each method takes a DIFFERENT param set: States vs k+Window vs Penalty), fixed in-code constants (daily resample, 25-of-30-day persistence, ±90d match tolerance), tuning recipes and limits.
 - `mt5_files/README_ONNX_Setup.md` — MT5 ONNX setup.
 - `mt5_files/MQL5/Indicators/README_CandlePatterns.md` — candle pattern reference.
 - `graphify-out/GRAPH_REPORT.md` — knowledge graph (god nodes, communities, gaps). Regenerate with `/graphify` or `/graphify . --update`.

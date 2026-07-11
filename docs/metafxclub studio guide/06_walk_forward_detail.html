@@ -528,12 +528,42 @@
             <td>ควรสอดคล้องกับ setup ที่ใช้ในหน้า Train เพื่อทดสอบ recipe เดียวกัน</td>
           </tr>
           <tr>
+            <td>Action Profile + Params</td>
+            <td>ชุด action ที่ model แต่ละ window ใช้ (Basic 4 / Manage 6)</td>
+            <td>ต้องตรงกับที่ใช้ในหน้า Train</td>
+          </tr>
+          <tr>
+            <td>Reward Mode / Profile / Overrides / Formula</td>
+            <td>สูตร reward ที่ใช้ retrain ทุก window</td>
+            <td>ต้องตรงกับหน้า Train — ถ้าไม่ตรง verdict ที่ได้เป็นคำตอบของสูตรอื่น
+            ไม่ใช่สูตรที่คุณใช้จริง</td>
+          </tr>
+          <tr>
+            <td>Max Hold (bars)</td>
+            <td>จำนวน bars สูงสุดก่อนบังคับปิด position</td>
+            <td>ต้องตรงกับหน้า Train</td>
+          </tr>
+          <tr>
+            <td>PPO Hyperparameters</td>
+            <td>learning rate, entropy, gamma ฯลฯ ของ PPO ที่ retrain ทุก window</td>
+            <td>ต้องตรงกับ Advanced settings ในหน้า Train (ค่า default ตรงกันอยู่แล้ว)</td>
+          </tr>
+          <tr>
             <td>Output Name</td>
             <td>prefix สำหรับไฟล์ผลลัพธ์ เช่น <code>wf_prod</code></td>
             <td>จะได้ <code>wf_prod_results.csv</code> และ <code>wf_prod_chart.png</code></td>
           </tr>
         </tbody>
       </table>
+      <div class="callout">
+        <strong>ปุ่ม ⧉ Copy settings from Train:</strong>
+        กดครั้งเดียวเพื่อดึง recipe ปัจจุบันจากหน้า Train มาใส่ให้ครบทุกช่อง
+        (window size, max hold, reward mode/profile/overrides/formula,
+        action profile/params และ PPO hyperparameters ทั้ง 9 ตัว) —
+        ค่าที่ <em>ไม่</em> ถูก copy คือ Steps/window, จำนวน Windows และ Output Name
+        เพราะเป็นค่าเฉพาะของ Walk-Forward เอง
+        แนะนำให้กดปุ่มนี้ทุกครั้งก่อนรัน เพื่อการันตีว่ากำลัง validate สูตรเดียวกับที่จะ train จริง
+      </div>
     </section>
 
     <section id="workflow">

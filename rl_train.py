@@ -363,6 +363,7 @@ def main():
             max_steps=args.ep_len,
             reward_mode=args.reward_mode,
             reward_profile=args.reward_profile,
+            reward_overrides=reward_overrides,
             reward_formula=args.reward_formula,
             action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
@@ -375,6 +376,7 @@ def main():
             max_steps=len(test_df) - args.window - 2,
             reward_mode=args.reward_mode,
             reward_profile=args.reward_profile,
+            reward_overrides=reward_overrides,
             reward_formula=args.reward_formula,
             action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
@@ -462,6 +464,7 @@ def main():
                               max_steps=len(test_df) - args.window - 2,
                               reward_mode=args.reward_mode,
                               reward_profile=args.reward_profile,
+                              reward_overrides=reward_overrides,
                               reward_formula=args.reward_formula,
                               action_profile=action_profile_cfg,
                               max_hold_bars=args.max_hold)

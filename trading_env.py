@@ -48,6 +48,7 @@ class TradingEnv(gym.Env):
         max_hold_bars: int = 30,      # บังคับปิดถ้าถือเกิน
         reward_mode: str = "realized", # "mtm" (เก่า/buy-hold trap) หรือ "realized" (ดีกว่า)
         reward_profile: str | dict = "balanced",
+        reward_overrides: dict | None = None,
         reward_formula: str = "",
         action_profile: str | dict = "basic_4",
         action_params: dict | None = None,
@@ -62,7 +63,7 @@ class TradingEnv(gym.Env):
         self.max_steps = max_steps if max_steps else len(df) - window_size - 2
         self.max_hold_bars = max_hold_bars
         self.reward_mode = reward_mode
-        self.reward_profile_name, self.reward_cfg = get_reward_profile(reward_profile)
+        self.reward_profile_name, self.reward_cfg = get_reward_profile(reward_profile, reward_overrides)
         self.reward_formula = (reward_formula or "").strip()
         self._reward_formula_code = (
             compile_reward_formula(self.reward_formula)

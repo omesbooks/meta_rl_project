@@ -116,7 +116,7 @@ reference/                 MIT-Quant-Bible.md, ml4t/  (quant theory)
 ### Validation & tuning
 | File | Role |
 |------|------|
-| `rl_walkforward.py` (root) | 5-window rolling train/test. Robustness gate (PF > 1.0 every window). Validates the training *recipe*, not a saved model file (retrains per window). |
+| `rl_walkforward.py` (root) | 5-window rolling train/test. Robustness gate (PF > 1.0 every window). Validates the training *recipe*, not a saved model file (retrains per window). Accepts the full Train recipe (reward mode/profile/overrides/formula, PPO hyperparams, max hold, net_arch) — GUI has a "⧉ Copy settings from Train" button so WF validates the SAME recipe you train with. |
 | `rl_finetune.py` (root) | Smart fine-tune: mix old(30%) + new(70%), lower LR (1e-4), ~50k steps. Prevents catastrophic forgetting. |
 | `rl_analyze.py` (root) | Confidence → accuracy analysis (is there a usable threshold?). |
 | `tools/analysis/grid_search.py` | Sweep `conf × atr_sl × atr_tp` over `backtest_live.py`, report best PF. |
@@ -368,6 +368,8 @@ the post-Brexit subset removes the distribution shift.
 | Old model artifacts not found after reorg | `artifact_paths` still checks legacy root-level paths as a fallback, so pre-reorg `.zip`/`_norm.csv` at the repo root remain loadable. New runs write under `artifacts/models/<name>/`. |
 | Backtest looks great but SL/TP are tight vs bar range | Check the `Execution realism` block: if `Decided by assumption` >10%, the PF/WR partly reflect the intrabar guess, not the market. Bracket with `--intrabar optimistic`, or add `--m1_csv` to resolve with data. Tight-SL results without M1 are not trustworthy. |
 | M1 replay silently resolves nothing | Feeds mismatch: M1 must come from the same broker/source as the main CSV (same server-time timestamps). If neither level is touched in the M1 slice, the resolver counts it as `no/mismatched M1 data` and falls back — check that counter in the results block. |
+| Reward overrides (sliders) had no effect on training | Fixed 2026-07-11: `rl_train` resolved `--reward_overrides` but only wrote them to meta — the env re-resolved the base profile without them. `TradingEnv` now takes `reward_overrides=` and train/walk-forward pass it through. **Models trained before this fix with non-default sliders actually used base-profile params** (their meta overstates the overrides). `rl_finetune` still has the old behavior (reads `reward_profile_config` from meta but never applies it). |
+| Walk-Forward verdict didn't match your recipe | Pre-fix, `rl_walkforward.py` hardcoded reward (`realized`/balanced) and PPO hyperparams. Now it accepts the full Train recipe; use the GUI's "⧉ Copy settings from Train" button before running so WF validates the same recipe. |
 
 ---
 

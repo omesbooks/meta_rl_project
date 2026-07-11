@@ -7187,10 +7187,91 @@ class RLTradingStudio(ctk.CTk):
         )
         self.wf_action_params.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(2, 0))
 
+        # Reward recipe — must match what you actually train with, otherwise
+        # the ROBUST verdict answers a different recipe than yours
+        reward_sub = ctk.CTkFrame(c1, fg_color="transparent")
+        reward_sub.grid(row=7, column=0, sticky="ew", padx=18, pady=(0, 12))
+        reward_sub.grid_columnconfigure((0, 1, 2), weight=1)
+
+        ctk.CTkLabel(reward_sub, text="Reward Mode", text_color=COLOR_DIM
+                      ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(reward_sub, text="Reward Profile", text_color=COLOR_DIM
+                      ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+        ctk.CTkLabel(reward_sub, text="Max Hold (bars)", text_color=COLOR_DIM
+                      ).grid(row=0, column=2, sticky="w", padx=(8, 0))
+        self.wf_reward_mode = ctk.CTkOptionMenu(reward_sub,
+            values=["realized (recommended)", "mtm"],
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+        self.wf_reward_mode.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        self.wf_reward_profile = ctk.CTkOptionMenu(reward_sub,
+            values=REWARD_PROFILE_LABELS,
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+        self.wf_reward_profile.set(REWARD_PROFILE_LABELS[0])
+        self.wf_reward_profile.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(2, 0))
+        self.wf_maxhold = ctk.CTkEntry(reward_sub, placeholder_text="30")
+        self.wf_maxhold.insert(0, "30")
+        self.wf_maxhold.grid(row=1, column=2, sticky="ew", padx=(8, 0), pady=(2, 0))
+
+        ctk.CTkLabel(reward_sub, text="Reward Overrides JSON (optional)",
+                      text_color=COLOR_DIM
+                      ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ctk.CTkLabel(reward_sub, text="Reward Formula (dev, optional)",
+                      text_color=COLOR_DIM
+                      ).grid(row=2, column=2, sticky="w", padx=(8, 0), pady=(8, 0))
+        self.wf_reward_overrides = ctk.CTkEntry(reward_sub,
+            placeholder_text='{"trade_penalty":0.008}')
+        self.wf_reward_overrides.grid(row=3, column=0, columnspan=2,
+                                      sticky="ew", pady=(2, 0))
+        self.wf_reward_formula = ctk.CTkEntry(reward_sub,
+            placeholder_text="(none)")
+        self.wf_reward_formula.grid(row=3, column=2, sticky="ew",
+                                    padx=(8, 0), pady=(2, 0))
+
+        # PPO hyperparameters — mirror of the Train page's Advanced block
+        ppo_head = ctk.CTkFrame(c1, fg_color="transparent")
+        ppo_head.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 4))
+        ppo_head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(ppo_head,
+            text="PPO Hyperparameters (ต้องตรงกับตอน Train ถึงจะ validate สูตรเดียวกัน)",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
+            ).grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(ppo_head, text="⧉ Copy settings from Train",
+            command=self._wf_copy_from_train,
+            fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
+            border_width=1, border_color="#484f58",
+            height=30, width=210
+            ).grid(row=0, column=1, sticky="e")
+
+        ppo_sub = ctk.CTkFrame(c1, fg_color="transparent")
+        ppo_sub.grid(row=9, column=0, sticky="ew", padx=18, pady=(0, 12))
+        ppo_sub.grid_columnconfigure((0, 1, 2), weight=1)
+        wf_ppo_fields = [
+            ("Learning Rate", "wf_lr", "3e-4"),
+            ("Clip Range", "wf_clip", "0.2"),
+            ("Entropy Coef", "wf_ent", "0.01"),
+            ("N Steps", "wf_nsteps", "2048"),
+            ("N Epochs", "wf_nepochs", "10"),
+            ("Batch Size", "wf_batch", "64"),
+            ("Gamma", "wf_gamma", "0.99"),
+            ("GAE Lambda", "wf_gae", "0.95"),
+            ("VF Coef", "wf_vf", "0.5"),
+        ]
+        for idx, (label, attr, default) in enumerate(wf_ppo_fields):
+            r, c = divmod(idx, 3)
+            ctk.CTkLabel(ppo_sub, text=label, text_color=COLOR_DIM,
+                          font=ctk.CTkFont(size=11)
+                          ).grid(row=r * 2, column=c, sticky="w",
+                                 padx=(0 if c == 0 else 8, 0), pady=(6, 0))
+            entry = ctk.CTkEntry(ppo_sub, placeholder_text=default)
+            entry.insert(0, default)
+            entry.grid(row=r * 2 + 1, column=c, sticky="ew",
+                       padx=(0 if c == 0 else 8, 0), pady=(2, 0))
+            setattr(self, attr, entry)
+
         ctk.CTkLabel(c1, text="Output Name", text_color=COLOR_DIM
-                      ).grid(row=7, column=0, sticky="w", padx=18, pady=(0, 4))
+                      ).grid(row=10, column=0, sticky="w", padx=18, pady=(0, 4))
         self.wf_name = ctk.CTkEntry(c1); self.wf_name.insert(0, "wf_prod")
-        self.wf_name.grid(row=8, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.wf_name.grid(row=11, column=0, sticky="ew", padx=18, pady=(0, 16))
 
         self.wf_run_btn = ctk.CTkButton(page, text="▶ Start Walk-Forward Retrain (~50 min)",
             command=self._run_walkforward,
@@ -7233,6 +7314,59 @@ class RLTradingStudio(ctk.CTk):
         log_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 16))
         self.wf_log = self._make_log_widget(log_frame, height=10)
 
+    def _wf_copy_from_train(self):
+        """Mirror the current Train-page recipe into the Walk-Forward fields.
+
+        Copies everything that defines the training recipe (window, max hold,
+        reward mode/profile/overrides/formula, action profile/params, PPO
+        hyperparameters). Steps and output name stay WF-specific."""
+        if "train" not in self.pages and "train" in getattr(self, "_page_builders", {}):
+            self._page_builders["train"]()
+        if not hasattr(self, "train_lr"):
+            messagebox.showwarning("Train page not ready",
+                                   "เปิดหน้า Train ก่อนหนึ่งครั้งแล้วลองใหม่")
+            return
+
+        def put(entry, value):
+            entry.delete(0, "end")
+            entry.insert(0, str(value))
+
+        put(self.wf_window, self.train_window.get() or "10")
+        put(self.wf_maxhold, self.train_maxhold.get() or "30")
+        self.wf_reward_mode.set(self.train_reward.get())
+        self.wf_reward_profile.set(self.train_reward_profile.get())
+
+        overrides = self._get_train_reward_overrides()
+        if overrides is None:
+            return  # invalid slider state — error dialog already shown
+        put(self.wf_reward_overrides, "" if overrides in ("{}", "") else overrides)
+
+        formula = self._get_train_reward_formula()
+        if formula is None:
+            return
+        put(self.wf_reward_formula, formula)
+
+        self.wf_action_profile.set(self.train_action_profile.get())
+        action_params = self._get_train_action_params()
+        if action_params is None:
+            return
+        put(self.wf_action_params, "" if action_params in ("{}", "") else action_params)
+
+        pairs = [
+            (self.wf_lr, self.train_lr), (self.wf_clip, self.train_clip),
+            (self.wf_ent, self.train_ent), (self.wf_nsteps, self.train_nsteps),
+            (self.wf_nepochs, self.train_nepochs), (self.wf_batch, self.train_batch),
+            (self.wf_gamma, self.train_gamma), (self.wf_gae, self.train_gae),
+            (self.wf_vf, self.train_vf),
+        ]
+        for wf_entry, train_entry in pairs:
+            put(wf_entry, train_entry.get() or train_entry.cget("placeholder_text"))
+
+        self._log(self.wf_log,
+                  "Copied recipe from Train page: window/max hold/reward/action/PPO "
+                  "(steps + output name ไม่ถูก copy — เป็นค่าเฉพาะของ Walk-Forward)",
+                  "info")
+
     def _run_walkforward(self):
         if self._is_process_busy():
             messagebox.showwarning("Busy", "Another task running")
@@ -7253,17 +7387,41 @@ class RLTradingStudio(ctk.CTk):
                 except Exception as exc:
                     messagebox.showerror("Invalid action params JSON", str(exc))
                     return
+        reward_overrides = self.wf_reward_overrides.get().strip()
+        if reward_overrides:
+            try:
+                json.loads(reward_overrides)
+            except Exception as exc:
+                messagebox.showerror("Invalid reward overrides JSON", str(exc))
+                return
+        reward_formula = self.wf_reward_formula.get().strip()
 
         cmd = [
             sys.executable, "rl_walkforward.py", csv,
             "--windows", self.wf_windows.get() or "5",
             "--steps", self.wf_steps.get() or "50000",
             "--window", self.wf_window.get() or "10",
+            "--max_hold", self.wf_maxhold.get() or "30",
             "--name", self.wf_name.get() or "wf_prod",
             "--action_profile", action_profile,
+            "--reward_mode", self.wf_reward_mode.get().split()[0],
+            "--reward_profile", reward_profile_key_from_label(self.wf_reward_profile.get()),
+            "--learning_rate", self.wf_lr.get() or "3e-4",
+            "--clip_range", self.wf_clip.get() or "0.2",
+            "--ent_coef", self.wf_ent.get() or "0.01",
+            "--n_steps", self.wf_nsteps.get() or "2048",
+            "--n_epochs", self.wf_nepochs.get() or "10",
+            "--batch_size", self.wf_batch.get() or "64",
+            "--gamma", self.wf_gamma.get() or "0.99",
+            "--gae_lambda", self.wf_gae.get() or "0.95",
+            "--vf_coef", self.wf_vf.get() or "0.5",
         ]
         if action_params:
             cmd.extend(["--action_params", action_params])
+        if reward_overrides:
+            cmd.extend(["--reward_overrides", reward_overrides])
+        if reward_formula:
+            cmd.extend(["--reward_formula", reward_formula])
 
         self._log(self.wf_log, f"$ {' '.join(cmd)}", "info")
         if hasattr(self, "wf_progress"):

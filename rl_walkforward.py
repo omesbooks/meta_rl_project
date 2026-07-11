@@ -41,6 +41,14 @@ from action_profiles import (
     get_action_profile,
     load_action_profile_json,
 )
+from reward_profiles import (
+    REWARD_PROFILES,
+    coerce_reward_overrides,
+    get_reward_profile,
+    load_reward_profile_json,
+    reward_profile_label,
+)
+from reward_formula import validate_reward_formula
 from trading_env import TradingEnv
 
 
@@ -105,7 +113,52 @@ def main():
                     help="JSON object of safe action parameter overrides")
     ap.add_argument("--action_profile_json", default="",
                     help="path to limited action profile JSON recipe")
+    # Reward recipe — mirror rl_train so WF validates the SAME recipe you train with
+    ap.add_argument("--reward_mode", default="realized",
+                    choices=["realized", "mtm"],
+                    help="same meaning as rl_train")
+    ap.add_argument("--reward_profile", default="balanced",
+                    choices=list(REWARD_PROFILES.keys()),
+                    help="reward preset used for every retrained window")
+    ap.add_argument("--reward_overrides", default="",
+                    help="JSON object of safe reward slider overrides")
+    ap.add_argument("--reward_profile_json", default="",
+                    help="path to reward profile JSON recipe; CLI overrides win")
+    ap.add_argument("--reward_formula", default="",
+                    help="developer mode safe reward expression")
+    # PPO hyperparameters — mirror rl_train defaults
+    ap.add_argument("--learning_rate", type=float, default=3e-4)
+    ap.add_argument("--clip_range", type=float, default=0.2)
+    ap.add_argument("--ent_coef", type=float, default=0.01)
+    ap.add_argument("--n_steps", type=int, default=2048)
+    ap.add_argument("--n_epochs", type=int, default=10)
+    ap.add_argument("--batch_size", type=int, default=64)
+    ap.add_argument("--gamma", type=float, default=0.99)
+    ap.add_argument("--gae_lambda", type=float, default=0.95)
+    ap.add_argument("--vf_coef", type=float, default=0.5)
+    ap.add_argument("--net_arch", default="auto",
+                    help='"auto" (scale by window) or comma list e.g. "256,128,64"')
     args = ap.parse_args()
+    try:
+        reward_overrides = {}
+        cli_reward_formula = args.reward_formula.strip()
+        if args.reward_profile_json.strip():
+            reward_json_meta = load_reward_profile_json(args.reward_profile_json.strip())
+            args.reward_profile = reward_json_meta["base_profile"]
+            reward_overrides.update(reward_json_meta["overrides"])
+            if reward_json_meta.get("formula") and not cli_reward_formula:
+                args.reward_formula = reward_json_meta["formula"]
+        if cli_reward_formula:
+            args.reward_formula = cli_reward_formula
+        if args.reward_overrides.strip():
+            reward_overrides.update(coerce_reward_overrides(json.loads(args.reward_overrides)))
+        if args.reward_formula.strip():
+            validate_reward_formula(args.reward_formula.strip())
+        reward_profile_key, _reward_profile_cfg = get_reward_profile(args.reward_profile, reward_overrides)
+    except Exception as exc:
+        print(f"ERROR: invalid reward settings: {exc}")
+        return 1
+    args.reward_profile = reward_profile_key
     try:
         action_params = {}
         action_profile_json_meta = None
@@ -150,6 +203,14 @@ def main():
     print(f"  action profile: {action_profile_cfg['label']} ({len(action_profile_cfg['actions'])} actions)")
     if action_profile_json_meta:
         print(f"  action json: {action_profile_json_meta['path']}")
+    print(f"  reward: mode={args.reward_mode} | profile={reward_profile_label(args.reward_profile)}")
+    if reward_overrides:
+        print(f"  reward overrides: {json.dumps(reward_overrides, separators=(',', ':'))}")
+    if args.reward_formula.strip():
+        print("  reward formula: developer formula enabled")
+    print(f"  hyper: lr={args.learning_rate}, clip={args.clip_range}, ent={args.ent_coef}, "
+          f"n_steps={args.n_steps}, batch={args.batch_size}, epochs={args.n_epochs}")
+    print(f"  hyper: gamma={args.gamma}, gae_lambda={args.gae_lambda}, vf_coef={args.vf_coef}")
 
     n = len(df)
     if args.windows <= 0:
@@ -242,14 +303,22 @@ def main():
                 self.next_emit = current + self.emit_every
             return True
 
-    # Auto NN size
-    if args.window >= 50:
-        net_arch = [512, 256, 128]
-    elif args.window >= 20:
-        net_arch = [256, 128, 64]
+    # NN size — same "auto" rule as rl_train, or explicit comma list
+    if args.net_arch == "auto":
+        if args.window >= 50:
+            net_arch = [512, 256, 128]
+        elif args.window >= 20:
+            net_arch = [256, 128, 64]
+        else:
+            net_arch = [128, 64]
     else:
-        net_arch = [128, 64]
+        net_arch = [int(x) for x in args.net_arch.split(",")]
     print(f"  net_arch: {net_arch}")
+
+    # Sanity: batch_size must be <= n_steps (mirror rl_train)
+    if args.batch_size > args.n_steps:
+        print(f"  [warn] batch_size({args.batch_size}) > n_steps({args.n_steps}); clamping to n_steps")
+        args.batch_size = args.n_steps
 
     # =================================================================
     # Run each window
@@ -284,7 +353,10 @@ def main():
                 df_in, feature_cols,
                 window_size=args.window,
                 max_steps=ep,
-                reward_mode="realized",
+                reward_mode=args.reward_mode,
+                reward_profile=args.reward_profile,
+                reward_overrides=reward_overrides,
+                reward_formula=args.reward_formula,
                 action_profile=action_profile_cfg,
                 max_hold_bars=args.max_hold,
             ))
@@ -295,14 +367,15 @@ def main():
         print(f"  [train] {args.steps:,} steps ...")
         model = PPO(
             "MlpPolicy", train_env,
-            learning_rate=3e-4,
-            n_steps=2048,
-            batch_size=64,
-            n_epochs=10,
-            gamma=0.99,
-            gae_lambda=0.95,
-            clip_range=0.2,
-            ent_coef=0.01,
+            learning_rate=args.learning_rate,
+            n_steps=args.n_steps,
+            batch_size=args.batch_size,
+            n_epochs=args.n_epochs,
+            gamma=args.gamma,
+            gae_lambda=args.gae_lambda,
+            clip_range=args.clip_range,
+            ent_coef=args.ent_coef,
+            vf_coef=args.vf_coef,
             verbose=0,
             policy_kwargs=dict(net_arch=net_arch),
         )
@@ -322,7 +395,10 @@ def main():
             test_df, feature_cols,
             window_size=args.window,
             max_steps=eval_max_steps,
-            reward_mode="realized",
+            reward_mode=args.reward_mode,
+            reward_profile=args.reward_profile,
+            reward_overrides=reward_overrides,
+            reward_formula=args.reward_formula,
             action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
         )

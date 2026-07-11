@@ -6601,7 +6601,8 @@ class RLTradingStudio(ctk.CTk):
                 "Pure Agent (matches training) ⭐",
                 "Agent + SL/TP (live-realistic)",
             ],
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            command=lambda _=None: self._update_bt_mode_fields())
         self.bt_mode.grid(row=13, column=0, sticky="ew", padx=18, pady=(0, 4))
         ctk.CTkLabel(setup,
             text="Pure = ตรงกับ env ตอน train · SL/TP = สำหรับ live broker",
@@ -6623,20 +6624,22 @@ class RLTradingStudio(ctk.CTk):
         self.bt_max_pos = ctk.CTkEntry(risk); self.bt_max_pos.insert(0, "1")
         self.bt_max_pos.grid(row=2, column=1, sticky="ew", padx=18, pady=(0, 12))
 
-        ctk.CTkLabel(risk, text="ATR × SL", text_color=COLOR_DIM
-                      ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
-        ctk.CTkLabel(risk, text="ATR × TP", text_color=COLOR_DIM
-                      ).grid(row=3, column=1, sticky="w", padx=18, pady=(0, 4))
+        self.bt_sl_label = ctk.CTkLabel(risk, text="ATR × SL", text_color=COLOR_DIM)
+        self.bt_sl_label.grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
+        self.bt_tp_label = ctk.CTkLabel(risk, text="ATR × TP", text_color=COLOR_DIM)
+        self.bt_tp_label.grid(row=3, column=1, sticky="w", padx=18, pady=(0, 4))
         self.bt_sl = ctk.CTkEntry(risk); self.bt_sl.insert(0, "2.0")
         self.bt_sl.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
         self.bt_tp = ctk.CTkEntry(risk); self.bt_tp.insert(0, "4.0")
         self.bt_tp.grid(row=4, column=1, sticky="ew", padx=18, pady=(0, 16))
 
         # Execution realism: intrabar assumption + stop slippage
-        ctk.CTkLabel(risk, text="Intrabar Fill", text_color=COLOR_DIM
-                      ).grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
-        ctk.CTkLabel(risk, text="Stop Slippage %", text_color=COLOR_DIM
-                      ).grid(row=5, column=1, sticky="w", padx=18, pady=(0, 4))
+        self.bt_intrabar_label = ctk.CTkLabel(risk, text="Intrabar Fill",
+                                               text_color=COLOR_DIM)
+        self.bt_intrabar_label.grid(row=5, column=0, sticky="w", padx=18, pady=(0, 4))
+        self.bt_slip_label = ctk.CTkLabel(risk, text="Stop Slippage %",
+                                           text_color=COLOR_DIM)
+        self.bt_slip_label.grid(row=5, column=1, sticky="w", padx=18, pady=(0, 4))
         self.bt_intrabar = ctk.CTkOptionMenu(risk,
             values=["pessimistic (SL first) ⭐", "optimistic (TP first)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
@@ -6644,12 +6647,13 @@ class RLTradingStudio(ctk.CTk):
         self.bt_stop_slip = ctk.CTkEntry(risk, placeholder_text="0.01")
         self.bt_stop_slip.insert(0, "0.01")
         self.bt_stop_slip.grid(row=6, column=1, sticky="ew", padx=18, pady=(0, 4))
-        ctk.CTkLabel(risk,
+        self.bt_realism_hint = ctk.CTkLabel(risk,
             text="ถ้า SL+TP อยู่ใน bar เดียว OHLC บอกไม่ได้ว่าโดนอะไรก่อน → รันทั้ง 2 โหมด"
                  "เพื่อดูช่วงผลจริง · slippage คิดเฉพาะ SL (stop order)",
             font=ctk.CTkFont(size=10), text_color=COLOR_DIM,
-            wraplength=380, justify="left"
-            ).grid(row=7, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 12))
+            wraplength=380, justify="left")
+        self.bt_realism_hint.grid(row=7, column=0, columnspan=2, sticky="w",
+                                   padx=18, pady=(0, 12))
 
         # Overnight swap (H4 holds cross nights — real cost most backtests skip)
         ctk.CTkLabel(risk, text="Swap Long %/night", text_color=COLOR_DIM
@@ -6756,6 +6760,34 @@ class RLTradingStudio(ctk.CTk):
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
 
         self.bt_log = self._make_log_widget(log_frame, height=12)
+
+        # Show only the Risk fields that the selected mode actually uses
+        self._update_bt_mode_fields()
+
+    def _update_bt_mode_fields(self):
+        """Hide Risk-card fields that the selected backtest mode never uses.
+
+        Pure Agent: no initial SL/TP levels exist -> ATR SL/TP and the
+        Intrabar Fill assumption (needs BOTH levels in one bar to matter) are
+        inert. Stop Slippage stays: manage_6 models can install SLs mid-trade
+        via Break-Even/Trailing actions, and those fills do slip."""
+        if not hasattr(self, "bt_intrabar"):
+            return
+        pure = "Pure" in self.bt_mode.get()
+        sltp_widgets = (self.bt_sl_label, self.bt_sl, self.bt_tp_label,
+                        self.bt_tp, self.bt_intrabar_label, self.bt_intrabar)
+        if pure:
+            for w in sltp_widgets:
+                w.grid_remove()
+            self.bt_realism_hint.configure(
+                text="Pure Agent: ไม่มี initial SL/TP → ATR SL/TP กับ Intrabar Fill ไม่ถูกใช้ · "
+                     "Stop Slippage ยังมีผลกับ model แบบ Manage 6 (agent ตั้ง SL เองผ่าน BE/Trailing)")
+        else:
+            for w in sltp_widgets:
+                w.grid()
+            self.bt_realism_hint.configure(
+                text="ถ้า SL+TP อยู่ใน bar เดียว OHLC บอกไม่ได้ว่าโดนอะไรก่อน → รันทั้ง 2 โหมด"
+                     "เพื่อดูช่วงผลจริง · slippage คิดเฉพาะ SL (stop order)")
 
     def _auto_select_bt_m1(self):
         """When the picked dataset has a companion _m1.csv, pre-select it in the

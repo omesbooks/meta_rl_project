@@ -7178,6 +7178,7 @@ class RLTradingStudio(ctk.CTk):
             values=ACTION_PROFILE_LABELS,
             fg_color=COLOR_BG_INPUT,
             button_color=COLOR_BG_INPUT,
+            command=lambda _v=None: self._wf_recipe_changed("action"),
         )
         self.wf_action_profile.set(ACTION_PROFILE_LABELS[0])
         self.wf_action_profile.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
@@ -7196,11 +7197,13 @@ class RLTradingStudio(ctk.CTk):
                       ).grid(row=0, column=2, sticky="w", padx=(8, 0))
         self.wf_reward_mode = ctk.CTkOptionMenu(reward_sub,
             values=["realized (recommended)", "mtm"],
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            command=lambda _v=None: self._wf_recipe_changed("reward"))
         self.wf_reward_mode.grid(row=1, column=0, sticky="ew", pady=(2, 0))
         self.wf_reward_profile = ctk.CTkOptionMenu(reward_sub,
             values=REWARD_PROFILE_LABELS,
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            command=lambda _v=None: self._wf_recipe_changed("reward"))
         self.wf_reward_profile.set(REWARD_PROFILE_LABELS[0])
         self.wf_reward_profile.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(2, 0))
         self.wf_maxhold = ctk.CTkEntry(reward_sub, placeholder_text="30")
@@ -7307,6 +7310,26 @@ class RLTradingStudio(ctk.CTk):
         log_frame = ctk.CTkFrame(c2, fg_color="#0a0e14", corner_radius=8)
         log_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 16))
         self.wf_log = self._make_log_widget(log_frame, height=10)
+
+    def _wf_recipe_changed(self, kind):
+        """Manual profile/mode change invalidates extras copied from Train.
+
+        Copied action params belong to the profile they were copied with —
+        e.g. manage_6 keys crash basic_4 ("unknown action parameter") — and
+        reward overrides copied for one profile are stale on another."""
+        changed = []
+        if kind == "action" and self.wf_action_params_value:
+            self.wf_action_params_value = ""
+            changed.append("action params")
+        if kind == "reward" and (self.wf_reward_overrides_value
+                                 or self.wf_reward_formula_value):
+            self.wf_reward_overrides_value = ""
+            self.wf_reward_formula_value = ""
+            changed.append("reward overrides/formula")
+        if changed and hasattr(self, "wf_recipe_hint"):
+            self.wf_recipe_hint.configure(
+                text=f"เปลี่ยน profile ด้วยมือ → ล้าง {' + '.join(changed)} ที่ copy มา "
+                     "(กด ⧉ Copy settings from Train ใหม่ถ้าต้องการ)")
 
     def _wf_copy_from_train(self):
         """Mirror the current Train-page recipe into the Walk-Forward fields.

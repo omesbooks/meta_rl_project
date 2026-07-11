@@ -7171,8 +7171,6 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(action_sub, text="Action Profile", text_color=COLOR_DIM
                       ).grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(action_sub, text="Action Params JSON (optional)", text_color=COLOR_DIM
-                      ).grid(row=0, column=1, sticky="w", padx=(8, 0))
         self.wf_action_profile = ctk.CTkOptionMenu(
             action_sub,
             values=ACTION_PROFILE_LABELS,
@@ -7180,12 +7178,7 @@ class RLTradingStudio(ctk.CTk):
             button_color=COLOR_BG_INPUT,
         )
         self.wf_action_profile.set(ACTION_PROFILE_LABELS[0])
-        self.wf_action_profile.grid(row=1, column=0, sticky="ew", pady=(2, 0))
-        self.wf_action_params = ctk.CTkEntry(
-            action_sub,
-            placeholder_text='{"trail_atr_mult":3.5}',
-        )
-        self.wf_action_params.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(2, 0))
+        self.wf_action_profile.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
 
         # Reward recipe — must match what you actually train with, otherwise
         # the ROBUST verdict answers a different recipe than yours
@@ -7212,20 +7205,19 @@ class RLTradingStudio(ctk.CTk):
         self.wf_maxhold.insert(0, "30")
         self.wf_maxhold.grid(row=1, column=2, sticky="ew", padx=(8, 0), pady=(2, 0))
 
-        ctk.CTkLabel(reward_sub, text="Reward Overrides JSON (optional)",
-                      text_color=COLOR_DIM
-                      ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        ctk.CTkLabel(reward_sub, text="Reward Formula (dev, optional)",
-                      text_color=COLOR_DIM
-                      ).grid(row=2, column=2, sticky="w", padx=(8, 0), pady=(8, 0))
-        self.wf_reward_overrides = ctk.CTkEntry(reward_sub,
-            placeholder_text='{"trade_penalty":0.008}')
-        self.wf_reward_overrides.grid(row=3, column=0, columnspan=2,
-                                      sticky="ew", pady=(2, 0))
-        self.wf_reward_formula = ctk.CTkEntry(reward_sub,
-            placeholder_text="(none)")
-        self.wf_reward_formula.grid(row=3, column=2, sticky="ew",
-                                    padx=(8, 0), pady=(2, 0))
+        # Advanced recipe extras (reward overrides / action params / formula)
+        # have no visible entries — they ride along via "Copy settings from
+        # Train" and this hint shows what got picked up.
+        self.wf_reward_overrides_value = ""
+        self.wf_action_params_value = ""
+        self.wf_reward_formula_value = ""
+        self.wf_recipe_hint = ctk.CTkLabel(reward_sub,
+            text="Reward overrides / action params / formula: (none) — "
+                 "กด ⧉ Copy settings from Train เพื่อดึงมาพร้อมกัน",
+            font=ctk.CTkFont(size=11), text_color=COLOR_DIM,
+            wraplength=1100, justify="left")
+        self.wf_recipe_hint.grid(row=2, column=0, columnspan=3,
+                                 sticky="w", pady=(8, 0))
 
         # PPO hyperparameters — mirror of the Train page's Advanced block
         ppo_head = ctk.CTkFrame(c1, fg_color="transparent")
@@ -7339,18 +7331,31 @@ class RLTradingStudio(ctk.CTk):
         overrides = self._get_train_reward_overrides()
         if overrides is None:
             return  # invalid slider state — error dialog already shown
-        put(self.wf_reward_overrides, "" if overrides in ("{}", "") else overrides)
+        self.wf_reward_overrides_value = "" if overrides in ("{}", "") else overrides
 
         formula = self._get_train_reward_formula()
         if formula is None:
             return
-        put(self.wf_reward_formula, formula)
+        self.wf_reward_formula_value = formula
 
         self.wf_action_profile.set(self.train_action_profile.get())
         action_params = self._get_train_action_params()
         if action_params is None:
             return
-        put(self.wf_action_params, "" if action_params in ("{}", "") else action_params)
+        self.wf_action_params_value = "" if action_params in ("{}", "") else action_params
+
+        def summarize(raw, none_text="(none)"):
+            if not raw:
+                return none_text
+            try:
+                d = json.loads(raw)
+                return f"{len(d)} ค่า: " + ", ".join(list(d)[:4]) + ("…" if len(d) > 4 else "")
+            except Exception:
+                return "(set)"
+        self.wf_recipe_hint.configure(
+            text=f"จาก Train — reward overrides: {summarize(self.wf_reward_overrides_value)} · "
+                 f"action params: {summarize(self.wf_action_params_value)} · "
+                 f"formula: {'ใช้' if self.wf_reward_formula_value else '(none)'}")
 
         pairs = [
             (self.wf_lr, self.train_lr), (self.wf_clip, self.train_clip),
@@ -7378,23 +7383,10 @@ class RLTradingStudio(ctk.CTk):
         action_profile = "basic_4"
         if hasattr(self, "wf_action_profile"):
             action_profile = action_profile_key_from_label(self.wf_action_profile.get())
-        action_params = ""
-        if hasattr(self, "wf_action_params"):
-            action_params = self.wf_action_params.get().strip()
-            if action_params:
-                try:
-                    json.loads(action_params)
-                except Exception as exc:
-                    messagebox.showerror("Invalid action params JSON", str(exc))
-                    return
-        reward_overrides = self.wf_reward_overrides.get().strip()
-        if reward_overrides:
-            try:
-                json.loads(reward_overrides)
-            except Exception as exc:
-                messagebox.showerror("Invalid reward overrides JSON", str(exc))
-                return
-        reward_formula = self.wf_reward_formula.get().strip()
+        # Extras arrive via "Copy settings from Train" (no manual entries)
+        action_params = (self.wf_action_params_value or "").strip()
+        reward_overrides = (self.wf_reward_overrides_value or "").strip()
+        reward_formula = (self.wf_reward_formula_value or "").strip()
 
         cmd = [
             sys.executable, "rl_walkforward.py", csv,

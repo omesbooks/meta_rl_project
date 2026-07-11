@@ -7496,7 +7496,7 @@ class RLTradingStudio(ctk.CTk):
                       ).grid(row=1, column=2, sticky="w", padx=18, pady=(8, 4))
 
         self.ft_mode = ctk.CTkOptionMenu(c3,
-            values=["mixed (old+new ⭐)", "pure (new only)", "replay (old only)"],
+            values=["mixed (old+new ⭐)", "pure (new only)", "replay (all old+new)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
             command=lambda _v=None: self._update_ft_mode_hint())
         self.ft_mode.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 4))

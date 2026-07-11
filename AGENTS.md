@@ -388,6 +388,7 @@ the post-Brexit subset removes the distribution shift.
 
 ### Background explainers (`docs/explainers/`, open in browser)
 - `07_rl_reward_explained.html` — the reward terms + how reward profiles re-weight them.
+- `15_monte_carlo_explained.html` — what the MC process is, the two probes (shuffle-DD, skip-retention), and the Train-MC vs Backtest-MC comparison (idealized env trades vs full-cost SimAccount trades; screening vs capital sizing).
 - `04_data_tools_modules_explained.html` — the Data Tools page modules.
 - `06_parity_config_explained.html` — why `.params.json` sidecars exist and how `RL_ApplyDataCollectorConfig` works.
 - `05_data_collector_v4_explained.html` — legacy v4 collector; current workflow uses `DataCollector_RL.mq5`.

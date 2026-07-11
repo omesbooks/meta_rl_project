@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monte Carlo Explained — กระบวนการคืออะไร และ Train vs Backtest ต่างกันยังไง</title>
+  <style>
+    :root {
+      --bg: #f7f7f1; --paper: #ffffff; --ink: #17202a; --muted: #667085;
+      --line: #d8ddcf; --gold: #c9a100; --gold-soft: #fff4bf;
+      --green: #1c8a55; --green-soft: #dff4e9;
+      --red: #c24135; --red-soft: #ffe3df;
+      --blue: #245b8f; --blue-soft: #e5f0fb;
+      --shadow: 0 16px 40px rgba(23, 32, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+           font-family: "Segoe UI", Tahoma, sans-serif; line-height: 1.65; }
+    .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 44px 0 28px; border-bottom: 1px solid var(--line);
+             background: linear-gradient(180deg, #ffffff 0%, #f7f7f1 100%); }
+    .eyebrow { margin: 0 0 10px; color: var(--gold); font-size: 13px;
+               font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1 { margin: 0; max-width: 880px; font-size: clamp(30px, 4.5vw, 50px); line-height: 1.2; }
+    .sub { margin: 14px 0 0; max-width: 820px; color: var(--muted); font-size: 17px; }
+    main { padding: 36px 0 80px; }
+    section { background: var(--paper); border: 1px solid var(--line);
+              border-radius: 16px; box-shadow: var(--shadow);
+              padding: 28px 30px; margin: 0 0 26px; }
+    h2 { margin: 0 0 14px; font-size: 26px; }
+    h3 { margin: 22px 0 8px; font-size: 19px; }
+    p { margin: 0 0 12px; }
+    table { width: 100%; border-collapse: collapse; margin: 14px 0 6px; font-size: 15px; }
+    th, td { padding: 10px 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #f1f2ea; font-weight: 700; }
+    code { background: #eef0e7; border: 1px solid var(--line); border-radius: 6px;
+           padding: 1px 6px; font-size: 0.92em; }
+    pre { background: #1b232d; color: #d7e3f0; border-radius: 12px;
+          padding: 16px 18px; overflow-x: auto; font-size: 14px; line-height: 1.55; }
+    .callout { border-radius: 12px; padding: 14px 18px; margin: 16px 0; border: 1px solid; }
+    .callout.gold  { background: var(--gold-soft);  border-color: #e3c94e; }
+    .callout.green { background: var(--green-soft); border-color: #9fd8bd; }
+    .callout.red   { background: var(--red-soft);   border-color: #eba79f; }
+    .callout.blue  { background: var(--blue-soft);  border-color: #a8c8e8; }
+    .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin: 14px 0; }
+    .card { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: #fcfcf8; }
+    .card h4 { margin: 0 0 6px; font-size: 16px; }
+    .card p { margin: 0; font-size: 14.5px; color: #3d4854; }
+    .tag { display: inline-block; font-size: 12px; font-weight: 800; padding: 2px 10px;
+           border-radius: 999px; margin-bottom: 8px; }
+    .tag.blue  { background: var(--blue-soft);  color: var(--blue); }
+    .tag.green { background: var(--green-soft); color: var(--green); }
+    .tag.red   { background: var(--red-soft);   color: var(--red); }
+    .tag.gold  { background: var(--gold-soft);  color: #8a6d00; }
+    footer { color: var(--muted); font-size: 14px; padding: 0 0 60px; }
+    a { color: var(--blue); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">Metafxclub RL Studio · Explainer 15</p>
+      <h1>Monte Carlo คืออะไร — และทำไมมีทั้งในหน้า Train และหน้า Backtest</h1>
+      <p class="sub">
+        เข้าใจกระบวนการ Monte Carlo ตั้งแต่แนวคิดพื้นฐาน กลไกที่ระบบใช้จริง
+        ไปจนถึงความต่างสำคัญระหว่าง MC ตอนเทรน (คัดกรอง recipe)
+        กับ MC ตอน backtest (ตัดสินขนาดทุนก่อน live)
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap">
+
+    <section id="concept">
+      <h2>1) Monte Carlo คือกระบวนการอะไร</h2>
+      <p>
+        Monte Carlo method ตั้งชื่อตามคาสิโนในโมนาโก — หลักการมีประโยคเดียว:
+      </p>
+      <div class="callout gold">
+        <strong>เมื่อคำนวณคำตอบตรงๆ ไม่ได้หรือยากเกินไป ให้ "สุ่มจำลอง" สถานการณ์นั้นหลายพันรอบ
+        แล้วอ่านคำตอบจาก "การกระจาย" ของผลลัพธ์แทน</strong>
+      </div>
+      <p>
+        ผลที่ได้ไม่ใช่ตัวเลขเดียว แต่เป็นช่วงความน่าจะเป็น เช่น แทนที่จะบอกว่า
+        "Max DD = -12.7%" (ค่าเดียวจากเหตุการณ์เดียว) Monte Carlo ตอบว่า
+        "Max DD มัธยฐาน -12.7%, มี 5% ของโลกที่เป็นไปได้ที่ลึกกว่า -16.5%,
+        และ 16% ของโลกทั้งหมดชน hard stop" — ข้อมูลแบบหลังใช้ตัดสินใจเรื่องเงินได้จริงกว่ามาก
+      </p>
+      <div class="grid">
+        <div class="card">
+          <span class="tag blue">ตัวอย่างคลาสสิก</span>
+          <h4>ประมาณค่า π ด้วยการโปรยจุด</h4>
+          <p>สุ่มจุดลงในสี่เหลี่ยมที่มีวงกลมอยู่ข้างใน นับสัดส่วนจุดที่ตกในวงกลม
+          → ยิ่งโปรยมาก ค่ายิ่งลู่เข้า π/4 — ไม่ต้องรู้สูตรอินทิเกรตเลย</p>
+        </div>
+        <div class="card">
+          <span class="tag green">ในการเงิน</span>
+          <h4>วัดความเสี่ยงพอร์ต</h4>
+          <p>ธนาคาร/กองทุนใช้ MC จำลองเส้นทางราคาหลายหมื่นเส้นเพื่อคำนวณ VaR
+          (Value at Risk) — คำถามเดียวกับของเรา: "โลกที่แย่ที่สุด 5% หน้าตาเป็นยังไง"</p>
+        </div>
+        <div class="card">
+          <span class="tag gold">หัวใจของวิธีนี้</span>
+          <h4>เปลี่ยน 1 sample → distribution</h4>
+          <p>เหตุการณ์ที่เกิดจริงคือแค่ 1 ตัวอย่างจากโลกที่เป็นไปได้ทั้งหมด
+          MC สร้างโลกที่เหลือขึ้นมาให้ดู เพื่อไม่ให้เราหลงเชื่อความบังเอิญ</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="why-trading">
+      <h2>2) ทำไม backtest ครั้งเดียวถึงไม่พอ</h2>
+      <p>
+        ผล backtest หนึ่งครั้งคือ trades ชุดหนึ่ง <strong>เรียงตามลำดับที่บังเอิญเกิดครั้งเดียว</strong>
+        สมมุติระบบแพ้ 8 ไม้ติดกันช่วงกลางปี — ถ้าความซวยชุดเดียวกันนี้มาต้นปีแทน
+        (ซึ่งเป็นไปได้พอๆ กัน) equity จะดิ่งตั้งแต่ยังไม่มีกำไรสะสมมารองรับ
+        → Max DD ลึกกว่าเดิมมาก ทั้งที่เป็น "trades ชุดเดียวกันเป๊ะ"
+      </p>
+      <p>
+        คำถามเรื่องเงิน (ตั้ง risk เท่าไหร่ / hard stop ตรงไหน / ทุนพอไหม)
+        จึงห้ามตอบจากลำดับเดียว — ต้องตอบจากการกระจายของทุกลำดับที่เป็นไปได้ นั่นคืองานของ MC
+      </p>
+    </section>
+
+    <section id="process">
+      <h2>3) กระบวนการที่ระบบใช้จริง — 2 probes</h2>
+
+      <h3>Probe A: Order Shuffle → การกระจายของ Drawdown</h3>
+      <pre>trades = [ +0.8%, -0.5%, +1.2%, -0.3%, ... ]   # ผลต่อ trade จากการรันจริง
+
+ทำซ้ำ 1,000 รอบ:
+    สลับลำดับ trades แบบสุ่ม
+    สร้าง equity curve ใหม่จากลำดับนั้น (ทบต้น)
+    บันทึก Max Drawdown ของเส้นนั้น
+
+ผลลัพธ์: การกระจายของ DD 1,000 ค่า
+    → median / 95% worst-case / worst / P(ชน hard stop)</pre>
+      <div class="callout blue">
+        <strong>ข้อเท็จจริงทางคณิตศาสตร์:</strong> กำไรปลายทางไม่เปลี่ยนตอนสลับลำดับ
+        เพราะผลคูณ (1+r₁)(1+r₂)... สลับที่ได้ — สิ่งเดียวที่เปลี่ยนคือ
+        <strong>เส้นทางระหว่างทาง (drawdown path)</strong> ระบบจึงรายงานเฉพาะ DD
+      </div>
+
+      <h3>Probe B: Skip Trades → Profit Retention (เกณฑ์สไตล์ SQX)</h3>
+      <pre>ทำซ้ำ 1,000 รอบ:
+    สุ่มตัด trades ทิ้ง 10% (ค่า MC Skip %)
+    คำนวณกำไรรวมจาก trades ที่เหลือ
+
+ผลลัพธ์: การกระจายของกำไร
+    → retention = กำไร p95-แย่สุด ÷ กำไรเต็ม   (ควร ≥ 70%)
+    → P(flip)  = โอกาสที่กำไรพลิกเป็นขาดทุน    (ควร &lt; 5%)</pre>
+      <p>
+        Probe นี้ตอบคำถาม "edge กระจุกอยู่ไม่กี่ไม้หรือเปล่า" — ถ้าตัด trade ทิ้งแค่ 10%
+        แล้วกำไรพังหมด แปลว่ากำไรทั้งระบบพึ่ง trade ทองไม่กี่ตัว = เปราะมากใน live
+        (ต่างจาก Probe A: การ "ตัด" trades ทำให้กำไรเปลี่ยนได้จริง จึงวัด retention ได้)
+      </p>
+    </section>
+
+    <section id="train-vs-backtest">
+      <h2>4) MC ใน Train vs MC ใน Backtest — ต่างกันยังไง</h2>
+      <p>
+        ระบบรัน Monte Carlo ใน 2 จุด ด้วยจุดประสงค์คนละอย่าง
+        ความต่างที่สำคัญที่สุดคือ <strong>trades ที่เอามาสุ่มมาจากคนละโลก</strong>:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>🎯 MC ตอน Train (quick eval)</th>
+            <th>📊 MC ตอน Backtest</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>รันเมื่อไหร่</th>
+            <td>อัตโนมัติทันทีที่เทรนจบ (ต่อท้าย quick eval)</td>
+            <td>ทุกครั้งที่กด Run Backtest / รัน Pipeline</td>
+          </tr>
+          <tr>
+            <th>Trades มาจากไหน</th>
+            <td><code>TradingEnv</code> — <strong>โลกอุดมคติ</strong>: ปิด position ที่ราคา close,
+                ไม่มี spread/commission/swap/slippage, ไม่มี SL/TP intrabar, ไม่มี lot sizing</td>
+            <td><code>SimAccount</code> — <strong>โลกจริง</strong>: costs ครบทุกชั้น,
+                SL/TP เช็คกับ high/low + M1 replay, risk-based lot sizing</td>
+          </tr>
+          <tr>
+            <th>Probes ที่รัน</th>
+            <td>Shuffle DD <strong>+ Skip Retention (SQX-style)</strong></td>
+            <td>Shuffle DD <strong>+ P(hit hard stop)</strong></td>
+          </tr>
+          <tr>
+            <th>คำถามที่ตอบ</th>
+            <td>"recipe นี้ edge กระจายดีไหม คุ้มที่จะ validate ต่อหรือเปล่า"
+                — เครื่องคัดกรองเร็วตั้งแต่ model เกิด</td>
+            <td>"ทุนเท่านี้ + risk เท่านี้ รอดไหม / โดนบังคับหยุดกี่ % ของโลกที่เป็นไปได้"
+                — เครื่องตัดสินใจใช้เงิน</td>
+          </tr>
+          <tr>
+            <th>ช่องตั้งค่า</th>
+            <td>หน้า Train → <code>MC Eval Runs</code> (default 1000, 0=ปิด) +
+                <code>MC Skip %</code> (default 10)</td>
+            <td>หน้า Backtest → Risk card → <code>Monte Carlo Shuffles</code>
+                (default 1000, 0=ปิด, ต้องมี ≥10 trades)</td>
+          </tr>
+          <tr>
+            <th>ผลเก็บที่ไหน</th>
+            <td><code>artifacts/models/&lt;name&gt;/&lt;name&gt;.train.json</code>
+                → key <code>quick_eval_mc</code></td>
+            <td>backtest meta JSON → <code>result.monte_carlo</code>
+                + โชว์ใน Full Report panel</td>
+          </tr>
+          <tr>
+            <th>เชื่อตัวเลขได้แค่ไหน</th>
+            <td>⚠️ DD ที่ได้ <strong>ต่ำกว่าจริงเสมอ</strong> (ไม่มี costs)
+                — ใช้เปรียบเทียบระหว่าง recipes เท่านั้น <strong>ห้ามใช้ตั้งขนาดทุน</strong></td>
+            <td>✅ ใกล้ความจริงที่สุดใน Python — ตัวเลขนี้แหละที่ใช้ตั้ง
+                risk% / hard stop ก่อนไป MT5 tester + demo</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout green">
+        <strong>จำง่ายๆ:</strong> Train MC = ตาชั่งเปรียบเทียบสูตร ("สูตร A robust กว่าสูตร B ไหม")
+        · Backtest MC = เครื่องวัดความปลอดภัยของเงินจริง ("ทุนหมื่นเหรียญ risk 1% รอดไหม")
+        — ตัวเลขจากตาชั่งเอาไปตั้งขนาดทุนไม่ได้ เพราะชั่งในโลกที่ไม่มีต้นทุน
+      </div>
+      <p>
+        เหตุผลที่ Skip Retention อยู่ฝั่ง Train: มันวัด "คุณภาพการกระจายของ edge"
+        ซึ่งเป็นคุณสมบัติของ recipe — รู้เร็วได้ตั้งแต่เกิดยิ่งดี ส่วน P(hard stop)
+        อยู่ฝั่ง Backtest เพราะ hard stop เป็นแนวคิดชั้น execution ที่มีความหมาย
+        ก็ต่อเมื่อ costs และ sizing เป็นของจริงแล้วเท่านั้น
+      </p>
+    </section>
+
+    <section id="reading">
+      <h2>5) เกณฑ์การอ่านผล (สรุปรวม)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ตัวเลข</th>
+            <th>มาจาก</th>
+            <th>เกณฑ์ผ่าน</th>
+            <th>ถ้าไม่ผ่าน</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Skip retention</td>
+            <td>Train MC</td>
+            <td>≥ 70% และ P(flip) &lt; 5%</td>
+            <td>edge กระจุก — แก้ features/reward/filter แล้วเทรนใหม่</td>
+          </tr>
+          <tr>
+            <td>DD 95% worst-case</td>
+            <td>Backtest MC</td>
+            <td>≤ 1.5× ของ DD ลำดับจริง และไม่เกิน tolerance ทุน</td>
+            <td>ลด Risk % ต่อ trade</td>
+          </tr>
+          <tr>
+            <td>P(hit hard stop)</td>
+            <td>Backtest MC</td>
+            <td>&lt; 5–10%</td>
+            <td>ลด risk หรือขยาย hard DD — <strong>ห้าม live จนกว่าผ่าน</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>ลำดับการใช้ใน workflow:</p>
+      <pre>Train จบ → Train MC ผ่าน (retention ok)     → คุ้มที่จะ validate ต่อ
+        → Backtest + realism ครบ (M1/swap)   → ผลจริง
+        → Backtest MC ผ่าน (P hard stop ต่ำ) → ขนาดทุน/risk ปลอดภัย
+        → Walk-Forward → MT5 real ticks → demo → live</pre>
+    </section>
+
+    <section id="limits">
+      <h2>6) ข้อจำกัด และ MC ชนิดอื่นที่ยังไม่ได้ทำ</h2>
+      <div class="callout red">
+        <strong>สมมุติฐานสำคัญ:</strong> MC แบบสลับลำดับถือว่า trades เป็นอิสระต่อกัน
+        แต่ตลาดจริงมี clustering — ช่วงแพ้มักกระจุกตาม regime เดียวกัน
+        ตัวเลขจึงเป็น estimate ที่ดี ไม่ใช่คำพยากรณ์ และต้องดูคู่กับ
+        Random Baseline (edge จริงไหม) + Significance (สถิติรองรับไหม) เสมอ
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>MC ชนิดอื่น (เทียบ SQX)</th>
+            <th>สถานะในระบบ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Shuffle trade order</td>
+            <td>✅ มี (ทั้ง Train และ Backtest)</td>
+          </tr>
+          <tr>
+            <td>Randomly skip trades</td>
+            <td>✅ มี (ฝั่ง Train — MC Skip %)</td>
+          </tr>
+          <tr>
+            <td>Randomize parameters</td>
+            <td>🟡 เทียบเท่าคือ grid_search + (อนาคต) seed ensemble:
+                เทรน recipe เดิมหลาย seed แล้วดูการกระจาย — ตอบคำถามใหญ่สุดของ RL
+                ว่า "recipe ดีจริง หรือ seed ถูกหวย"</td>
+          </tr>
+          <tr>
+            <td>Randomize price data</td>
+            <td>❌ ยังไม่มี — ใกล้เคียงสุดคือ obs-noise MC (เติม noise ใน features)
+                ซึ่งใน RL เอาไปใส่ตอนเทรนได้เลยด้วย (domain randomization)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="wrap">
+      อ่านต่อ: วิธีอ่าน block ผลจริงทีละบรรทัด →
+      <a href="../metafxclub studio guide/05_backtest_page_detail.html#montecarlo">Backtest guide §Monte Carlo</a>
+      · การตั้งค่าฝั่งเทรน → <a href="../metafxclub studio guide/04_train_page_detail.html">Train guide</a>
+      · เพื่อนร่วมทีม validation → <a href="../metafxclub studio guide/05_backtest_page_detail.html#baseline">Random Baseline</a>
+    </footer>
+
+  </main>
+</body>
+</html>

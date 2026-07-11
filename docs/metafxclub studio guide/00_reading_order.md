@@ -71,6 +71,7 @@
 - [DataCollector v4 Explained](../explainers/05_data_collector_v4_explained.html)
 - [Parity Config Explained](../explainers/06_parity_config_explained.html)
 - [RL Reward Explained](../explainers/07_rl_reward_explained.html)
+- [Monte Carlo Explained](../explainers/15_monte_carlo_explained.html) — MC คือกระบวนการอะไร และ MC ใน Train vs Backtest ต่างกันยังไง
 
 ## Future Deep-Dive Slots
 

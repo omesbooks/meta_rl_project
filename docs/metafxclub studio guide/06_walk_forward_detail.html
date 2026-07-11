@@ -232,6 +232,7 @@
         <a href="#not-model-file">ไม่ใช่ทดสอบ model file</a>
         <a href="#why-after-train">ทำไมอยู่หลัง Train</a>
         <a href="#mechanics">วิธีแบ่ง Window</a>
+        <a href="#simulated">ที่มาของตัวเลข PF/WR</a>
         <a href="#settings">ค่าบนหน้า Dashboard</a>
         <a href="#workflow">ขั้นตอนใช้งาน</a>
         <a href="#metrics">อ่านผล</a>
@@ -398,6 +399,100 @@
         <strong>หมายเหตุ:</strong>
         CLI รองรับ <code>anchored</code> ด้วย แต่หน้า Dashboard ปัจจุบันใช้ค่าเริ่มต้นแบบ rolling
         คือ train window เลื่อนไปข้างหน้าพร้อมกับ test window
+      </div>
+    </section>
+
+    <section id="simulated">
+      <h2>ตัวเลข PF / WR / Return / DD มาจากไหน ถ้ามันไม่ได้เทรดจริง</h2>
+      <p>
+        คำถามที่ถูกต้องมาก — Walk-Forward ไม่ได้ส่ง order ไปโบรกเกอร์จริง
+        แต่มันได้ตัวเลขพวกนี้มาจาก <strong>การเทรดจำลอง (simulated trading)</strong>
+        บนข้อมูล out-of-sample ที่ model เพิ่งเทรนเสร็จไม่เคยเห็นมาก่อน
+        (backtest ทุกชนิดในโลกก็ทำงานแบบนี้ — ต่างกันแค่ระดับความสมจริงของการจำลอง)
+      </p>
+      <h3>ลูปเทรดจำลองในแต่ละ window</h3>
+      <ol>
+        <li>model ที่เพิ่งเทรนเสร็จถูกปล่อยเข้า <code>TradingEnv</code>
+          บน test slice แบบ deterministic (ไม่สุ่ม action) ไล่ทีละ bar ตั้งแต่ต้นจนจบช่วง</li>
+        <li>แต่ละ bar agent ตัดสินใจ Buy / Sell / Hold —
+          env จำลองการเปิด-ปิด order โดยคิดต้นทุนจริง:
+          <strong>spread 0.02%</strong> (ราคาเข้าแย่กว่าราคาตลาดเสมอ) และ
+          <strong>commission 0.01%</strong> ต่อเทรด</li>
+        <li>ทุกครั้งที่ order ถูกปิด ระบบบันทึกกำไร/ขาดทุนสุทธิเป็น % ลงลิสต์ trades
+          และอัปเดตเส้น equity ทุก bar</li>
+      </ol>
+      <p>จบ window หนึ่งก็จะมี "สมุดบันทึกเทรดจำลอง" ครบชุด แล้ว metrics ทั้ง 4 ตัวคำนวณจากมันตรง ๆ:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>คำนวณจากเทรดจำลองยังไง</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>WR</strong></td>
+            <td>จำนวนเทรดที่กำไร ÷ เทรดทั้งหมดใน test slice นั้น</td>
+          </tr>
+          <tr>
+            <td><strong>PF</strong></td>
+            <td>ผลรวมกำไรของไม้ที่ชนะ ÷ ผลรวมขาดทุนของไม้ที่แพ้ (คิดหลังหัก spread+commission แล้ว)</td>
+          </tr>
+          <tr>
+            <td><strong>Return</strong></td>
+            <td>equity สุดท้าย − 1 (ทบต้นจากทุกเทรดในช่วงนั้น)</td>
+          </tr>
+          <tr>
+            <td><strong>DD</strong></td>
+            <td>จุดที่เส้น equity ร่วงจาก peak ลึกที่สุดระหว่างช่วง test</td>
+          </tr>
+        </tbody>
+      </table>
+      <h3>แล้วทำไมตัวเลขมักดูดีกว่าหน้า Backtest</h3>
+      <p>
+        เพราะการจำลองใน Walk-Forward ใช้ env เดียวกับตอนเทรน
+        ซึ่งเบากว่าหน้า Backtest โดยตั้งใจ — คำถามของหน้านี้คือ
+        "สูตรเทรนสม่ำเสมอไหม" ไม่ใช่ "P&amp;L สมจริงเท่าไหร่":
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>ต้นทุน / กลไก</th>
+            <th>Walk-Forward (TradingEnv)</th>
+            <th>หน้า Backtest (SimAccount)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Spread + Commission</td>
+            <td>✅ มี</td>
+            <td>✅ มี</td>
+          </tr>
+          <tr>
+            <td>ATR SL/TP + Intrabar / M1 replay</td>
+            <td>— (เช็คจากราคาปิดเท่านั้น)</td>
+            <td>✅ มี</td>
+          </tr>
+          <tr>
+            <td>Stop Slippage / Swap ข้ามคืน</td>
+            <td>—</td>
+            <td>✅ มี</td>
+          </tr>
+          <tr>
+            <td>Random Baseline / Monte Carlo</td>
+            <td>—</td>
+            <td>✅ มี</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="formula">
+        Walk-Forward ผ่าน = "สูตรเทรน" ใช้ได้ → Backtest ผ่าน = "model ตัวนี้" ใช้ได้ — ต้องอ่านคู่กันเสมอ
+      </div>
+      <div class="callout">
+        <strong>สรุปสั้น:</strong> ตัวเลขทุกตัวเป็นผลของเทรดจำลองบนข้อมูลที่ model ไม่เคยเห็น
+        ไม่ใช่การเทรดเงินจริง — และไม่ใช่การเดาสุ่ม เพราะทุกไม้ผ่านต้นทุน spread+commission
+        เหมือนที่ model เจอตอนเทรน จุดแข็งของมันคือความสม่ำเสมอข้ามช่วงเวลา
+        ส่วนความสมจริงเต็มรูปแบบเป็นหน้าที่ของหน้า Backtest และ MT5 Strategy Tester
       </div>
     </section>
 

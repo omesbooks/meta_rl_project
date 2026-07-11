@@ -39,7 +39,14 @@ def main():
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
         df = df.sort_values("timestamp").reset_index(drop=True)
 
-    norm = pd.read_csv(f"{args.model}_norm.csv", index_col=0)
+    # Resolve artifacts via artifact_paths (post-reorg layout with legacy fallback)
+    from artifact_paths import find_norm_path, find_model_path
+    norm_path = find_norm_path(args.model)
+    if norm_path is None or not Path(norm_path).exists():
+        print(f"ERROR: norm stats not found for model '{args.model}' "
+              f"(looked in artifacts/models/{args.model}/ and repo root)")
+        sys.exit(1)
+    norm = pd.read_csv(norm_path, index_col=0)
     for c in feature_cols:
         if c in norm.index:
             df[c] = (df[c] - norm.at[c, "mean"]) / (norm.at[c, "std"] + 1e-8)
@@ -50,11 +57,32 @@ def main():
 
     from stable_baselines3 import PPO
     import torch
-    print(f"[load] {args.model}.zip")
-    model = PPO.load(f"{args.model}.zip")
+    model_path = find_model_path(args.model, "final")
+    if model_path is None or not Path(model_path).exists():
+        print(f"ERROR: model zip not found for '{args.model}'")
+        sys.exit(1)
+    print(f"[load] {model_path}")
+    model = PPO.load(str(model_path))
 
-    env = TradingEnv(test_df, feature_cols, window_size=args.window,
-                     max_steps=len(test_df) - args.window - 2,
+    # Auto-detect window from the model's observation space (same rule as
+    # backtest_live): obs_dim = window * n_features + 3
+    obs_dim = int(model.observation_space.shape[0])
+    n_feat = len(feature_cols)
+    detected = (obs_dim - 3) // n_feat if n_feat > 0 else 0
+    if detected > 0 and (obs_dim - 3) % n_feat == 0:
+        if args.window > 0 and args.window != detected:
+            print(f"[window] --window {args.window} != model's {detected}; using {detected}")
+        window = detected
+    else:
+        window = args.window if args.window > 0 else 10
+        if window * n_feat + 3 != obs_dim:
+            print(f"\nERROR: model/dataset feature mismatch")
+            print(f"  model expects obs_dim={obs_dim}, dataset provides {n_feat} features")
+            print(f"  -> pick the dataset this model was trained on")
+            sys.exit(1)
+
+    env = TradingEnv(test_df, feature_cols, window_size=window,
+                     max_steps=len(test_df) - window - 2,
                      max_hold_bars=args.max_hold, reward_mode="realized")
     obs, _ = env.reset()
 

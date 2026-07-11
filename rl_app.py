@@ -899,18 +899,33 @@ class RLTradingStudio(ctk.CTk):
     def _find_matching_m1(self, csv_name):
         """Find the companion _m1.csv for a dataset, if one exists in the project.
 
-        Checks <stem>_m1.csv first; for built training files
-        (training_data_<collector_stem>.csv) also tries the collector's
-        original <collector_stem>_m1.csv."""
+        Derived datasets (date-split _train/_test, _relabeled, _clean, regime
+        _from_<date>, built training_data_<stem>) inherit the ORIGINAL
+        collector's M1 file: M1Resolver slices by timestamp, so the full M1
+        covers any time-subset — no need to split/copy the (huge) M1 file.
+        Walks the name ancestry until an <ancestor>_m1.csv is found."""
         if not csv_name or csv_name == "(none)":
             return None
-        stem = Path(csv_name).stem
-        candidates = [f"{stem}_m1.csv"]
-        if stem.startswith("training_data_"):
-            candidates.append(f"{stem[len('training_data_'):]}_m1.csv")
-        for cand in candidates:
-            if (WORK_DIR / cand).exists():
-                return cand
+        import re
+        seen = set()
+        queue = [Path(csv_name).stem]
+        while queue:
+            s = queue.pop(0)
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            cand = WORK_DIR / f"{s}_m1.csv"
+            if cand.exists():
+                return cand.name
+            # ancestors: strip known derived-name decorations
+            if s.startswith("training_data_"):
+                queue.append(s[len("training_data_"):])
+            for suf in ("_train", "_test", "_relabeled", "_clean", "_enriched"):
+                if s.endswith(suf):
+                    queue.append(s[:-len(suf)])
+            m = re.match(r"^(.*)_from_\d{4}-\d{2}-\d{2}$", s)
+            if m:
+                queue.append(m.group(1))
         return None
 
     def _csv_row_count(self, csv_name):
@@ -3072,6 +3087,12 @@ class RLTradingStudio(ctk.CTk):
             placeholder_text="training_data_<symbol>_rl.csv")
         self.tool_collector_out.grid(row=1, column=0, sticky="ew")
 
+        self.tool_import_m1 = ctk.CTkCheckBox(opts1,
+            text="Import M1 execution data ด้วย (ถ้ามี _m1.csv คู่กัน — ใช้กับ Backtest M1 replay)",
+            font=ctk.CTkFont(size=11))
+        self.tool_import_m1.select()
+        self.tool_import_m1.grid(row=2, column=0, sticky="w", pady=(8, 0))
+
         ctk.CTkButton(c1, text="📥 Import CSV + params",
             command=self._import_from_collector,
             fg_color=COLOR_ACCENT, hover_color="#4493f8",
@@ -3405,9 +3426,15 @@ class RLTradingStudio(ctk.CTk):
             # 2) Copy params.json (if exists)
             copied_paths = [raw_copy]
 
-            # 2b) Copy <base>_m1.csv (if collector dumped M1 execution data)
+            # 2b) Copy <base>_m1.csv (if collector dumped M1 execution data
+            #     and the user left the "Import M1" checkbox on)
+            want_m1 = True
+            try:
+                want_m1 = bool(self.tool_import_m1.get())
+            except Exception:
+                pass
             src_m1 = src_csv.parent / f"{src_csv.stem}_m1.csv"
-            if src_m1.exists():
+            if want_m1 and src_m1.exists():
                 dst_m1 = WORK_DIR / f"{raw_copy.stem}_m1.csv"
                 shutil.copy(src_m1, dst_m1)
                 copied_paths.append(dst_m1)

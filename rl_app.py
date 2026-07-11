@@ -896,6 +896,25 @@ class RLTradingStudio(ctk.CTk):
             self._file_cache["models"] = sorted(models) or ["(none)"]
         return self._file_cache["models"]
 
+    def _update_pipe_m1_hint(self):
+        """Show which M1 file the Pipeline's backtest stage will auto-attach."""
+        if not hasattr(self, "pipe_use_m1"):
+            return
+        try:
+            bt = (self.pipe_bt_csv.get() or "").strip()
+            if bt in ("", "(none)") and hasattr(self, "pipe_csv"):
+                bt = (self.pipe_csv.get() or "").strip()
+            m1 = self._find_matching_m1(bt)
+            if m1:
+                self.pipe_use_m1.configure(
+                    text=f"M1 replay: {m1} (auto-detect)", state="normal")
+            else:
+                self.pipe_use_m1.configure(
+                    text="M1 replay: ไม่พบไฟล์ _m1 คู่กัน — ใช้ intrabar assumption",
+                    state="disabled")
+        except Exception:
+            pass
+
     def _find_matching_m1(self, csv_name):
         """Find the companion _m1.csv for a dataset, if one exists in the project.
 
@@ -1192,6 +1211,7 @@ class RLTradingStudio(ctk.CTk):
         elif key == "pipeline":
             self._refresh_dropdowns()
             self._refresh_model_comparison()
+            self._update_pipe_m1_hint()
             self._on_pipeline_train_csv_change()
         elif key in ("backtest", "walkfwd", "finetune", "analyze"):
             self._refresh_dropdowns()
@@ -1334,10 +1354,20 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(setup, text="Backtest CSV", text_color=COLOR_DIM).grid(
             row=2, column=0, sticky="w", padx=18, pady=6)
-        self.pipe_bt_csv = ScrollableOptionMenu(setup, values=csvs, width=260)
-        self.pipe_bt_csv.grid(row=2, column=1, sticky="ew", padx=(8, 18), pady=6)
+        bt_csv_box = ctk.CTkFrame(setup, fg_color="transparent")
+        bt_csv_box.grid(row=2, column=1, sticky="ew", padx=(8, 18), pady=6)
+        bt_csv_box.grid_columnconfigure(0, weight=1)
+        self.pipe_bt_csv = ScrollableOptionMenu(bt_csv_box, values=csvs, width=260,
+            command=lambda _: self._update_pipe_m1_hint())
+        self.pipe_bt_csv.grid(row=0, column=0, sticky="ew")
         if csvs[0] != "(none)":
             self.pipe_bt_csv.set(csvs[0])
+        # M1 replay for the backtest stage: visible + controllable
+        self.pipe_use_m1 = ctk.CTkCheckBox(bt_csv_box,
+            text="M1 replay: (เลือก CSV ก่อน)",
+            font=ctk.CTkFont(size=10))
+        self.pipe_use_m1.select()
+        self.pipe_use_m1.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
         ctk.CTkLabel(setup, text="Train pct", text_color=COLOR_DIM).grid(
             row=2, column=2, sticky="w", padx=18, pady=6)
@@ -2088,6 +2118,11 @@ class RLTradingStudio(ctk.CTk):
         hparams = self._get_pipeline_hparams()
         if hparams is None:
             return
+        # M1 replay toggle for the backtest stage (visible checkbox)
+        try:
+            hparams["use_m1"] = bool(self.pipe_use_m1.get())
+        except Exception:
+            hparams["use_m1"] = True
         hparams.update({
             "bt_start": str(bt_start),
             "risk": str(risk),
@@ -2210,7 +2245,8 @@ class RLTradingStudio(ctk.CTk):
                 "--start", hparams.get("bt_start", "0"),
                 "--mode", mode,
             ]
-            m1_file = self._find_matching_m1(bt_csv)
+            m1_file = (self._find_matching_m1(bt_csv)
+                       if hparams.get("use_m1", True) else None)
             if m1_file:
                 backtest_cmd += ["--m1_csv", m1_file]
             # Statistical validation — same defaults as the Backtest page

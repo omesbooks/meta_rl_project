@@ -2941,11 +2941,14 @@ class RLTradingStudio(ctk.CTk):
         if not equity_path:
             self.pipeline_equity_image = None
             self._pipeline_equity_image_sig = None
+            if row.get("source") == "model only":
+                msg = (f"'{row['model']}' เทรนแล้วแต่ยังไม่เคย backtest\n"
+                       f"→ ไปหน้า Backtest เลือก model นี้ + dataset ที่เทรนมา แล้วรัน\n"
+                       f"(แถวที่ Result source = 'live backtest' เท่านั้นที่มี equity curve)")
+            else:
+                msg = f"No equity image found for {row['model']}. Run backtest first."
             self.pipeline_equity_label.configure(
-                image=None,
-                text=f"No equity image found for {row['model']}. Run backtest first.",
-                text_color=COLOR_DIM,
-            )
+                image=None, text=msg, text_color=COLOR_DIM)
             return
 
         try:

@@ -381,6 +381,7 @@ the post-Brexit subset removes the distribution shift.
 - `docs/codex_custom_action_prompts.md` — prompt for asking Codex to add/change an Action
   Profile across train/backtest/fine-tune/walk-forward/export/EA consistently.
 - `docs/explainers/11_production_readme.md` — full 5-step production deployment guide.
+- `docs/metafxclub studio guide/12_monte_carlo_deep_dive.html` — what the MC process is, the two probes (shuffle-DD, skip-retention), and the Train-MC vs Backtest-MC comparison (idealized env trades vs full-cost SimAccount trades; screening vs capital sizing).
 - `mt5_files/README_ONNX_Setup.md` — MT5 ONNX setup.
 - `mt5_files/MQL5/Indicators/README_CandlePatterns.md` — candle pattern reference.
 - `graphify-out/GRAPH_REPORT.md` — knowledge graph (god nodes, communities, gaps). Regenerate with `/graphify` or `/graphify . --update`.
@@ -388,7 +389,6 @@ the post-Brexit subset removes the distribution shift.
 
 ### Background explainers (`docs/explainers/`, open in browser)
 - `07_rl_reward_explained.html` — the reward terms + how reward profiles re-weight them.
-- `15_monte_carlo_explained.html` — what the MC process is, the two probes (shuffle-DD, skip-retention), and the Train-MC vs Backtest-MC comparison (idealized env trades vs full-cost SimAccount trades; screening vs capital sizing).
 - `04_data_tools_modules_explained.html` — the Data Tools page modules.
 - `06_parity_config_explained.html` — why `.params.json` sidecars exist and how `RL_ApplyDataCollectorConfig` works.
 - `05_data_collector_v4_explained.html` — legacy v4 collector; current workflow uses `DataCollector_RL.mq5`.

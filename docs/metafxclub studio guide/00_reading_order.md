@@ -48,6 +48,10 @@
     - บทละเอียดหน้า Models: ตารางเปรียบเทียบ model, คอลัมน์ Realism (M1 / guess %),
       equity viewer และหลักการเลือก model ไป deploy
 
+12. [12_monte_carlo_deep_dive.html](12_monte_carlo_deep_dive.html)
+    - Deep dive แนวคิด Monte Carlo: กระบวนการคืออะไร, 2 probes ที่ระบบใช้ (shuffle DD / skip retention)
+    - ตารางเทียบ MC ตอน Train (ตาชั่งเปรียบเทียบสูตร) vs ตอน Backtest (เครื่องวัดความปลอดภัยของเงิน)
+
 ## Codex Prompt Files
 
 - [Codex Git Update Prompt](../codex_git_update_prompts.md)
@@ -71,13 +75,12 @@
 - [DataCollector v4 Explained](../explainers/05_data_collector_v4_explained.html)
 - [Parity Config Explained](../explainers/06_parity_config_explained.html)
 - [RL Reward Explained](../explainers/07_rl_reward_explained.html)
-- [Monte Carlo Explained](../explainers/15_monte_carlo_explained.html) — MC คือกระบวนการอะไร และ MC ใน Train vs Backtest ต่างกันยังไง
 
 ## Future Deep-Dive Slots
 
 ไฟล์ที่จะทำต่อในโฟลเดอร์นี้ควรเป็นไฟล์ที่แตกจาก flow หลักโดยตรง:
 
-- `12_export_mt5_detail.html` สำหรับสอน export ONNX, config, EA และการเอาไปใช้ใน MT5 Strategy Tester (ยังไม่เขียน — เลขถัดจาก 11)
+- `13_export_mt5_detail.html` สำหรับสอน export ONNX, config, EA และการเอาไปใช้ใน MT5 Strategy Tester (ยังไม่เขียน — เลขถัดจาก 12)
 
 ## Rule For This Folder
 

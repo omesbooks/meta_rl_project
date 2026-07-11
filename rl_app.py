@@ -1217,6 +1217,8 @@ class RLTradingStudio(ctk.CTk):
             self._refresh_dropdowns()
             if key == "backtest":
                 self._schedule_backtest_skip_hint_update(0)
+            elif key == "finetune":
+                self._update_ft_recipe_hint()
 
     def _bind_entry_focus_fix(self, root):
         """Keep CTkEntry responsive inside scrollable pages and custom popups."""
@@ -7451,8 +7453,16 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(c1, text="Existing Model", text_color=COLOR_DIM
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
         self.ft_base = ScrollableOptionMenu(c1, values=["(none)"],
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.ft_base.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            command=lambda _v=None: self._update_ft_recipe_hint())
+        self.ft_base.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 4))
+        # Inherited recipe — fine-tune keeps the base model's recipe by design
+        # (action profile can't change: output dim; reward change = retrain)
+        self.ft_recipe_hint = ctk.CTkLabel(c1,
+            text="เลือก base model เพื่อดูสูตรที่จะสืบทอด (reward / action / window / max hold)",
+            font=ctk.CTkFont(size=11), text_color=COLOR_DIM,
+            wraplength=1100, justify="left")
+        self.ft_recipe_hint.grid(row=3, column=0, sticky="w", padx=18, pady=(0, 16))
 
         # Data
         c2 = Card(page, title="📊 Data")
@@ -7478,19 +7488,39 @@ class RLTradingStudio(ctk.CTk):
         c3.grid_columnconfigure(1, weight=1)
         c3.grid_columnconfigure(2, weight=1)
 
-        ctk.CTkLabel(c3, text="Mix Ratio (old %)", text_color=COLOR_DIM
+        ctk.CTkLabel(c3, text="Mode", text_color=COLOR_DIM
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
-        ctk.CTkLabel(c3, text="Steps", text_color=COLOR_DIM
+        ctk.CTkLabel(c3, text="Mix Ratio (old %)", text_color=COLOR_DIM
                       ).grid(row=1, column=1, sticky="w", padx=8, pady=(8, 4))
-        ctk.CTkLabel(c3, text="New Model Name", text_color=COLOR_DIM
+        ctk.CTkLabel(c3, text="Learning Rate", text_color=COLOR_DIM
                       ).grid(row=1, column=2, sticky="w", padx=18, pady=(8, 4))
 
+        self.ft_mode = ctk.CTkOptionMenu(c3,
+            values=["mixed (old+new ⭐)", "pure (new only)", "replay (old only)"],
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            command=lambda _v=None: self._update_ft_mode_hint())
+        self.ft_mode.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 4))
         self.ft_mix = ctk.CTkEntry(c3); self.ft_mix.insert(0, "0.3")
-        self.ft_mix.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.ft_mix.grid(row=2, column=1, sticky="ew", padx=8, pady=(0, 4))
+        self.ft_lr = ctk.CTkEntry(c3, placeholder_text="1e-4")
+        self.ft_lr.insert(0, "1e-4")
+        self.ft_lr.grid(row=2, column=2, sticky="ew", padx=18, pady=(0, 4))
+
+        self.ft_mode_hint = ctk.CTkLabel(c3,
+            text="mixed: ผสม data เก่าตาม ratio กันลืมของเดิม · LR ต่ำ (1e-4) คือหัวใจของ fine-tune — สูงไป = ลืมของเก่า (catastrophic forgetting)",
+            font=ctk.CTkFont(size=11), text_color=COLOR_DIM,
+            wraplength=1100, justify="left")
+        self.ft_mode_hint.grid(row=3, column=0, columnspan=3, sticky="w",
+                               padx=18, pady=(0, 12))
+
+        ctk.CTkLabel(c3, text="Steps", text_color=COLOR_DIM
+                      ).grid(row=4, column=0, sticky="w", padx=18, pady=(0, 4))
+        ctk.CTkLabel(c3, text="New Model Name", text_color=COLOR_DIM
+                      ).grid(row=4, column=1, sticky="w", padx=8, pady=(0, 4))
         self.ft_steps = ctk.CTkEntry(c3); self.ft_steps.insert(0, "50000")
-        self.ft_steps.grid(row=2, column=1, sticky="ew", padx=8, pady=(0, 16))
+        self.ft_steps.grid(row=5, column=0, sticky="ew", padx=18, pady=(0, 16))
         self.ft_name = ctk.CTkEntry(c3); self.ft_name.insert(0, "rl_prod_v2")
-        self.ft_name.grid(row=2, column=2, sticky="ew", padx=18, pady=(0, 16))
+        self.ft_name.grid(row=5, column=1, sticky="ew", padx=8, pady=(0, 16))
 
         self.ft_run_btn = ctk.CTkButton(page,
             text="▶ Start Fine-tuning (~10 min)",
@@ -7506,6 +7536,48 @@ class RLTradingStudio(ctk.CTk):
         log_frame = ctk.CTkFrame(c4, fg_color="#0a0e14", corner_radius=8)
         log_frame.grid(row=1, column=0, sticky="ew", padx=18, pady=(8, 16))
         self.ft_log = self._make_log_widget(log_frame, height=10)
+
+    def _update_ft_recipe_hint(self):
+        """Show the recipe the selected base model will hand down to fine-tune."""
+        if not hasattr(self, "ft_recipe_hint"):
+            return
+        base = self.ft_base.get()
+        if base in ("(none)", ""):
+            self.ft_recipe_hint.configure(
+                text="เลือก base model เพื่อดูสูตรที่จะสืบทอด (reward / action / window / max hold)")
+            return
+        try:
+            from artifact_paths import train_meta_path
+            mp = train_meta_path(base)
+            if not mp.exists():
+                self.ft_recipe_hint.configure(
+                    text=f"⚠ ไม่พบ meta ของ {base} — จะ fine-tune ด้วยค่า default "
+                         "(balanced / basic_4) ซึ่งอาจไม่ตรงกับสูตรที่ model นี้ถูกเทรนมา")
+                return
+            hp = json.loads(mp.read_text(encoding="utf-8")).get("hyperparameters", {})
+            cfg = hp.get("reward_profile_config") or {}
+            formula = (hp.get("reward_formula") or "").strip()
+            parts = [
+                f"reward: {hp.get('reward_mode', 'realized')}/{hp.get('reward_profile', 'balanced')}"
+                + (" +formula" if formula else ""),
+                f"action: {hp.get('action_profile', 'basic_4')}",
+                f"window: {hp.get('window', '?')}",
+                f"max hold: {hp.get('max_hold', '?')}",
+            ]
+            self.ft_recipe_hint.configure(
+                text="สืบทอดจาก base model → " + " · ".join(parts)
+                     + " (fine-tune ใช้สูตรเดิมเสมอ — เปลี่ยน reward/action = ต้อง retrain)")
+        except Exception as e:
+            self.ft_recipe_hint.configure(text=f"⚠ อ่าน meta ไม่ได้: {e}")
+
+    def _update_ft_mode_hint(self):
+        mode = self.ft_mode.get().split()[0]
+        hints = {
+            "mixed": "mixed: ผสม data เก่าตาม ratio กันลืมของเดิม · LR ต่ำ (1e-4) คือหัวใจของ fine-tune — สูงไป = ลืมของเก่า (catastrophic forgetting)",
+            "pure": "pure: เทรนต่อด้วย data ใหม่ล้วน (Mix Ratio ไม่ถูกใช้) — เร็วแต่เสี่ยง catastrophic forgetting ที่สุด ใช้เมื่อ regime เปลี่ยนจริงเท่านั้น",
+            "replay": "replay: ทบทวน data เก่าอย่างเดียว (New CSV ไม่ถูกใช้ในการเทรน) — ไว้กู้ model ที่เริ่มเพี้ยนให้กลับมานิสัยเดิม",
+        }
+        self.ft_mode_hint.configure(text=hints.get(mode, hints["mixed"]))
 
     def _run_finetune(self):
         if self._is_process_busy():
@@ -7523,7 +7595,9 @@ class RLTradingStudio(ctk.CTk):
             sys.executable, "rl_finetune.py", base,
             "--old_csv", old,
             "--new_csv", new,
+            "--mode", self.ft_mode.get().split()[0],
             "--mix_ratio", self.ft_mix.get() or "0.3",
+            "--lr", self.ft_lr.get() or "1e-4",
             "--steps", self.ft_steps.get() or "50000",
             "--name", self.ft_name.get() or "rl_prod_v2",
         ]

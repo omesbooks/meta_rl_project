@@ -367,9 +367,10 @@
           <div class="num">3</div>
           <div>
             <span class="tag green">Settings</span>
-            <h3>ตั้ง Mix Ratio, Steps, ชื่อใหม่</h3>
+            <h3>ตั้ง Mode, Mix Ratio, Learning Rate, Steps, ชื่อใหม่</h3>
             <p>
-              ค่าเริ่มต้น <code>Mix Ratio = 0.3</code>, <code>Steps = 50000</code> ใช้ได้เลยเกือบทุกเคส
+              ค่าเริ่มต้น <code>Mode = mixed</code>, <code>Mix Ratio = 0.3</code>,
+              <code>LR = 1e-4</code>, <code>Steps = 50000</code> ใช้ได้เลยเกือบทุกเคส
               ที่สำคัญคือ <code>New Model Name</code> — ตั้งชื่อใหม่เสมอ (เช่น <code>rl_uj_h4_v2</code>)
               อย่าใช้ชื่อเดียวกับ base เพราะจะเสีย model เดิมที่ไว้เทียบ/rollback
             </p>
@@ -415,7 +416,22 @@
           <tr>
             <td>Base Model (Existing Model)</td>
             <td>model เดิมที่จะโหลด weights มา train ต่อ</td>
-            <td>เลือกตัวที่ผ่าน Backtest แล้ว — ระบบอ่าน window, action profile, reward จาก metadata ของตัวนี้ทั้งหมด</td>
+            <td>เลือกตัวที่ผ่าน Backtest แล้ว — ระบบอ่าน window, action profile, reward
+            จาก metadata ของตัวนี้ทั้งหมด และมีบรรทัด hint ใต้ dropdown
+            สรุปสูตรที่จะสืบทอดให้เห็นทันที (reward / action / window / max hold)</td>
+          </tr>
+          <tr>
+            <td>Mode</td>
+            <td><code>mixed</code> ผสมเก่า+ใหม่ตาม ratio · <code>pure</code> ใช้ data ใหม่ล้วน
+            (Mix Ratio ไม่ถูกใช้) · <code>replay</code> ทบทวน data เก่าอย่างเดียว</td>
+            <td>ใช้ <code>mixed</code> เกือบทุกเคส — <code>pure</code> เฉพาะเมื่อ regime
+            เปลี่ยนจริงจนของเก่าเป็นพิษ, <code>replay</code> ไว้กู้ model ที่เริ่มเพี้ยน</td>
+          </tr>
+          <tr>
+            <td>Learning Rate</td>
+            <td>ขนาดก้าวของการปรับ weights ต่อรอบ</td>
+            <td>เริ่ม <code>1e-4</code> (ต่ำกว่า train scratch ~3 เท่า) — สูงไป = ลืมของเก่า
+            (catastrophic forgetting), ถ้ายังลืมอยู่ลองลดเป็น <code>5e-5</code></td>
           </tr>
           <tr>
             <td>Old Data CSV</td>
@@ -458,16 +474,6 @@
         </thead>
         <tbody>
           <tr>
-            <td>Learning rate</td>
-            <td><code>1e-4</code></td>
-            <td>ต่ำกว่า train scratch (<code>3e-4</code>) ~3 เท่า เพื่อ "ค่อย ๆ ขยับ" weights เดิม ไม่ทุบทิ้ง</td>
-          </tr>
-          <tr>
-            <td>Mode</td>
-            <td><code>mixed</code></td>
-            <td>ผสมเก่า+ใหม่กันลืม (CLI มี <code>pure</code>/<code>replay</code> ให้เลือกด้วย แต่ GUI ใช้ mixed เสมอ)</td>
-          </tr>
-          <tr>
             <td>Window / Max Hold / Ep Len</td>
             <td>ตาม base model</td>
             <td>อ่านจาก <code>train_meta.json</code> ของ base — เปลี่ยนไม่ได้เพราะผูกกับ observation shape</td>
@@ -477,13 +483,19 @@
             <td>ตาม base model</td>
             <td>เปลี่ยน reward กลางทาง = ย้ายเป้าหมายให้ policy เดิม ผลจะเพี้ยน จึงล็อกตาม base</td>
           </tr>
+          <tr>
+            <td>PPO hyperparameters อื่น ๆ</td>
+            <td>ตาม base model</td>
+            <td>ติดมากับไฟล์ model ตอน <code>PPO.load</code> อยู่แล้ว (ยกเว้น LR ที่ตั้งใหม่ได้จากช่องในหน้า)</td>
+          </tr>
         </tbody>
       </table>
       <div class="callout">
         <strong>คำสั่งที่ GUI รันจริง:</strong>
-        <code>python rl_finetune.py &lt;base&gt; --old_csv &lt;old&gt; --new_csv &lt;new&gt; --mix_ratio 0.3 --steps 50000 --name &lt;new_name&gt;</code>
-        — ถ้าอยากใช้โหมดพิเศษ (<code>--mode pure</code>, <code>--lr</code>, <code>--ep_len</code>)
-        รันเองจาก command line ได้ด้วย argument เดียวกัน
+        <code>python rl_finetune.py &lt;base&gt; --old_csv &lt;old&gt; --new_csv &lt;new&gt;
+        --mode mixed --mix_ratio 0.3 --lr 1e-4 --steps 50000 --name &lt;new_name&gt;</code>
+        — เหลือเฉพาะ <code>--window/--max_hold/--ep_len</code> ที่ override ได้จาก
+        command line เท่านั้น (จงใจไม่มีช่องใน GUI เพราะเสี่ยง mismatch กับ base model)
       </div>
     </section>
 

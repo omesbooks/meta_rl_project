@@ -847,6 +847,57 @@ class RLTradingStudio(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.show_page("train")
         self._poll_queue()
+        # CTk widget creation is slow (1.5-7s per page) — prebuild the
+        # remaining pages during post-startup idle so the first click on
+        # each tab doesn't freeze the UI. Heaviest/most-used pages first.
+        prio = ["tools", "models", "backtest", "walkfwd", "pipeline",
+                "settings", "regime", "finetune", "analyze"]
+        known = [k for k in prio if k in self._page_builders]
+        rest = [k for k in self._page_builders if k not in prio]
+        self._prebuild_queue = [k for k in known + rest if k not in self.pages]
+        self.after(1500, self._prebuild_next_page)
+
+    def _prebuild_next_page(self):
+        """Build one queued page per idle tick (see __init__ note).
+
+        Skips pages the user already opened; postpones while a subprocess is
+        running so a multi-second build never freezes live log streaming."""
+        queue_ = getattr(self, "_prebuild_queue", None)
+        if not queue_:
+            return
+        try:
+            if self._is_process_busy():
+                self.after(3000, self._prebuild_next_page)
+                return
+        except Exception:
+            pass
+        while queue_:
+            key = queue_.pop(0)
+            already_warm = key in self.pages and self.pages[key].winfo_ismapped()
+            if already_warm:
+                continue  # user beat us to it
+            if key not in self.pages:
+                builder = self._page_builders.get(key)
+                if builder:
+                    try:
+                        builder()
+                    except Exception:
+                        pass
+            # Creation alone skips most of CTk's canvas work — the real cost
+            # is the first draw at mapping. Warm it up hidden UNDER the
+            # current page (same cell, lowered), then unmap again.
+            page = self.pages.get(key)
+            if page is not None and key != self.current_page:
+                try:
+                    page.grid(row=0, column=0, sticky="nsew", padx=30, pady=20)
+                    page.lower()
+                    self.update_idletasks()
+                    page.grid_remove()
+                except Exception:
+                    pass
+            break
+        if queue_:
+            self.after(400, self._prebuild_next_page)
 
     # ---------- Branding helpers ----------
     def _set_window_icon(self):

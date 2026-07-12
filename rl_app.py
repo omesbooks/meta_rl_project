@@ -7732,7 +7732,7 @@ class RLTradingStudio(ctk.CTk):
 
         # Per-window equity curves + WR/PF chart (PNG rendered after each run)
         self.wf_chart_label = ctk.CTkLabel(c2, text="")
-        self.wf_chart_label.grid(row=3, column=0, sticky="w", padx=18, pady=(0, 8))
+        self.wf_chart_label.grid(row=3, column=0, padx=18, pady=(0, 8))
 
         log_frame = ctk.CTkFrame(c2, fg_color="#0a0e14", corner_radius=8)
         log_frame.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 16))

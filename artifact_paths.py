@@ -88,6 +88,11 @@ def equity_path(model_name: str) -> Path:
     return backtests_dir(model_name) / f"{model_name}_live_bt_equity.png"
 
 
+def mc_chart_path(model_name: str) -> Path:
+    """SQX-style Monte Carlo fan chart (shuffled-order equity paths)."""
+    return backtests_dir(model_name) / f"{model_name}_live_bt_mc.png"
+
+
 def legacy_equity_path(model_name: str) -> Path:
     return ROOT / f"{model_name}_live_bt_equity.png"
 

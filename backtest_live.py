@@ -38,6 +38,7 @@ from artifact_paths import (
     backtest_meta_path,
     backtests_dir,
     equity_path as artifact_equity_path,
+    mc_chart_path as artifact_mc_chart_path,
     find_model_path,
     find_norm_path,
     train_meta_path,
@@ -883,6 +884,10 @@ def run_backtest_live(args):
             if stale_equity.exists():
                 stale_equity.unlink()
                 print(f"[save] removed stale equity -> {stale_equity}")
+            stale_mc = artifact_mc_chart_path(args.model)
+            if stale_mc.exists():
+                stale_mc.unlink()
+                print(f"[save] removed stale MC chart -> {stale_mc}")
             _write_json(meta_path, meta)
             print(f"[meta] -> {meta_path}")
         return 0
@@ -1058,6 +1063,9 @@ def run_backtest_live(args):
         fracs = np.array([t['pnl_pct'] * t.get('lots', 1.0) for t in trades], dtype=float)
         rng_mc = np.random.default_rng(7)
         mc_dds = np.empty(n_mc)
+        # Keep every shuffled equity path so the fan chart can show the
+        # percentile envelope (n_mc x n_trades+1 floats — a few MB at most)
+        mc_paths = np.empty((n_mc, len(fracs) + 1))
         for _k in range(n_mc):
             order = rng_mc.permutation(fracs)
             # NB: local names — must not shadow the real bar-level eq/peak
@@ -1065,6 +1073,7 @@ def run_backtest_live(args):
             mc_eq = np.concatenate(([args.balance], args.balance * np.cumprod(1.0 + order)))
             mc_peak = np.maximum.accumulate(mc_eq)
             mc_dds[_k] = ((mc_eq - mc_peak) / mc_peak).min()
+            mc_paths[_k] = mc_eq
         p_hard = float((mc_dds <= -args.hard_dd).mean())
         print(f"\n  Monte Carlo ({n_mc:,} shuffles of trade order):")
         print(f"    Max DD (this ordering)  : {max_dd:.2%}")
@@ -1080,6 +1089,8 @@ def run_backtest_live(args):
             "dd_worst": float(mc_dds.min()),
             "p_hit_hard_dd": p_hard,
         }
+    else:
+        mc_paths = None
 
     # ---- Statistical significance: is the mean trade return really > 0? ----
     sig_result = None
@@ -1261,10 +1272,67 @@ def run_backtest_live(args):
             chart_path = artifact_equity_path(args.model)
             plt.tight_layout()
             plt.savefig(chart_path, dpi=110, bbox_inches='tight')
+            plt.close(fig)
             print(f"[save] -> {chart_path}")
         except Exception as e:
             print(f"[chart] skipped: {e}")
             meta["chart_error"] = str(e)
+
+        # SQX-style Monte Carlo fan chart: shuffled-order equity paths.
+        # X axis is TRADE NUMBER (shuffles have no timestamps of their own).
+        # Every path ends at the same balance — order-shuffle keeps the final
+        # profit fixed; the spread in the middle is the point (path risk).
+        if mc_result is not None and mc_paths is not None:
+            try:
+                import matplotlib.pyplot as plt
+                x = np.arange(mc_paths.shape[1])
+                env = np.percentile(mc_paths, [5, 25, 50, 75, 95], axis=0)
+                real_eq = np.concatenate(
+                    ([args.balance], args.balance * np.cumprod(1.0 + fracs)))
+
+                fig, ax = plt.subplots(figsize=(14, 6))
+                for row in mc_paths[:min(150, len(mc_paths))]:
+                    ax.plot(x, row, color='#64748b', alpha=0.06, linewidth=0.7)
+                ax.fill_between(x, env[0], env[4], color='#2563eb', alpha=0.12,
+                                label='5–95% envelope')
+                ax.fill_between(x, env[1], env[3], color='#2563eb', alpha=0.18,
+                                label='25–75% envelope')
+                ax.plot(x, env[2], color='#2563eb', linewidth=1.0,
+                        linestyle='--', alpha=0.8, label='median path')
+                ax.plot(x, real_eq, color='#f59e0b', linewidth=2.0,
+                        label='actual order')
+                ax.axhline(args.balance, color='gray', linestyle='--',
+                           alpha=0.5, linewidth=0.8)
+                hard_level = args.balance * (1.0 - args.hard_dd)
+                ax.axhline(hard_level, color='#ef4444', linestyle=':',
+                           linewidth=1.2,
+                           label=f'hard stop {args.hard_dd:.0%} (from start)')
+                ax.set_title(
+                    f"Monte Carlo — {args.model}  ({mc_result['shuffles']:,} "
+                    f"order shuffles)   DD median {mc_result['dd_median']:.1%} · "
+                    f"95% worst {mc_result['dd_p95_worst_case']:.1%} · "
+                    f"P(hard stop) {mc_result['p_hit_hard_dd']:.1%}")
+                ax.set_xlabel("Trade #")
+                ax.set_ylabel("Equity ($)")
+                ax.grid(True, alpha=0.3)
+                ax.legend(loc='upper left', fontsize=9)
+
+                mc_png = artifact_mc_chart_path(args.model)
+                plt.tight_layout()
+                plt.savefig(mc_png, dpi=110, bbox_inches='tight')
+                plt.close(fig)
+                meta["artifacts"]["mc_chart"] = str(mc_png)
+                print(f"[save] -> {mc_png}")
+            except Exception as e:
+                print(f"[mc chart] skipped: {e}")
+                meta["mc_chart_error"] = str(e)
+        else:
+            # MC disabled this run — drop a leftover fan chart so the GUI
+            # never displays a previous run's MC next to fresh results
+            stale_mc = artifact_mc_chart_path(args.model)
+            if stale_mc.exists():
+                stale_mc.unlink()
+                print(f"[save] removed stale MC chart -> {stale_mc}")
         _write_json(meta_path, meta)
         print(f"[meta] -> {meta_path}")
 

@@ -7050,11 +7050,15 @@ class RLTradingStudio(ctk.CTk):
         self.bt_equity_label = ctk.CTkLabel(stats_card, text="")
         self.bt_equity_label.grid(row=2, column=0, sticky="w", padx=18, pady=(4, 8))
 
+        # Monte Carlo fan chart (SQX-style shuffled-order equity paths)
+        self.bt_mc_label = ctk.CTkLabel(stats_card, text="")
+        self.bt_mc_label.grid(row=3, column=0, sticky="w", padx=18, pady=(0, 8))
+
         # Full report (settings + all validation metrics from meta JSON)
         self.bt_report_box = ctk.CTkTextbox(stats_card, height=300,
             font=ctk.CTkFont(family="Consolas", size=12),
             fg_color="#0a0e14", wrap="none")
-        self.bt_report_box.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.bt_report_box.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 16))
         self.bt_report_box.insert("1.0", "(run a backtest to see the full report)")
         self.bt_report_box.configure(state="disabled")
 
@@ -7167,6 +7171,8 @@ class RLTradingStudio(ctk.CTk):
             self._bt_equity_imgref = None
             self.bt_equity_label.configure(
                 image=None, text="0 trades — no equity chart", text_color=COLOR_DIM)
+            self._bt_mc_imgref = None
+            self.bt_mc_label.configure(image=None, text="")
 
         # Equity PNG inline
         try:
@@ -7178,6 +7184,23 @@ class RLTradingStudio(ctk.CTk):
                 h = int(img.height * w / img.width)
                 self._bt_equity_imgref = ctk.CTkImage(img, size=(w, h))
                 self.bt_equity_label.configure(image=self._bt_equity_imgref, text="")
+        except Exception:
+            pass
+
+        # Monte Carlo fan chart inline (only when this run produced one)
+        try:
+            from PIL import Image
+            from artifact_paths import mc_chart_path
+            mcp_png = mc_chart_path(model)
+            if mcp_png.exists():
+                img = Image.open(mcp_png)
+                w = 900
+                h = int(img.height * w / img.width)
+                self._bt_mc_imgref = ctk.CTkImage(img, size=(w, h))
+                self.bt_mc_label.configure(image=self._bt_mc_imgref, text="")
+            else:
+                self._bt_mc_imgref = None
+                self.bt_mc_label.configure(image=None, text="")
         except Exception:
             pass
 

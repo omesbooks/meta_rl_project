@@ -738,6 +738,26 @@
         ต้องมี ≥10 trades) · Pipeline รันอัตโนมัติ · ผลอยู่ใน log block "Monte Carlo",
         Full Report panel และ meta JSON (<code>result.monte_carlo</code>)
       </p>
+      <h3>MC Fan Chart — กราฟพัดแบบ SQX</h3>
+      <p>
+        นอกจากตัวเลข ระบบวาดกราฟ <code>&lt;model&gt;_live_bt_mc.png</code>
+        แสดงใต้กราฟ equity ในหน้า Backtest:
+      </p>
+      <ul>
+        <li><strong>เส้นเทาจาง ๆ</strong> — เส้น equity ของ shuffle ตัวอย่าง ~150 เส้น (spaghetti)</li>
+        <li><strong>แถบฟ้า</strong> — envelope เปอร์เซ็นไทล์ 5–95% (จาง) และ 25–75% (เข้ม)
+          คำนวณจากทุก shuffle</li>
+        <li><strong>เส้นส้มหนา</strong> — ลำดับจริงจาก backtest</li>
+        <li><strong>เส้นแดงประ</strong> — ระดับ hard stop (คิดจาก balance เริ่มต้น)</li>
+      </ul>
+      <div class="callout">
+        <strong>จุดต่างจาก SQX ที่ต้องรู้ก่อนอ่าน:</strong> MC ของเราสลับ "ลำดับ" trade เดิม
+        → กำไรสุทธิไม่เปลี่ยน (คูณสลับที่ได้) <strong>ทุกเส้นจึงหุบมาจบจุดเดียวกันเสมอ</strong>
+        ต่างจาก SQX ที่ resample แบบแทนที่จนปลายทางกระจายด้วย
+        สิ่งที่ควรอ่านจากพัดนี้คือ "ระหว่างทาง": ความกว้างของแถบ = ช่วงความเจ็บที่เป็นไปได้,
+        เส้นส้มที่วิ่งนอกแถบมาก = ลำดับจริงโชคดี/โชคร้ายผิดปกติ อย่ายึดเป็นตัวแทน,
+        และแกน X เป็น "ลำดับ trade" ไม่ใช่เวลา (เส้น shuffle ไม่มี timestamp ของตัวเอง)
+      </div>
     </section>
 
     <section id="confidence">

@@ -1,6 +1,6 @@
 {
   "model": "rl_uj_h4",
-  "created_at": "2026-07-12T17:39:30",
+  "created_at": "2026-07-12T19:20:44",
   "data_csv": "uj_h4_dataset.csv",
   "data_rows_before_start": 17845,
   "data_period_before_start": {
@@ -41,7 +41,7 @@
     "swap_long": 0.0,
     "swap_short": 0.0,
     "random_baseline": 0,
-    "mc": 500,
+    "mc": 1000,
     "window": 0,
     "action_profile": "basic_4",
     "action_profile_label": "Basic 4 (Hold/Buy/Sell/Close)",
@@ -135,11 +135,11 @@
     "swap_net_impact": 0.0,
     "random_baseline": null,
     "monte_carlo": {
-      "shuffles": 500,
-      "dd_median": -0.07893265157070474,
-      "dd_p95_worst_case": -0.11414385383554235,
-      "dd_worst": -0.14000938315222972,
-      "p_hit_hard_dd": 0.0
+      "shuffles": 1000,
+      "dd_median": -0.08032349907365238,
+      "dd_p95_worst_case": -0.11864069182984308,
+      "dd_worst": -0.18860440089031077,
+      "p_hit_hard_dd": 0.005
     },
     "significance": {
       "n_trades": 2291,

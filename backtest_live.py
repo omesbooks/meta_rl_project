@@ -1290,9 +1290,16 @@ def run_backtest_live(args):
                 real_eq = np.concatenate(
                     ([args.balance], args.balance * np.cumprod(1.0 + fracs)))
 
-                fig, ax = plt.subplots(figsize=(14, 6))
-                for row in mc_paths[:min(150, len(mc_paths))]:
-                    ax.plot(x, row, color='#64748b', alpha=0.06, linewidth=0.7)
+                fig, (ax, ax_dd) = plt.subplots(
+                    2, 1, figsize=(14, 9),
+                    gridspec_kw={"height_ratios": [3, 1.2]})
+
+                # ALL shuffled paths — alpha scales down with count so 1000
+                # lines read as a density cloud instead of a solid blob
+                n_lines = len(mc_paths)
+                alpha = max(0.006, min(0.08, 12.0 / n_lines))
+                for row in mc_paths:
+                    ax.plot(x, row, color='#64748b', alpha=alpha, linewidth=0.6)
                 ax.fill_between(x, env[0], env[4], color='#2563eb', alpha=0.12,
                                 label='5–95% envelope')
                 ax.fill_between(x, env[1], env[3], color='#2563eb', alpha=0.18,
@@ -1305,17 +1312,45 @@ def run_backtest_live(args):
                            alpha=0.5, linewidth=0.8)
                 hard_level = args.balance * (1.0 - args.hard_dd)
                 ax.axhline(hard_level, color='#ef4444', linestyle=':',
-                           linewidth=1.2,
-                           label=f'hard stop {args.hard_dd:.0%} (from start)')
+                           linewidth=1.4,
+                           label=f'hard stop {args.hard_dd:.0%} (safety line)')
                 ax.set_title(
                     f"Monte Carlo — {args.model}  ({mc_result['shuffles']:,} "
-                    f"order shuffles)   DD median {mc_result['dd_median']:.1%} · "
-                    f"95% worst {mc_result['dd_p95_worst_case']:.1%} · "
-                    f"P(hard stop) {mc_result['p_hit_hard_dd']:.1%}")
+                    f"order shuffles, all paths drawn)")
                 ax.set_xlabel("Trade #")
                 ax.set_ylabel("Equity ($)")
                 ax.grid(True, alpha=0.3)
                 ax.legend(loc='upper left', fontsize=9)
+
+                # --- Verdict panel: Max-DD distribution vs the safety line ---
+                # PASS/FAIL rule (same as the docs): P(hit hard stop) < 5%
+                # = PASS, 5-10% = CAUTION, > 10% = FAIL
+                p_hard = mc_result['p_hit_hard_dd']
+                verdict = ("PASS" if p_hard < 0.05
+                           else "CAUTION" if p_hard <= 0.10 else "FAIL")
+                v_color = {"PASS": "#16a34a", "CAUTION": "#d97706",
+                           "FAIL": "#dc2626"}[verdict]
+
+                dd_pct = mc_dds * 100.0
+                ax_dd.hist(dd_pct, bins=60, color='#2563eb', alpha=0.55)
+                ax_dd.axvline(float(np.median(dd_pct)), color='#2563eb',
+                              linestyle='--', linewidth=1.2,
+                              label=f"median {mc_result['dd_median']:.1%}")
+                ax_dd.axvline(float(np.percentile(dd_pct, 5)), color='#f59e0b',
+                              linestyle='--', linewidth=1.2,
+                              label=f"95% worst {mc_result['dd_p95_worst_case']:.1%}")
+                ax_dd.axvline(-args.hard_dd * 100.0, color='#ef4444',
+                              linestyle=':', linewidth=1.8,
+                              label=f"hard stop -{args.hard_dd:.0%}")
+                ax_dd.set_title(
+                    f"Max DD across all orderings — "
+                    f"P(hit hard stop) {p_hard:.1%}  ->  {verdict} "
+                    f"(rule: <5% pass / 5-10% caution / >10% fail)",
+                    color=v_color, fontsize=11, fontweight='bold')
+                ax_dd.set_xlabel("Max DD (%)")
+                ax_dd.set_ylabel("Shuffles")
+                ax_dd.grid(True, alpha=0.3)
+                ax_dd.legend(loc='upper left', fontsize=9)
 
                 mc_png = artifact_mc_chart_path(args.model)
                 plt.tight_layout()

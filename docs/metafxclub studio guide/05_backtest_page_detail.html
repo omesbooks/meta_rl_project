@@ -745,11 +745,19 @@
         จะฝังรูปนี้ต่อท้าย HTML interactive (แบบ base64 ไฟล์เดียวจบ ส่งต่อได้) ด้วย:
       </p>
       <ul>
-        <li><strong>เส้นเทาจาง ๆ</strong> — เส้น equity ของ shuffle ตัวอย่าง ~150 เส้น (spaghetti)</li>
+        <li><strong>เส้นเทาจาง ๆ</strong> — เส้น equity ของ<strong>ทุก shuffle</strong>
+          (ใส่ 1000 = วาด 1000 เส้น ความโปร่งใสปรับอัตโนมัติให้อ่านเป็นเมฆความหนาแน่น)</li>
         <li><strong>แถบฟ้า</strong> — envelope เปอร์เซ็นไทล์ 5–95% (จาง) และ 25–75% (เข้ม)
           คำนวณจากทุก shuffle</li>
         <li><strong>เส้นส้มหนา</strong> — ลำดับจริงจาก backtest</li>
-        <li><strong>เส้นแดงประ</strong> — ระดับ hard stop (คิดจาก balance เริ่มต้น)</li>
+        <li><strong>เส้นแดงประ (safety line)</strong> — ระดับ hard stop (คิดจาก balance เริ่มต้น)</li>
+        <li><strong>แผงล่าง (verdict)</strong> — histogram ของ Max DD จากทุก ordering
+          พร้อมเส้น median / 95% worst / hard stop และตัดสินให้เลยบนหัวกราฟ:
+          <span class="tag green">PASS</span> P(hit hard stop) &lt; 5% ·
+          <span class="tag warn">CAUTION</span> 5–10% ·
+          <span class="tag red">FAIL</span> &gt; 10% —
+          วิธีอ่านด้วยตา: ถ้าเส้นแดงอยู่ "ซ้ายสุด" ห่างจากก้อน histogram = ปลอดภัย,
+          ถ้าก้อน histogram ลามทับเส้นแดง = มีโลกจำนวนมากที่โดนบังคับหยุดเทรด</li>
       </ul>
       <div class="callout">
         <strong>จุดต่างจาก SQX ที่ต้องรู้ก่อนอ่าน:</strong> MC ของเราสลับ "ลำดับ" trade เดิม

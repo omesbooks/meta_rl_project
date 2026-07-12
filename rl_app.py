@@ -7679,9 +7679,45 @@ class RLTradingStudio(ctk.CTk):
             font=ctk.CTkFont(size=12), text_color=COLOR_DIM)
         self.wf_verdict_sub.pack(pady=(2, 16))
 
+        # Per-window equity curves + WR/PF chart (PNG rendered after each run)
+        self.wf_chart_label = ctk.CTkLabel(c2, text="")
+        self.wf_chart_label.grid(row=3, column=0, sticky="w", padx=18, pady=(0, 8))
+
         log_frame = ctk.CTkFrame(c2, fg_color="#0a0e14", corner_radius=8)
-        log_frame.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 16))
+        log_frame.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 16))
         self.wf_log = self._make_log_widget(log_frame, height=10)
+
+    def _load_walkforward_chart(self):
+        """Render the walk-forward PNG (per-window equity + WR/PF bars) inline.
+
+        rl_walkforward saves it as <name>_chart.png in WORK_DIR (or a
+        timestamped fallback if the name was locked)."""
+        if not hasattr(self, "wf_chart_label"):
+            return
+        name = (self.wf_name.get() or "wf_prod").strip()
+        # engine sanitizes the name the same way before saving
+        import re as _re
+        name = _re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", name).rstrip(". ") or "wf"
+        candidates = sorted(
+            WORK_DIR.glob(f"{name}_chart*.png"),
+            key=lambda p: p.stat().st_mtime, reverse=True)
+        try:
+            from PIL import Image
+            if candidates:
+                img = Image.open(candidates[0])
+                w = 900
+                h = int(img.height * w / img.width)
+                self._wf_chart_imgref = ctk.CTkImage(img, size=(w, h))
+                self.wf_chart_label.configure(image=self._wf_chart_imgref, text="")
+            else:
+                self._wf_chart_imgref = None
+                self.wf_chart_label.configure(
+                    image=None, text="(chart not found)", text_color=COLOR_DIM)
+        except Exception as e:
+            self._wf_chart_imgref = None
+            self.wf_chart_label.configure(
+                image=None, text=f"(chart load failed: {e})",
+                text_color=COLOR_DIM)
 
     def _wf_recipe_changed(self, kind):
         """Manual profile/mode change invalidates extras copied from Train.
@@ -9656,6 +9692,7 @@ Built with: CustomTkinter + stable-baselines3
                     self.wf_progress_label.configure(
                         text="Progress: 100.0% — complete",
                         text_color=COLOR_GREEN)
+                self._load_walkforward_chart()
             elif hasattr(self, "wf_progress_label"):
                 self.wf_progress_label.configure(
                     text="Progress: stopped/failed",

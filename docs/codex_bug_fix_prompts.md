@@ -231,6 +231,77 @@ Export — item 15: sanitize deploy name ฝั่ง export_to_onnx.py (MQL5 id
 5. หยุดตรงนี้ — งานทั้งหมดค้างเป็น uncommitted changes โดยตั้งใจ
 ```
 
+## Fix Round 1 — ผลตรวจซ้ำ 2026-07-12 (ผ่าน 42/47)
+
+ผลการ re-audit: PASS 42 ข้อ · PARTIAL 4 (items 6, 13, 31, 41) · FAIL 1 (item 26)
+และพบ regression ใหม่จากการแก้ 1 ตัวที่ต้องปิดก่อน commit
+
+```text
+อยู่ในโปรเจค C:\Users\omesb\Documents\claude code\pycaret_trainer
+งานแก้บั๊กรอบก่อนผ่านการตรวจ 42/47 — เหลือรอบเก็บงานตามรายการนี้ (เรียงตามความสำคัญ)
+ยังคงกติกาเดิม: ห้าม commit/push, แก้ใน working tree, ติ๊ก/อัปเดตบันทึกใน
+docs/bug_audit_2026-07-12.md ทุกข้อที่ปิด
+
+R1 [HIGH — regression ใหม่จาก item 39] ScrollableOptionMenu._close_popup (rl_app.py ~776-782)
+   ใช้ Misc.unbind(sequence, funcid) ซึ่งบน Python 3.11 (bpo-31485) ล้าง binding script
+   ของ sequence นั้น "ทั้งหมด" ไม่ใช่แค่ของตัวเอง — เปิด/ปิด dropdown ครั้งแรกจะลบ
+   <Configure> handler ภายในของ CustomTkinter (_update_dimensions_event) ถาวร
+   ทำให้ dimension/scaling tracking ของทั้งหน้าต่างพัง
+   แก้: อย่าใช้ unbind ตรง ๆ — เก็บ script เดิมของ sequence ไว้ก่อน bind แล้ว restore
+   ตอนปิด หรือใช้ tk.call("bind", ...) ตัดเฉพาะบรรทัด script ของตัวเอง หรือใช้ bindtag แยก
+   เทสยืนยัน: หลังเปิด+ปิด popup แล้ว root ต้องยังมี <Configure> script ของ CTk อยู่
+
+R2 [HIGH — interaction ระหว่าง item 6 กับ 22] ค่า overrides จาก reward JSON หายเงียบ
+   เมื่อมี reward JSON โหลดอยู่ _collect_train_reward_overrides ตอนนี้ diff กับ baseline
+   ที่ merge JSON แล้ว → path ไหนที่ "ไม่ได้ส่ง JSON ต่อ" จะได้ overrides = {} ทั้งที่
+   slider โชว์ค่าของ JSON:
+   (a) rl_app.py ~6754-6767: ปิด Developer Mode → ตัด --reward_profile_json ออก
+       แต่ --reward_overrides กลายเป็น {} → เทรนด้วย base profile เงียบ ๆ
+   (b) ปุ่ม ⧉ Copy settings from Train → Walk-Forward (rl_app.py ~7665, ~7772):
+       copy overrides = {} ทั้งที่ hint บอกว่ามีค่า → WF validate สูตรผิด
+   แก้: ทั้งสอง path ให้ re-collect ด้วย compare_loaded_json=False (diff กับ base profile จริง)
+   และส่ง base_profile ของ JSON ไปด้วย — เทส: โหลด reward JSON ที่มี overrides+formula,
+   ปิด dev mode → cmd ต้องมี --reward_overrides ครบค่าของ JSON (ยกเว้น formula);
+   กด Copy ไป WF → wf_reward_overrides_value ต้องมีค่าของ JSON
+
+R3 [MEDIUM — item 26 ยัง FAIL] การ capture model ตอนเริ่ม backtest ไปอยู่ผิดฟังก์ชัน
+   `self._bt_run_model = model` ถูกใส่ใน _generate_chart (rl_app.py ~7300) แต่ไม่มีใน
+   _run_backtest (ก่อน _start_runner ที่ ~7407) → trigger เดิม (รัน A แล้วสลับ dropdown
+   เป็น B ระหว่างรอ) ยัง reproduce ได้ — เพิ่มบรรทัดเดียวใน _run_backtest
+
+R4 [MEDIUM — item 41 เก็บไม่หมด] rl_finetune.py ยังใช้ convention เก่า 3 จุด:
+   บรรทัด ~309 และ ~420 ยัง normalize ด้วย std + 1e-8 (train/serve skew กับ consumer อื่น)
+   และร้ายสุด ~315 (fallback ตอนหา base norm ไม่เจอ) เขียน norm.csv ใหม่เป็น std()+1e-8
+   โดยไม่มี floor 1e-6→1.0 — dead feature จะได้ std=1e-8 แล้วทุก consumer หารตรง ๆ
+   = บั๊ก item 41 กลับมาแรงกว่าเดิมบน path fine-tune
+   แก้: ใช้ floor แบบเดียวกับ rl_train.py:233-234 ทั้ง 3 จุด และหารด้วย std ตรง ๆ ไม่บวก epsilon
+
+R5 [LOW — mojibake] em-dash เพี้ยนเป็น "â€”" ใน string ใหม่ 3 จุด:
+   rl_app.py ~7136, ~7139 ("0 trades â€” no equity chart"), ~8348 (regime warning)
+   แก้เป็น — (U+2014) จริง แล้ว grep ทั้ง repo หา "â€" ให้เหลือ 0
+
+R6 [LOW — item 13 ปรับสูตร] sharpe annualization ใช้ 365.25 วันปฏิทิน → เกินจริง ~19%
+   บนข้อมูล forex (ตลาดปิดเสาร์-อาทิตย์) — เปลี่ยนเป็น actual bars/year:
+   factor = sqrt(len(returns) / years_spanned) ตาม fix sketch เดิม
+   และกรณี timestamp ใช้ไม่ได้ให้ label ว่า "sharpe: n/a (no timestamps)" แทนเลข 0.0
+
+R7 [LOW — item 29 edge] export_to_onnx.py ~364: ถ้า params.json parse ผ่านแต่ append
+   ล้มเหลวทีหลัง จะได้ทั้ง RL_PARAMS_EMBEDDED 1 และ 0 ในไฟล์เดียว —
+   ย้ายการ append define ไปหลังงานทั้งก้อนสำเร็จ (สร้างเป็น list ชั่วคราวก่อนค่อยต่อ)
+
+R8 [LOW — polish shutdown path] (a) rl_app.py ~4279-4282 _tools_file_notice: fallback
+   except แล้วเรียก _apply() ตรง ๆ บน worker thread — เปลี่ยนเป็น swallow เฉย ๆ
+   (b) _pipeline_log/_set_pipeline_progress/_set_pipeline_stage (~2473-2493):
+   เพิ่ม try/except RuntimeError รอบ self.after แบบเดียวกับ _log
+
+ไม่ต้องทำ (รับทราบแล้ว ยอมรับได้): item 31 ยังไม่มี threshold <10% สำหรับ ✓ (โชว์ % แล้วพอ),
+item 27 legacy root PNG edge, tools/analysis/rl_backtest*.py ยัง +1e-8 (เครื่องมือ legacy),
+item 24 formula textbox ยังพิมพ์ได้ตอน mtm (checkbox ถูก disable แล้ว)
+
+เช็คก่อนจบ: ast parse ทุกไฟล์ที่แตะ, รัน test_batch1_bugfixes.py ต้องผ่านครบ,
+smoke เปิดทุกหน้า แล้วรายงาน git diff --stat + สรุปที่แก้ — แล้วหยุด (ยังไม่ commit)
+```
+
 ## ขั้นตอนหลังจากนั้น (ฝั่งเจ้าของโปรเจกต์)
 
 1. สั่ง Claude ตรวจบั๊กซ้ำ (re-audit) บน working tree ที่ Codex แก้ไว้ —

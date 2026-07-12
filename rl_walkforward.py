@@ -28,6 +28,7 @@ import sys
 import io
 import argparse
 import json
+import re
 import time
 from pathlib import Path
 import numpy as np
@@ -63,13 +64,13 @@ def _save_csv_with_fallback(df, path):
     try:
         df.to_csv(path, index=False)
         return path
-    except PermissionError as e:
+    except OSError as e:
         fallback = _fallback_output_path(path)
         print(f"  [warn] cannot write {path}: {e}")
         try:
             df.to_csv(fallback, index=False)
             return fallback
-        except PermissionError as e2:
+        except OSError as e2:
             print(f"  [warn] cannot write fallback {fallback}: {e2}")
             return None
 
@@ -79,13 +80,13 @@ def _save_fig_with_fallback(fig, path, **kwargs):
     try:
         fig.savefig(path, **kwargs)
         return path
-    except PermissionError as e:
+    except OSError as e:
         fallback = _fallback_output_path(path)
         print(f"  [warn] cannot write {path}: {e}")
         try:
             fig.savefig(fallback, **kwargs)
             return fallback
-        except PermissionError as e2:
+        except OSError as e2:
             print(f"  [warn] cannot write fallback {fallback}: {e2}")
             return None
 
@@ -139,6 +140,12 @@ def main():
     ap.add_argument("--net_arch", default="auto",
                     help='"auto" (scale by window) or comma list e.g. "256,128,64"')
     args = ap.parse_args()
+    raw_name = str(args.name or "wf").strip()
+    args.name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", raw_name).rstrip(". ")
+    if not args.name:
+        args.name = "wf"
+    if args.name != raw_name:
+        print(f"[name] sanitized output name: {raw_name!r} -> {args.name!r}")
     try:
         reward_overrides = {}
         cli_reward_formula = args.reward_formula.strip()
@@ -240,12 +247,15 @@ def main():
         return 1
 
     min_rows = args.window + 3
-    too_small = [(i + 1, ve - vs) for i, (_, _, vs, ve) in enumerate(windows)
-                 if (ve - vs) < min_rows]
+    too_small = [
+        (i + 1, te - ts, ve - vs)
+        for i, (ts, te, vs, ve) in enumerate(windows)
+        if (te - ts) < min_rows or (ve - vs) < min_rows
+    ]
     if too_small:
-        first_idx, rows = too_small[0]
+        first_idx, train_rows, test_rows = too_small[0]
         print(
-            f"ERROR: window {first_idx} test slice has only {rows} rows; "
+            f"ERROR: window {first_idx} is too short (train={train_rows}, test={test_rows}); "
             f"need at least {min_rows}. Reduce --windows or window size."
         )
         return 1
@@ -341,7 +351,8 @@ def main():
 
         # Normalize on train, apply to test
         feat_mean = train_df[feature_cols].mean()
-        feat_std = train_df[feature_cols].std() + 1e-8
+        feat_std = train_df[feature_cols].std()
+        feat_std = feat_std.mask(feat_std < 1e-6, 1.0)
         train_df[feature_cols] = (train_df[feature_cols] - feat_mean) / feat_std
         test_df[feature_cols] = (test_df[feature_cols] - feat_mean) / feat_std
         train_df = train_df.fillna(0)
@@ -361,7 +372,13 @@ def main():
                 max_hold_bars=args.max_hold,
             ))
 
-        train_env = DummyVecEnv([lambda: make_env(train_df, args.ep_len)])
+        train_ep = min(args.ep_len, max(1, len(train_df) - args.window - 2))
+        if train_ep < args.ep_len:
+            print(
+                f"  [warn] train episode clamped: {args.ep_len:,} -> {train_ep:,} "
+                f"steps for {len(train_df):,} rows"
+            )
+        train_env = DummyVecEnv([lambda: make_env(train_df, train_ep)])
 
         # Train
         print(f"  [train] {args.steps:,} steps ...")

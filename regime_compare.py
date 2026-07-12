@@ -23,6 +23,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+SCRIPT_DIR = Path(__file__).parent.resolve()
+
 # Known regime-changing events (ground truth)
 # Tries known_events.json (built by gemini_labeler.py) first; falls back to
 # this hardcoded baseline so the script still works without API setup.
@@ -40,8 +42,15 @@ def _load_known_events():
         try:
             import json
             data = json.loads(p.read_text(encoding="utf-8"))
-            events = {ev["event"]: pd.Timestamp(ev["date"])
-                      for ev in data.get("events", [])}
+            events = {}
+            for ev in data.get("events", []):
+                base = str(ev.get("event") or f"Shock @ {ev.get('date', '?')}")
+                name = base
+                suffix = 2
+                while name in events:
+                    name = f"{base} ({suffix})"
+                    suffix += 1
+                events[name] = pd.Timestamp(ev["date"])
             if events:
                 return events
         except Exception:
@@ -103,8 +112,9 @@ def method_pelt(daily: pd.DataFrame, pen: float = 50.0) -> list[pd.Timestamp]:
     signal = daily.close.values.reshape(-1, 1)
     algo = rpt.Pelt(model="rbf").fit(signal)
     bkps = algo.predict(pen=pen)
-    # ruptures returns end indices; last is len(signal)
-    return [daily.date.iloc[b - 1] for b in bkps[:-1]]
+    # ruptures returns exclusive segment ends (the first index of the next
+    # segment); the trailing len(signal) sentinel is not a real breakpoint.
+    return [daily.date.iloc[b] for b in bkps[:-1] if b < len(daily)]
 
 
 def method_binseg(daily: pd.DataFrame, n_bkps: int = 3) -> list[pd.Timestamp]:
@@ -113,7 +123,7 @@ def method_binseg(daily: pd.DataFrame, n_bkps: int = 3) -> list[pd.Timestamp]:
     signal = daily.close.values.reshape(-1, 1)
     algo = rpt.Binseg(model="l2").fit(signal)
     bkps = algo.predict(n_bkps=n_bkps)
-    return [daily.date.iloc[b - 1] for b in bkps[:-1]]
+    return [daily.date.iloc[b] for b in bkps[:-1] if b < len(daily)]
 
 
 def method_hmm(daily: pd.DataFrame, n_states: int = 3) -> tuple[list[pd.Timestamp], np.ndarray]:
@@ -306,7 +316,8 @@ def write_html_chart(daily: pd.DataFrame, results: dict, out_path: str):
         "methods": method_breaks,
         "events": {n: e.strftime("%Y-%m-%d") for n, e in KNOWN_EVENTS.items()},
     }
-    Path("regime_compare_data.json").write_text(json.dumps(payload))
+    data_path = Path(out_path).resolve().with_name("regime_compare_data.json")
+    data_path.write_text(json.dumps(payload), encoding="utf-8")
 
     colors = ["#58a6ff", "#3fb950", "#d29922", "#f85149", "#a371f7", "#ff7b72"]
     method_blocks = []
@@ -337,7 +348,7 @@ canvas{max-height:560px}
 <div class="card">METHODS_HERE</div>
 <div class="card"><canvas id="c"></canvas></div>
 <script>
-fetch('regime_compare_data.json').then(r=>r.json()).then(d=>{
+  const d = REGIME_DATA;
   const colors = ['#58a6ff','#3fb950','#d29922','#f85149','#a371f7','#ff7b72'];
   const ann = {};
   // Known events: white vertical lines
@@ -361,10 +372,10 @@ fetch('regime_compare_data.json').then(r=>r.json()).then(d=>{
       scales:{x:{type:'time', time:{unit:'year'}, ticks:{color:'#8b949e'}, grid:{color:'#30363d'}},
               y:{ticks:{color:'#8b949e'}, grid:{color:'#30363d'}}}}
   });
-});
 </script></body></html>"""
-    html = html.replace("METHODS_HERE", "\n".join(method_blocks))
-    Path(out_path).write_text(html, encoding="utf-8")
+    html = (html.replace("METHODS_HERE", "\n".join(method_blocks))
+            .replace("REGIME_DATA", json.dumps(payload)))
+    Path(out_path).resolve().write_text(html, encoding="utf-8")
     print(f"\n[chart] saved -> {out_path}")
 
 
@@ -424,8 +435,10 @@ def write_single_chart(result: dict, out_path: str):
         "n_breaks": result["n_breaks"],
         "time_sec": result["time_sec"],
         "n_bars": result["n_bars"],
+        "csv": str(Path(result["csv"]).resolve()),
     }
-    Path("regime_single_data.json").write_text(json.dumps(payload))
+    data_path = Path(out_path).resolve().with_name("regime_single_data.json")
+    data_path.write_text(json.dumps(payload), encoding="utf-8")
 
     html = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Regime Detection - METHOD_NAME</title>
@@ -450,7 +463,7 @@ canvas{max-height:560px}
 </div>
 <div class="card"><canvas id="c"></canvas></div>
 <script>
-fetch('regime_single_data.json').then(r=>r.json()).then(d=>{
+const d = REGIME_DATA;
   const ann = {};
   Object.entries(d.events).forEach(([name, date], i) => {
     ann['ev_'+i] = {type:'line', xMin:date, xMax:date, borderColor:'#ffffff', borderWidth:2,
@@ -467,15 +480,15 @@ fetch('regime_single_data.json').then(r=>r.json()).then(d=>{
       scales:{x:{type:'time', time:{unit:'year'}, ticks:{color:'#8b949e'}, grid:{color:'#30363d'}},
               y:{ticks:{color:'#8b949e'}, grid:{color:'#30363d'}}}}
   });
-});
 </script></body></html>"""
     html = (html
         .replace("METHOD_NAME", method.upper())
         .replace("N_BREAKS", str(result["n_breaks"]))
-        .replace("SCORE", f"{result['score']}/3")
+        .replace("SCORE", f"{result['score']}/{len(KNOWN_EVENTS)}")
         .replace("TIME_SEC", f"{result['time_sec']:.2f}")
-        .replace("N_BARS", f"{result['n_bars']:,}"))
-    Path(out_path).write_text(html, encoding="utf-8")
+        .replace("N_BARS", f"{result['n_bars']:,}")
+        .replace("REGIME_DATA", json.dumps(payload)))
+    Path(out_path).resolve().write_text(html, encoding="utf-8")
 
 
 # -------------------- CLI --------------------
@@ -485,7 +498,7 @@ if __name__ == "__main__":
     import json
     ap = argparse.ArgumentParser(
         description="Regime detection — single method or all methods compared.")
-    ap.add_argument("csv", nargs="?", default="gu_h4_dataset.csv",
+    ap.add_argument("csv", nargs="?", default=str(SCRIPT_DIR / "uj_h4_dataset.csv"),
                     help="CSV with timestamp + close columns")
     ap.add_argument("--method", choices=["all", "hmm", "kmeans", "pelt"], default="all",
                     help="all = run all 6 methods comparison; otherwise run one")
@@ -528,7 +541,7 @@ if __name__ == "__main__":
             print(f"  Range:      {result['date_range'][0]} -> {result['date_range'][1]}")
             print(f"  Time:       {result['time_sec']:.2f}s")
             print(f"  Breaks:     {result['n_breaks']}")
-            print(f"  Match:      {result['score']}/3 known events")
+            print(f"  Match:      {result['score']}/{len(KNOWN_EVENTS)} known events")
             print()
             print("  Breakpoints:")
             for b in result["breaks"]:

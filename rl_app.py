@@ -26,6 +26,7 @@ from artifact_paths import (
     find_trades_path,
     legacy_final_model_path,
     model_names_from_artifacts,
+    train_meta_path,
 )
 from reward_profiles import (
     DEFAULT_REWARD_PROFILE_CONFIG_DIR,
@@ -49,7 +50,9 @@ from action_profiles import (
 )
 
 # Force UTF-8 stdout
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if (sys.stdout is not None and hasattr(sys.stdout, "buffer") and
+        str(getattr(sys.stdout, "encoding", "")).lower().replace("-", "") != "utf8"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # ============================================================
 # THEME / GLOBAL CONFIG
@@ -434,44 +437,74 @@ class ProcessRunner:
         self.proc = None
         self.thread = None
         self.q = queue.Queue()
+        self._starting = False
+        self._cancel_requested = False
+        self._lock = threading.Lock()
 
     def start(self, cmd, on_line=None, on_done=None):
-        if self.proc is not None:
-            return False
+        with self._lock:
+            if self._starting or self.proc is not None:
+                return False
+            self._starting = True
+            self._cancel_requested = False
 
         def worker():
-            env = os.environ.copy()
-            env["PYTHONIOENCODING"] = "utf-8"
-            self.proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding='utf-8', errors='replace',
-                cwd=str(WORK_DIR), bufsize=1, env=env,
-            )
-            for line in iter(self.proc.stdout.readline, ''):
-                line = line.rstrip()
-                if line:
-                    self.q.put(('line', line))
-            self.proc.wait()
-            rc = self.proc.returncode
-            self.proc = None
-            self.q.put(('done', rc))
+            proc = None
+            rc = 1
+            try:
+                env = os.environ.copy()
+                env["PYTHONIOENCODING"] = "utf-8"
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, encoding='utf-8', errors='replace',
+                    cwd=str(WORK_DIR), bufsize=1, env=env,
+                )
+                with self._lock:
+                    self.proc = proc
+                    self._starting = False
+                    cancel_now = self._cancel_requested
+                if cancel_now and proc.poll() is None:
+                    proc.terminate()
+                if proc.stdout is not None:
+                    for line in iter(proc.stdout.readline, ''):
+                        line = line.rstrip()
+                        if line:
+                            self.q.put(('line', line))
+                proc.wait()
+                rc = proc.returncode
+            except Exception as exc:
+                self.q.put(('line', f"Process start/run failed: {exc}"))
+            finally:
+                with self._lock:
+                    self._starting = False
+                    if self.proc is proc:
+                        self.proc = None
+                    self._cancel_requested = False
+                self.q.put(('done', rc))
 
         self.thread = threading.Thread(target=worker, daemon=True)
         self.thread.start()
         return True
 
     def stop(self):
-        if self.proc:
+        with self._lock:
+            if self._starting:
+                self._cancel_requested = True
+            proc = self.proc
+        if proc:
             try:
-                self.proc.terminate()
-                time.sleep(0.5)
-                if self.proc and self.proc.poll() is None:
-                    self.proc.kill()
+                proc.terminate()
+                try:
+                    proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    if proc.poll() is None:
+                        proc.kill()
             except Exception:
                 pass
 
     def is_running(self):
-        return self.proc is not None
+        with self._lock:
+            return self._starting or self.proc is not None
 
 
 # ============================================================
@@ -498,9 +531,10 @@ class StatCard(ctk.CTkFrame):
         ctk.CTkLabel(self, text=label.upper(), text_color=COLOR_DIM,
                       font=ctk.CTkFont(size=10, weight="bold")
                       ).pack(anchor="w", padx=14, pady=(10, 0))
-        ctk.CTkLabel(self, text=value, text_color=color or "white",
-                      font=ctk.CTkFont(size=22, weight="bold", family="Consolas")
-                      ).pack(anchor="w", padx=14, pady=(2, 0))
+        self.value_label = ctk.CTkLabel(
+            self, text=value, text_color=color or "white",
+            font=ctk.CTkFont(size=22, weight="bold", family="Consolas"))
+        self.value_label.pack(anchor="w", padx=14, pady=(2, 0))
         if change:
             ctk.CTkLabel(self, text=change, text_color=COLOR_DIM,
                           font=ctk.CTkFont(size=11)
@@ -619,6 +653,19 @@ class ScrollableOptionMenu(ctk.CTkFrame):
         self._popup.overrideredirect(True)
         self._popup.transient(self.winfo_toplevel())
         self._popup.attributes("-topmost", True)
+        owner = self.winfo_toplevel()
+        # Python 3.11's Misc.unbind(seq, funcid) wipes the ENTIRE binding
+        # script for the sequence (bpo-31485) — including CustomTkinter's own
+        # <Configure> handler. Snapshot the pre-existing script and restore it
+        # verbatim on close instead of unbinding.
+        self._popup_owner_bindings = []
+        for sequence in ("<Configure>", "<Unmap>", "<Deactivate>"):
+            try:
+                prev_script = owner.bind(sequence)
+                owner.bind(sequence, lambda _e: self._close_popup(), add="+")
+            except tk.TclError:
+                continue
+            self._popup_owner_bindings.append((owner, sequence, prev_script))
         x = self.winfo_rootx()
         y = self.winfo_rooty() + self.winfo_height() + 2
         self._popup.geometry(f"{popup_w}x{popup_h}+{x}+{y}")
@@ -738,6 +785,14 @@ class ScrollableOptionMenu(ctk.CTkFrame):
             self._command(value)
 
     def _close_popup(self):
+        # Restore the exact pre-open binding script (see note in _open_popup —
+        # unbind() on Py3.11 would clear other handlers on the same sequence)
+        for owner, sequence, prev_script in getattr(self, "_popup_owner_bindings", []):
+            try:
+                owner.bind(sequence, prev_script or "")
+            except Exception:
+                pass
+        self._popup_owner_bindings = []
         if self._popup is not None:
             try:
                 self._popup.destroy()
@@ -789,6 +844,7 @@ class RLTradingStudio(ctk.CTk):
 
         self._build_ui()
         self.bind("<Button-1>", self._close_popup_on_root_click, add="+")
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.show_page("train")
         self._poll_queue()
 
@@ -908,7 +964,10 @@ class RLTradingStudio(ctk.CTk):
             if m1:
                 self.pipe_use_m1.configure(
                     text=f"M1 replay: {m1} (auto-detect)", state="normal")
+                if getattr(self, "_pipe_m1_user_pref", True):
+                    self.pipe_use_m1.select()
             else:
+                self.pipe_use_m1.deselect()
                 self.pipe_use_m1.configure(
                     text="M1 replay: ไม่พบไฟล์ _m1 คู่กัน — ใช้ intrabar assumption",
                     state="disabled")
@@ -1031,6 +1090,11 @@ class RLTradingStudio(ctk.CTk):
             self._path_signature("artifacts/models/*/backtests/*_trades.csv"),
             self._path_signature("artifacts/models/*/backtests/*_live_bt_equity.png"),
             self._path_signature("artifacts/models/*/backtests/*_backtest_chart.html"),
+            self._path_signature("artifacts/models/*/backtests/*_live_bt.meta.json"),
+            self._path_signature("artifacts/models/*/*.params.json"),
+            self._path_signature("artifacts/models/*/*.train.json"),
+            self._path_signature("mt5_files/packages/*/MQL5/Include/*_config.mqh"),
+            self._best_model_signature(),
         )
 
     # --------------------------------------------------------
@@ -1281,8 +1345,60 @@ class RLTradingStudio(ctk.CTk):
             v = v / 100.0
         return min(max(v, 0.0), 1.0)
 
+    def _parse_int_field(self, entry, default, label, minimum=1):
+        """Parse whole-number GUI fields before any run-state widgets change."""
+        raw = entry.get().strip() if hasattr(entry, "get") else str(entry).strip()
+        raw = raw or str(default)
+        try:
+            number = float(raw.replace(",", "").replace("_", ""))
+            if not number.is_integer():
+                raise ValueError
+            value = int(number)
+            if value < int(minimum):
+                raise ValueError
+            return value
+        except (TypeError, ValueError, OverflowError):
+            messagebox.showwarning(
+                "Invalid number",
+                f"{label} must be a whole number >= {minimum} (got {raw!r}).",
+            )
+            return None
+
+    def _normalize_output_name(self, entry, default, label="Output name"):
+        """Sanitize Windows-invalid filename characters and reflect the result."""
+        raw = (entry.get() or default or "").strip()
+        cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", raw).rstrip(". ")
+        if not cleaned:
+            messagebox.showerror("Invalid name", f"{label} is empty after cleanup.")
+            return None
+        if cleaned != raw:
+            entry.delete(0, "end")
+            entry.insert(0, cleaned)
+        return cleaned
+
     def _is_process_busy(self):
         return self.runner.is_running() or getattr(self, "pipeline_running", False)
+
+    def _on_close(self):
+        running = self.runner.is_running() or getattr(self, "pipeline_running", False)
+        if running and not messagebox.askyesno(
+                "Run in progress", "A run is in progress — stop it and exit?"):
+            return
+        self.runner.stop()
+        self.pipeline_stop_requested = True
+        proc = getattr(self, "pipeline_proc", None)
+        if proc is not None:
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=0.5)
+                    except subprocess.TimeoutExpired:
+                        if proc.poll() is None:
+                            proc.kill()
+            except Exception:
+                pass
+        self.destroy()
 
     def _start_runner(self, cmd, page=None):
         """Start the shared subprocess runner and remember which page owns it.
@@ -1367,7 +1483,10 @@ class RLTradingStudio(ctk.CTk):
         # M1 replay for the backtest stage: visible + controllable
         self.pipe_use_m1 = ctk.CTkCheckBox(bt_csv_box,
             text="M1 replay: (เลือก CSV ก่อน)",
-            font=ctk.CTkFont(size=10))
+            font=ctk.CTkFont(size=10),
+            command=lambda: setattr(self, "_pipe_m1_user_pref",
+                                    bool(self.pipe_use_m1.get())))
+        self._pipe_m1_user_pref = True
         self.pipe_use_m1.select()
         self.pipe_use_m1.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
@@ -1776,6 +1895,7 @@ class RLTradingStudio(ctk.CTk):
                 self.pipe_split_hint.configure(
                     text="Select Train CSV to preview split",
                     text_color=COLOR_DIM)
+            self._update_pipe_m1_hint()
             return
 
         self._start_pipeline_row_count(train_csv)
@@ -1791,7 +1911,9 @@ class RLTradingStudio(ctk.CTk):
         for name in candidates:
             if (WORK_DIR / name).exists():
                 self.pipe_bt_csv.set(name)
+                self._update_pipe_m1_hint()
                 return
+        self._update_pipe_m1_hint()
 
     def _start_pipeline_row_count(self, csv_name):
         if not hasattr(self, "pipe_data_hint"):
@@ -2168,9 +2290,11 @@ class RLTradingStudio(ctk.CTk):
     def _stop_pipeline(self):
         self.pipeline_stop_requested = True
         self._pipeline_log("Stop requested. Terminating current stage...", "warn")
-        if self.pipeline_proc and self.pipeline_proc.poll() is None:
+        proc = self.pipeline_proc
+        if proc is not None:
             try:
-                self.pipeline_proc.terminate()
+                if proc.poll() is None:
+                    proc.terminate()
             except Exception:
                 pass
 
@@ -2246,6 +2370,7 @@ class RLTradingStudio(ctk.CTk):
                 "--window", str(window),
                 "--start", hparams.get("bt_start", "0"),
                 "--mode", mode,
+                "--stop_slippage", "0.0001",
             ]
             m1_file = (self._find_matching_m1(bt_csv)
                        if hparams.get("use_m1", True) else None)
@@ -2281,7 +2406,7 @@ class RLTradingStudio(ctk.CTk):
 
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
-        self.pipeline_proc = subprocess.Popen(
+        proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -2292,9 +2417,10 @@ class RLTradingStudio(ctk.CTk):
             bufsize=1,
             env=env,
         )
+        self.pipeline_proc = proc
 
-        assert self.pipeline_proc.stdout is not None
-        for line in iter(self.pipeline_proc.stdout.readline, ""):
+        assert proc.stdout is not None
+        for line in iter(proc.stdout.readline, ""):
             line = line.rstrip()
             if not line:
                 continue
@@ -2317,12 +2443,13 @@ class RLTradingStudio(ctk.CTk):
                     f"{stage_name}: {cur:,} / {tot:,} ({pct * 100:.1f}%)",
                 )
 
-            if self.pipeline_stop_requested and self.pipeline_proc.poll() is None:
-                self.pipeline_proc.terminate()
+            if self.pipeline_stop_requested and proc.poll() is None:
+                proc.terminate()
 
-        self.pipeline_proc.wait()
-        rc = self.pipeline_proc.returncode
-        self.pipeline_proc = None
+        proc.wait()
+        rc = proc.returncode
+        if self.pipeline_proc is proc:
+            self.pipeline_proc = None
 
         if self.pipeline_stop_requested:
             raise RuntimeError("Pipeline stopped.")
@@ -2352,14 +2479,20 @@ class RLTradingStudio(ctk.CTk):
 
     def _pipeline_log(self, text, tag="info"):
         if threading.current_thread() is not threading.main_thread():
-            self.after(0, lambda: self._pipeline_log(text, tag))
+            try:
+                self.after(0, lambda: self._pipeline_log(text, tag))
+            except RuntimeError:
+                pass  # mainloop gone (shutdown)
             return
         if hasattr(self, "pipeline_log"):
             self._log(self.pipeline_log, text, tag)
 
     def _set_pipeline_progress(self, pct, text=None):
         if threading.current_thread() is not threading.main_thread():
-            self.after(0, lambda: self._set_pipeline_progress(pct, text))
+            try:
+                self.after(0, lambda: self._set_pipeline_progress(pct, text))
+            except RuntimeError:
+                pass  # mainloop gone (shutdown)
             return
         pct = min(max(float(pct), 0.0), 1.0)
         if hasattr(self, "pipe_progress"):
@@ -2369,7 +2502,10 @@ class RLTradingStudio(ctk.CTk):
 
     def _set_pipeline_stage(self, active):
         if threading.current_thread() is not threading.main_thread():
-            self.after(0, lambda: self._set_pipeline_stage(active))
+            try:
+                self.after(0, lambda: self._set_pipeline_stage(active))
+            except RuntimeError:
+                pass  # mainloop gone (shutdown)
             return
         if not hasattr(self, "pipeline_stage_labels"):
             return
@@ -2714,22 +2850,42 @@ class RLTradingStudio(ctk.CTk):
             else:
                 continue
 
-            metrics = self._metrics_from_trades(trades_path)
-            chart_path = find_chart_path(model)
-            equity_path = self._equity_path_for_model(model)
+            meta = {}
+            if source == "live backtest":
+                try:
+                    from artifact_paths import backtest_meta_path
+                    mp = backtest_meta_path(model)
+                    if mp.exists():
+                        meta = json.loads(mp.read_text(encoding="utf-8-sig"))
+                except Exception:
+                    meta = {}
+                starting_balance = float((meta.get("settings") or {}).get("balance", 10000))
+                metrics = self._metrics_from_trades(trades_path, starting_balance)
+                result = meta.get("result") or {}
+                if meta.get("status") == "complete" and result:
+                    metrics["return_pct"] = (float(result["return_pct"]) * 100
+                                             if result.get("return_pct") is not None else None)
+                    metrics["max_dd"] = (float(result["max_drawdown"]) * 100
+                                         if result.get("max_drawdown") is not None else None)
+                chart_path = find_chart_path(model)
+                equity_path = find_equity_path(model)
+            else:
+                metrics = self._metrics_from_trades(trades_path)
+                chart_path = None
+                equity_candidate = trades_path.with_name(f"{model}_equity.png")
+                equity_path = equity_candidate if equity_candidate.exists() else None
 
             # Execution realism of the stored result: did it resolve intrabar
             # SL/TP with M1 data, or lean on the pessimistic/optimistic guess?
             realism = ""
             try:
-                from artifact_paths import backtest_meta_path
-                mp = backtest_meta_path(model)
-                if mp.exists():
-                    bres = (json.loads(mp.read_text(encoding="utf-8-sig"))
-                            .get("result") or {})
+                if source == "live backtest" and meta.get("status") == "complete":
+                    bres = meta.get("result") or {}
                     amb = bres.get("ambiguous_share_of_sl_tp")
                     if bres.get("m1_resolved", 0) > 0:
                         realism = "M1 ✓"
+                        if amb:
+                            realism += f" + guess {amb:.0%}"
                     elif amb is not None:
                         realism = "ok" if amb == 0 else f"guess {amb:.0%}"
             except Exception:
@@ -2773,7 +2929,7 @@ class RLTradingStudio(ctk.CTk):
         self._model_rows_cache = list(rows)
         return rows
 
-    def _metrics_from_trades(self, trades_path):
+    def _metrics_from_trades(self, trades_path, starting_balance=10000):
         try:
             import numpy as np
             import pandas as pd
@@ -2786,8 +2942,8 @@ class RLTradingStudio(ctk.CTk):
 
             if "pnl_dollars" in df.columns:
                 pnl = pd.to_numeric(df["pnl_dollars"], errors="coerce").dropna()
-                equity = 10000 + pnl.cumsum()
-                return_pct = float(pnl.sum() / 10000 * 100)
+                equity = starting_balance + pnl.cumsum()
+                return_pct = float(pnl.sum() / starting_balance * 100)
             elif "pnl_pct" in df.columns:
                 pnl = pd.to_numeric(df["pnl_pct"], errors="coerce").dropna()
                 equity = (1 + pnl).cumprod()
@@ -2798,8 +2954,8 @@ class RLTradingStudio(ctk.CTk):
                     equity = (1 + pnl).cumprod()
                     return_pct = float((equity.iloc[-1] - 1) * 100)
                 else:
-                    equity = 10000 + pnl.cumsum()
-                    return_pct = float(pnl.sum() / 10000 * 100)
+                    equity = starting_balance + pnl.cumsum()
+                    return_pct = float(pnl.sum() / starting_balance * 100)
             else:
                 pnl = pd.Series(dtype=float)
                 equity = pd.Series(dtype=float)
@@ -2809,7 +2965,7 @@ class RLTradingStudio(ctk.CTk):
                 eq = pd.to_numeric(df["equity"], errors="coerce").dropna()
                 if len(eq):
                     equity = eq
-                    return_pct = float((eq.iloc[-1] - 10000) / 10000 * 100)
+                    return_pct = float((eq.iloc[-1] - starting_balance) / starting_balance * 100)
 
             trades = int(len(pnl)) if len(pnl) else int(len(df))
             win_rate = float((pnl > 0).mean() * 100) if len(pnl) else None
@@ -2847,10 +3003,14 @@ class RLTradingStudio(ctk.CTk):
             return "inf"
         return f"{value:.2f}"
 
-    def _refresh_model_comparison(self):
+    def _refresh_model_comparison(self, force=False):
         if not hasattr(self, "model_tree"):
             return
 
+        if force:
+            self._model_rows_cache_sig = None
+            self._model_rows_cache = None
+            self._model_tree_sig = None
         sig = self._model_results_signature()
         if self._model_tree_sig == sig and getattr(self, "pipeline_rows", None) and self.model_tree.get_children():
             self._refresh_equity_viewer()
@@ -2874,8 +3034,9 @@ class RLTradingStudio(ctk.CTk):
                 params_label = "✓ sidecar"
             elif config_mqh.exists():
                 try:
-                    if "RL_ApplyDataCollectorConfig" in config_mqh.read_text(
-                            encoding="utf-8", errors="ignore"):
+                    config_text = config_mqh.read_text(encoding="utf-8", errors="ignore")
+                    if ("#define RL_PARAMS_EMBEDDED 1" in config_text or
+                            "// Embedded from" in config_text):
                         params_label = "✓ embedded"
                     else:
                         params_label = "— defaults"
@@ -2939,7 +3100,9 @@ class RLTradingStudio(ctk.CTk):
                 image=None, text="No model results found yet.")
             return
 
-        equity_path = row.get("equity_path") or self._equity_path_for_model(row["model"])
+        equity_path = row.get("equity_path")
+        if not equity_path and row.get("source") != "env backtest":
+            equity_path = self._equity_path_for_model(row["model"])
         if not equity_path:
             self.pipeline_equity_image = None
             self._pipeline_equity_image_sig = None
@@ -3130,7 +3293,9 @@ class RLTradingStudio(ctk.CTk):
         src_row.grid(row=3, column=0, sticky="ew", padx=18, pady=(0, 8))
         src_row.grid_columnconfigure(0, weight=1)
 
-        self.tool_collector_src = ScrollableOptionMenu(src_row, values=["(none)"], width=480)
+        self.tool_collector_src = ScrollableOptionMenu(
+            src_row, values=["(none)"], width=480,
+            command=self._on_collector_src_change)
         self.tool_collector_src.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
         ctk.CTkButton(src_row, text="🔄 Refresh",
@@ -3354,6 +3519,8 @@ class RLTradingStudio(ctk.CTk):
             placeholder_text="rl_v10",
             font=ctk.CTkFont(family="Consolas", size=12))
         self.tool_export_name.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+        self.tool_export_name.bind(
+            "<Key>", lambda _e: setattr(self, "_export_name_autofilled", None))
 
         ctk.CTkLabel(ex_grid, text="Model file",
             text_color=COLOR_DIM,
@@ -3434,16 +3601,24 @@ class RLTradingStudio(ctk.CTk):
             self.tool_collector_src.configure(values=values)
             if self.tool_collector_src.get() in ("", "(none)"):
                 self.tool_collector_src.set(values[0])
-            # default output name from selected
             sel = self.tool_collector_src.get()
-            if sel and sel != "(none)" and not self.tool_collector_out.get().strip():
-                stem = Path(sel).stem
-                self.tool_collector_out.delete(0, "end")
-                self.tool_collector_out.insert(0, f"training_data_{stem}.csv")
+            self._on_collector_src_change(sel)
         except Exception:
             pass
         self._log(self.tools_log,
                   f"[collector] {len(files)} CSV(s) in Common\\Files", "info")
+
+    def _on_collector_src_change(self, choice):
+        """Keep the output basename in sync until the user customizes it."""
+        if choice in ("", "(none)") or not hasattr(self, "tool_collector_out"):
+            return
+        default = f"training_data_{Path(choice).stem}.csv"
+        current = self.tool_collector_out.get().strip()
+        previous_auto = getattr(self, "_collector_out_auto", None)
+        if not current or current == previous_auto:
+            self.tool_collector_out.delete(0, "end")
+            self.tool_collector_out.insert(0, default)
+        self._collector_out_auto = default
 
     def _import_from_collector(self):
         """Copy CSV + params.json from Common\\Files → project."""
@@ -3465,15 +3640,26 @@ class RLTradingStudio(ctk.CTk):
         src_params = src_csv.with_suffix(".params.json")
         out_name = (self.tool_collector_out.get().strip() or
                     f"training_data_{Path(src_name).stem}.csv")
+        want_m1 = bool(self.tool_import_m1.get())
+
+        dst_csv = WORK_DIR / Path(out_name).with_suffix(".csv").name
+        src_stem = Path(src_name).stem.lower()
+        if dst_csv.exists() and src_stem not in dst_csv.stem.lower():
+            if not messagebox.askyesno(
+                "Replace different dataset?",
+                f"{dst_csv.name} already exists and its name does not match "
+                f"source {src_name}.\n\nContinuing replaces CSV + params + _m1.\n\nContinue?",
+            ):
+                return
 
         import threading
         threading.Thread(
             target=self._import_from_collector_worker,
-            args=(src_csv, src_params, out_name),
+            args=(src_csv, src_params, out_name, want_m1),
             daemon=True,
         ).start()
 
-    def _import_from_collector_worker(self, src_csv, src_params, out_name):
+    def _import_from_collector_worker(self, src_csv, src_params, out_name, want_m1):
         import shutil
         try:
             self.after(0, lambda: self.status_label.configure(
@@ -3492,11 +3678,6 @@ class RLTradingStudio(ctk.CTk):
 
             # 2b) Copy <base>_m1.csv (if collector dumped M1 execution data
             #     and the user left the "Import M1" checkbox on)
-            want_m1 = True
-            try:
-                want_m1 = bool(self.tool_import_m1.get())
-            except Exception:
-                pass
             src_m1 = src_csv.parent / f"{src_csv.stem}_m1.csv"
             if want_m1 and src_m1.exists():
                 dst_m1 = WORK_DIR / f"{raw_copy.stem}_m1.csv"
@@ -3579,16 +3760,19 @@ class RLTradingStudio(ctk.CTk):
 
     def _import_mt5_csv(self):
         """Import + convert + add header in one step"""
-        threading.Thread(target=self._import_mt5_csv_worker, daemon=True).start()
+        src = self.tool_mt5_path.get().strip()
+        out_name = self.tool_out_name.get().strip() or "training_data_v3.csv"
+        mode = self.tool_indi_mode.get()
+        threading.Thread(
+            target=self._import_mt5_csv_worker,
+            args=(src, out_name, mode), daemon=True).start()
 
-    def _import_mt5_csv_worker(self):
+    def _import_mt5_csv_worker(self, src, out_name, indicator_mode):
         try:
-            src = self.tool_mt5_path.get().strip()
             if not src or not Path(src).exists():
                 self._log(self.tools_log, "Source file not found", "error")
                 return
 
-            out_name = self.tool_out_name.get().strip() or "training_data_v3.csv"
             dst = WORK_DIR / out_name
             dst_existed = dst.exists()
 
@@ -3619,7 +3803,7 @@ class RLTradingStudio(ctk.CTk):
             if not has_header:
                 self._log(self.tools_log, "No header detected, adding...", "info")
                 first_cols = first_line.count(',') + 1
-                mode = self.tool_indi_mode.get()
+                mode = indicator_mode
 
                 # Auto-detect by column count
                 if mode.startswith("Auto"):
@@ -3669,8 +3853,8 @@ class RLTradingStudio(ctk.CTk):
                 "metric")
 
             # Refresh dropdowns
-            self._refresh_dropdowns()
-            self._refresh_tools_dropdowns()
+            self.after(0, self._refresh_dropdowns)
+            self.after(0, self._refresh_tools_dropdowns)
             title = "Updated CSV" if dst_existed else "Created CSV"
             self._tools_file_notice(
                 title,
@@ -3742,22 +3926,31 @@ class RLTradingStudio(ctk.CTk):
         self.tool_split_date.insert(0, date)
 
     def _split_csv(self):
-        threading.Thread(target=self._split_csv_worker, daemon=True).start()
+        settings = {
+            "csv": self.tool_split_csv.get(),
+            "split_date": self.tool_split_date.get().strip(),
+            "train_suffix": self.tool_train_suffix.get().strip() or "_train",
+            "test_suffix": self.tool_test_suffix.get().strip() or "_test",
+            "clean_after": bool(self.tool_clean_after_split.get()),
+            "clean_threshold": self.tool_split_clean_thr.get().strip() or "0.99",
+        }
+        threading.Thread(
+            target=self._split_csv_worker, args=(settings,), daemon=True).start()
 
-    def _split_csv_worker(self):
+    def _split_csv_worker(self, settings):
         try:
-            csv = self.tool_split_csv.get()
+            csv = settings["csv"]
             if csv in ("(none)", ""):
                 self._log(self.tools_log, "Please select a CSV", "error")
                 return
 
-            split_date = self.tool_split_date.get().strip()
+            split_date = settings["split_date"]
             if not split_date:
                 self._log(self.tools_log, "Please enter split date", "error")
                 return
 
-            train_suffix = self.tool_train_suffix.get().strip() or "_train"
-            test_suffix = self.tool_test_suffix.get().strip() or "_test"
+            train_suffix = settings["train_suffix"]
+            test_suffix = settings["test_suffix"]
 
             self._log(self.tools_log, f"Loading {csv}...", "info")
             import pandas as pd
@@ -3816,13 +4009,27 @@ class RLTradingStudio(ctk.CTk):
             train_df.to_csv(train_path, index=False)
             test_df.to_csv(test_path, index=False)
 
+            copied_sidecars = []
+            for output_path in (train_path, test_path):
+                copied, err = self._copy_csv_params_sidecar(WORK_DIR / csv, output_path)
+                if copied:
+                    copied_sidecars.append(copied)
+                    self._log(self.tools_log, f"+ forwarded {copied.name}", "success")
+                elif err:
+                    self._log(self.tools_log,
+                              f"[warn] could not forward params for {output_path.name}: {err}",
+                              "warn")
+                else:
+                    self._log(self.tools_log,
+                              f"[warn] no params.json sidecar found for {csv}", "warn")
+
             self._log(self.tools_log, f"✓ Saved: {train_path.name}", "success")
             self._log(self.tools_log, f"✓ Saved: {test_path.name}", "success")
 
             # ⭐ Auto-clean redundant features if checkbox is checked
-            if self.tool_clean_after_split.get():
+            if settings["clean_after"]:
                 try:
-                    threshold = float(self.tool_split_clean_thr.get() or "0.99")
+                    threshold = float(settings["clean_threshold"])
                 except ValueError:
                     threshold = 0.99
 
@@ -3894,14 +4101,15 @@ class RLTradingStudio(ctk.CTk):
                         "  No redundant features found — files unchanged",
                         "info")
 
-            self._refresh_dropdowns()
-            self._refresh_tools_dropdowns()
+            self.after(0, self._refresh_dropdowns)
+            self.after(0, self._refresh_tools_dropdowns)
             title = "Updated split files" if (train_existed or test_existed) else "Created split files"
             detail = (f"Train/test split saved: {len(train_df):,} train rows, "
                       f"{len(test_df):,} test rows.")
             if auto_cleaned:
                 detail += f" Auto-clean re-saved both files after dropping {auto_clean_dropped} features."
-            self._tools_file_notice(title, detail, [train_path, test_path])
+            self._tools_file_notice(
+                title, detail, [train_path, test_path, *copied_sidecars])
 
         except Exception as e:
             import traceback
@@ -3909,16 +4117,16 @@ class RLTradingStudio(ctk.CTk):
             self._log(self.tools_log, traceback.format_exc(), "error")
 
     def _relabel_csv(self):
-        threading.Thread(target=self._relabel_csv_worker, daemon=True).start()
+        csv = self.tool_relabel_csv.get()
+        method = self.tool_relabel_method.get()
+        threading.Thread(
+            target=self._relabel_csv_worker, args=(csv, method), daemon=True).start()
 
-    def _relabel_csv_worker(self):
+    def _relabel_csv_worker(self, csv, method):
         try:
-            csv = self.tool_relabel_csv.get()
             if csv in ("(none)", ""):
                 self._log(self.tools_log, "Please select a CSV", "error")
                 return
-
-            method = self.tool_relabel_method.get()
 
             self._log(self.tools_log, f"Loading {csv}...", "info")
             import pandas as pd
@@ -3972,8 +4180,8 @@ class RLTradingStudio(ctk.CTk):
             df.to_csv(out_path, index=False)
             self._log(self.tools_log, f"\n✓ Saved: {out_path.name}", "success")
 
-            self._refresh_dropdowns()
-            self._refresh_tools_dropdowns()
+            self.after(0, self._refresh_dropdowns)
+            self.after(0, self._refresh_tools_dropdowns)
             title = "Updated relabeled CSV" if out_existed else "Created relabeled CSV"
             self._tools_file_notice(
                 title,
@@ -4087,7 +4295,9 @@ class RLTradingStudio(ctk.CTk):
         try:
             self.after(0, _apply)
         except Exception:
-            _apply()
+            # mainloop already gone (shutdown) — running _apply() here would
+            # touch widgets from the worker thread; drop the notice instead
+            pass
 
     def _on_export_model_change(self, choice):
         """When user picks a model, default deploy_name to the same"""
@@ -4095,24 +4305,42 @@ class RLTradingStudio(ctk.CTk):
             return
         # Don't overwrite if user has typed something
         current = self.tool_export_name.get().strip()
-        if not current or current in ("rl_v10", ""):
+        if (not current or current == "rl_v10"
+                or current == getattr(self, "_export_name_autofilled", None)):
             self.tool_export_name.delete(0, "end")
             self.tool_export_name.insert(0, choice)
+            self._export_name_autofilled = choice
 
     def _export_onnx(self):
-        threading.Thread(target=self._export_onnx_worker, daemon=True).start()
+        model_name = self.tool_export_model.get()
+        if model_name not in ("", "(none)"):
+            if self._normalize_output_name(
+                    self.tool_export_name, model_name, "Deploy name") is None:
+                return
+        deploy_name = self.tool_export_name.get().strip() or model_name
+        clean_deploy_name = re.sub(r"[^A-Za-z0-9_]+", "_", deploy_name).strip("_")
+        if clean_deploy_name and clean_deploy_name[0].isdigit():
+            clean_deploy_name = "m_" + clean_deploy_name
+        if not clean_deploy_name:
+            messagebox.showerror("Invalid deploy name",
+                                 "Deploy name needs at least one ASCII letter or digit.")
+            return
+        if clean_deploy_name != deploy_name:
+            self.tool_export_name.delete(0, "end")
+            self.tool_export_name.insert(0, clean_deploy_name)
+        deploy_name = clean_deploy_name
+        outdir = self.tool_export_outdir.get().strip()
+        source_text = self.tool_export_source.get()
+        threading.Thread(
+            target=self._export_onnx_worker,
+            args=(model_name, deploy_name, outdir, source_text), daemon=True).start()
 
-    def _export_onnx_worker(self):
+    def _export_onnx_worker(self, model_name, deploy_name, outdir, source_text):
         try:
-            model_name = self.tool_export_model.get()
             if model_name in ("(none)", ""):
                 self._log(self.tools_log, "Please select a source model", "error")
                 return
 
-            deploy_name = self.tool_export_name.get().strip() or model_name
-            outdir = self.tool_export_outdir.get().strip()
-            source_widget = getattr(self, "tool_export_source", None)
-            source_text = source_widget.get() if source_widget else "Final .zip (matches Backtest)"
             if source_text.startswith("Best"):
                 source_key = "best"
             elif source_text.startswith("Auto"):
@@ -4381,17 +4609,20 @@ class RLTradingStudio(ctk.CTk):
         return kept_features < min_keep, min_keep, keep_ratio
 
     def _show_correlation(self):
-        threading.Thread(target=self._show_correlation_worker, daemon=True).start()
+        csv = self.tool_feat_csv.get()
+        threshold_raw = self.tool_feat_threshold.get() or "0.99"
+        threading.Thread(
+            target=self._show_correlation_worker,
+            args=(csv, threshold_raw), daemon=True).start()
 
-    def _show_correlation_worker(self):
+    def _show_correlation_worker(self, csv, threshold_raw):
         try:
-            csv = self.tool_feat_csv.get()
             if csv in ("(none)", ""):
                 self._log(self.tools_log, "Please select a CSV", "error")
                 return
 
             try:
-                threshold = float(self.tool_feat_threshold.get() or "0.99")
+                threshold = float(threshold_raw)
             except ValueError:
                 threshold = 0.99
 
@@ -4684,6 +4915,7 @@ class RLTradingStudio(ctk.CTk):
                       ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
         self.train_reward = ctk.CTkOptionMenu(c2,
             values=["realized (recommended)", "mtm"],
+            command=lambda _v: self._on_train_reward_mode_change(),
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.train_reward.grid(row=4, column=0, sticky="ew", padx=18, pady=(0, 12))
 
@@ -5132,6 +5364,7 @@ class RLTradingStudio(ctk.CTk):
         self.train_reward_controls = {}
         self._build_train_reward_controls(self.reward_adv_frame)
         self._apply_train_reward_profile_defaults()
+        self._on_train_reward_mode_change()
 
         # === Action profile parameters ===
         c_action = Card(page, title="🎮 Action Profile & Parameters")
@@ -5430,6 +5663,27 @@ class RLTradingStudio(ctk.CTk):
         text = self._reward_value_text(control["spec"], value)
         self._set_reward_entry_text(control["entry"], text)
 
+    def _on_train_reward_mode_change(self):
+        """Make it explicit that profile/formula controls do not affect MTM."""
+        mtm = hasattr(self, "train_reward") and self.train_reward.get() == "mtm"
+        state = "disabled" if mtm else "normal"
+        for control in getattr(self, "train_reward_controls", {}).values():
+            control["slider"].configure(state=state)
+            control["entry"].configure(state=state)
+        if hasattr(self, "reward_formula_check"):
+            self.reward_formula_check.configure(state=state)
+        if not mtm:
+            self._toggle_reward_formula_editor()
+        if hasattr(self, "reward_json_hint"):
+            suffix = " (ignored in MTM mode)" if mtm else ""
+            self._set_reward_json_hint()
+            if suffix:
+                self.reward_json_hint.configure(
+                    text=self.reward_json_hint.cget("text") + suffix,
+                    text_color=COLOR_YELLOW)
+            else:
+                self.reward_json_hint.configure(text_color=COLOR_DIM)
+
     def _on_reward_entry_change(self, key):
         controls = getattr(self, "train_reward_controls", {})
         control = controls.get(key)
@@ -5442,7 +5696,8 @@ class RLTradingStudio(ctk.CTk):
             value = float(raw)
         except ValueError:
             messagebox.showerror("Invalid reward value", f"{spec['label']} must be numeric.")
-            self._apply_train_reward_profile_defaults()
+            self._set_reward_entry_text(
+                entry, self._reward_value_text(spec, control["slider"].get()))
             return False
         value = max(float(spec["min"]), min(float(spec["max"]), value))
         control["slider"].set(value)
@@ -5461,6 +5716,8 @@ class RLTradingStudio(ctk.CTk):
             return
         if clear_json:
             self.train_reward_profile_json_path = ""
+            self.train_reward_json_overrides = {}
+            self.train_reward_profile_json_has_formula = False
             self._set_reward_json_hint()
             if hasattr(self, "reward_formula_enabled"):
                 self.reward_formula_enabled.set(False)
@@ -5485,11 +5742,13 @@ class RLTradingStudio(ctk.CTk):
             control["slider"].set(value)
             self._set_reward_entry_text(control["entry"], self._reward_value_text(spec, value))
 
-    def _collect_train_reward_overrides(self):
+    def _collect_train_reward_overrides(self, compare_loaded_json=True):
         if not hasattr(self, "train_reward_controls") or not hasattr(self, "train_reward_profile"):
             return {}
         profile_key = reward_profile_key_from_label(self.train_reward_profile.get())
-        defaults = REWARD_PROFILES[profile_key]["params"]
+        defaults = dict(REWARD_PROFILES[profile_key]["params"])
+        if compare_loaded_json and getattr(self, "train_reward_profile_json_path", ""):
+            defaults.update(getattr(self, "train_reward_json_overrides", {}))
         overrides = {}
         for key, control in self.train_reward_controls.items():
             spec = control["spec"]
@@ -5510,8 +5769,9 @@ class RLTradingStudio(ctk.CTk):
                 overrides[key] = value
         return overrides
 
-    def _get_train_reward_overrides(self):
-        overrides = self._collect_train_reward_overrides()
+    def _get_train_reward_overrides(self, compare_loaded_json=True):
+        overrides = self._collect_train_reward_overrides(
+            compare_loaded_json=compare_loaded_json)
         if overrides is None:
             return None
         return json.dumps(overrides, separators=(",", ":"))
@@ -5536,6 +5796,7 @@ class RLTradingStudio(ctk.CTk):
         self._apply_train_reward_profile_defaults(clear_json=False)
         self._apply_train_reward_overrides_to_controls(loaded["overrides"])
         formula = loaded.get("formula", "")
+        self.train_reward_profile_json_has_formula = bool(formula)
         if formula:
             self.reward_formula_enabled.set(True)
             self._set_reward_formula_text(formula)
@@ -5544,6 +5805,7 @@ class RLTradingStudio(ctk.CTk):
             self._set_reward_formula_text(DEFAULT_REWARD_FORMULA)
         self._toggle_reward_formula_editor()
         self.train_reward_profile_json_path = path
+        self.train_reward_json_overrides = dict(loaded["overrides"])
         self._set_reward_json_hint(path)
         messagebox.showinfo(
             "Reward JSON loaded",
@@ -5551,7 +5813,7 @@ class RLTradingStudio(ctk.CTk):
         )
 
     def _save_train_reward_json(self):
-        overrides = self._collect_train_reward_overrides()
+        overrides = self._collect_train_reward_overrides(compare_loaded_json=False)
         if overrides is None:
             return
         formula = self._get_train_reward_formula()
@@ -5582,6 +5844,7 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showerror("Save failed", str(exc))
             return
         self.train_reward_profile_json_path = path
+        self.train_reward_json_overrides = dict(overrides)
         self._set_reward_json_hint(path)
         messagebox.showinfo("Reward JSON saved", f"Saved reward profile:\n{path}")
 
@@ -5665,7 +5928,8 @@ class RLTradingStudio(ctk.CTk):
             value = float(entry.get().strip())
         except ValueError:
             messagebox.showerror("Invalid action value", f"{spec['label']} must be numeric.")
-            self._apply_train_action_profile_defaults()
+            self._set_reward_entry_text(
+                entry, self._action_value_text(spec, control["slider"].get()))
             return False
         value = max(float(spec["min"]), min(float(spec["max"]), value))
         control["slider"].set(value)
@@ -5684,6 +5948,7 @@ class RLTradingStudio(ctk.CTk):
             return
         if clear_json:
             self.train_action_profile_json_path = ""
+            self.train_action_json_params = {}
             self._set_action_json_hint()
         profile_key = action_profile_key_from_label(self.train_action_profile.get())
         params = ACTION_PROFILES[profile_key]["params"]
@@ -5703,11 +5968,13 @@ class RLTradingStudio(ctk.CTk):
             control["slider"].set(value)
             self._set_reward_entry_text(control["entry"], self._action_value_text(spec, value))
 
-    def _collect_train_action_params(self):
+    def _collect_train_action_params(self, compare_loaded_json=True):
         if not hasattr(self, "train_action_controls") or not hasattr(self, "train_action_profile"):
             return {}
         profile_key = action_profile_key_from_label(self.train_action_profile.get())
-        defaults = ACTION_PROFILES[profile_key]["params"]
+        defaults = dict(ACTION_PROFILES[profile_key]["params"])
+        if compare_loaded_json and getattr(self, "train_action_profile_json_path", ""):
+            defaults.update(getattr(self, "train_action_json_params", {}))
         overrides = {}
         for key, control in self.train_action_controls.items():
             spec = control["spec"]
@@ -5730,8 +5997,9 @@ class RLTradingStudio(ctk.CTk):
                 overrides[key] = value
         return overrides
 
-    def _get_train_action_params(self):
-        params = self._collect_train_action_params()
+    def _get_train_action_params(self, compare_loaded_json=True):
+        params = self._collect_train_action_params(
+            compare_loaded_json=compare_loaded_json)
         if params is None:
             return None
         return json.dumps(params, separators=(",", ":"))
@@ -5756,6 +6024,7 @@ class RLTradingStudio(ctk.CTk):
         self._apply_train_action_profile_defaults(clear_json=False)
         self._apply_train_action_params_to_controls(loaded["params"])
         self.train_action_profile_json_path = path
+        self.train_action_json_params = dict(loaded["params"])
         self._set_action_json_hint(path)
         messagebox.showinfo(
             "Action JSON loaded",
@@ -5763,7 +6032,7 @@ class RLTradingStudio(ctk.CTk):
         )
 
     def _save_train_action_json(self):
-        params = self._collect_train_action_params()
+        params = self._collect_train_action_params(compare_loaded_json=False)
         if params is None:
             return
         DEFAULT_ACTION_PROFILE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -5789,6 +6058,7 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showerror("Save failed", str(exc))
             return
         self.train_action_profile_json_path = path
+        self.train_action_json_params = dict(params)
         self._set_action_json_hint(path)
         messagebox.showinfo("Action JSON saved", f"Saved action profile:\n{path}")
 
@@ -6414,10 +6684,18 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showwarning("No data", "Please select a CSV file first")
             return
 
-        steps = self.train_steps.get() or "200000"
-        window = self.train_window.get() or "10"
-        max_hold = self.train_maxhold.get() or "30"
-        name = (self.train_name.get() or "rl_prod_v1").strip()
+        steps_int = self._parse_int_field(self.train_steps, 200000, "Training Steps")
+        window_int = self._parse_int_field(self.train_window, 10, "Window")
+        max_hold_int = self._parse_int_field(self.train_maxhold, 30, "Max Hold")
+        mc_eval_int = self._parse_int_field(self.train_mc_eval, 1000, "MC Eval Runs", minimum=0)
+        if None in (steps_int, window_int, max_hold_int, mc_eval_int):
+            return
+        steps = str(steps_int)
+        window = str(window_int)
+        max_hold = str(max_hold_int)
+        name = self._normalize_output_name(self.train_name, "rl_prod_v1", "Model name")
+        if name is None:
+            return
         reward = self.train_reward.get().split()[0]
         reward_profile = reward_profile_key_from_label(self.train_reward_profile.get())
         reward_overrides = self._get_train_reward_overrides()
@@ -6456,9 +6734,14 @@ class RLTradingStudio(ctk.CTk):
         lr = self.train_lr.get() or "3e-4"
         clip = self.train_clip.get() or "0.2"
         ent = self.train_ent.get() or "0.01"
-        nsteps = self.train_nsteps.get() or "2048"
-        nepochs = self.train_nepochs.get() or "10"
-        batch = self.train_batch.get() or "64"
+        nsteps_int = self._parse_int_field(self.train_nsteps, 2048, "N Steps")
+        nepochs_int = self._parse_int_field(self.train_nepochs, 10, "N Epochs")
+        batch_int = self._parse_int_field(self.train_batch, 64, "Batch Size")
+        if None in (nsteps_int, nepochs_int, batch_int):
+            return
+        nsteps = str(nsteps_int)
+        nepochs = str(nepochs_int)
+        batch = str(batch_int)
         gamma = self.train_gamma.get() or "0.99"
         gae = self.train_gae.get() or "0.95"
         vf = self.train_vf.get() or "0.5"
@@ -6469,7 +6752,7 @@ class RLTradingStudio(ctk.CTk):
             "--window", window,
             "--max_hold", max_hold,
             "--train_pct", str(self._parse_train_pct(self.train_pct.get(), 0.85)),
-            "--mc_eval", (self.train_mc_eval.get().strip() or "1000"),
+            "--mc_eval", str(mc_eval_int),
             "--mc_skip_frac", str(self._parse_train_pct(self.train_mc_skip.get(), 0.10)),
             "--reward_mode", reward,
             "--reward_profile", reward_profile,
@@ -6489,8 +6772,29 @@ class RLTradingStudio(ctk.CTk):
             "--vf_coef", vf,
         ]
         reward_profile_json_path = getattr(self, "train_reward_profile_json_path", "")
-        if reward_profile_json_path:
+        json_formula_disabled = (
+            reward_profile_json_path
+            and getattr(self, "train_reward_profile_json_has_formula", False)
+            and not reward_formula
+        )
+        if reward_profile_json_path and not json_formula_disabled:
             cmd.extend(["--reward_profile_json", reward_profile_json_path])
+        elif json_formula_disabled:
+            # The JSON is omitted, so overrides diffed against the JSON-merged
+            # baseline would come out empty and training would silently revert
+            # to base-profile params — re-diff against the base profile so the
+            # JSON's numeric values still reach the CLI explicitly
+            full_overrides = self._get_train_reward_overrides(
+                compare_loaded_json=False)
+            if full_overrides is None:
+                return
+            cmd[cmd.index("--reward_overrides") + 1] = full_overrides
+            self._log(
+                self.train_log,
+                "reward JSON formula disabled — passing the JSON's numeric "
+                "overrides explicitly instead",
+                "warn",
+            )
         if reward_formula:
             cmd.extend(["--reward_formula", reward_formula])
         action_profile_json_path = getattr(self, "train_action_profile_json_path", "")
@@ -6503,7 +6807,7 @@ class RLTradingStudio(ctk.CTk):
         self.status_label.configure(text="● Training...", text_color=COLOR_GREEN)
         self.train_status.configure(text="Starting...")
 
-        self._train_steps_total = int(steps)
+        self._train_steps_total = steps_int
         # ⭐ reset reward graph + threshold tracker for new run
         self._reset_reward_tracking()
         self._start_runner(cmd, "train")
@@ -6559,8 +6863,10 @@ class RLTradingStudio(ctk.CTk):
         m1_row = ctk.CTkFrame(setup, fg_color="transparent")
         m1_row.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 12))
         m1_row.grid_columnconfigure(0, weight=1)
-        self.bt_m1_csv = ScrollableOptionMenu(m1_row, values=["(none)"],
-            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+        self.bt_m1_csv = ScrollableOptionMenu(
+            m1_row, values=["(none)"],
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
+            command=self._on_bt_m1_change)
         self.bt_m1_csv.grid(row=0, column=0, sticky="ew")
         ctk.CTkButton(m1_row, text="📂", width=40,
             command=self._browse_bt_m1_csv,
@@ -6811,21 +7117,30 @@ class RLTradingStudio(ctk.CTk):
         if not hasattr(self, "bt_m1_csv"):
             return
         try:
-            if self.bt_m1_csv.get().strip() not in ("", "(none)"):
-                return  # user already chose something
+            current = self.bt_m1_csv.get().strip()
+            previous_auto = getattr(self, "_bt_m1_auto_value", None)
+            if current not in ("", "(none)") and current != previous_auto:
+                return  # preserve an explicit user choice
             m1 = self._find_matching_m1(self.bt_csv.get().strip())
             if m1:
                 values = list(getattr(self.bt_m1_csv, "_values", []) or [])
                 if m1 not in values:
                     self.bt_m1_csv.configure(values=values + [m1])
                 self.bt_m1_csv.set(m1)
+                self._bt_m1_auto_value = m1
+            else:
+                self.bt_m1_csv.set("(none)")
+                self._bt_m1_auto_value = None
         except Exception:
             pass
 
-    def _load_backtest_report(self):
+    def _on_bt_m1_change(self, _choice=None):
+        self._bt_m1_auto_value = None
+
+    def _load_backtest_report(self, model=None):
         """After a run: render equity PNG + full report from the meta JSON."""
         from artifact_paths import backtest_meta_path
-        model = self.bt_model.get().strip()
+        model = (model or self.bt_model.get()).strip()
         mp = backtest_meta_path(model)
         if not mp.exists():
             return
@@ -6846,6 +7161,12 @@ class RLTradingStudio(ctk.CTk):
             self._update_stat(self.stat_ret, pc(ret),
                               COLOR_GREEN if ret > 0 else COLOR_RED)
             self._update_stat(self.stat_dd, pc(res.get("max_drawdown")), COLOR_RED)
+        else:
+            for card in (self.stat_wr, self.stat_pf, self.stat_ret, self.stat_dd):
+                self._update_stat(card, "—", COLOR_DIM)
+            self._bt_equity_imgref = None
+            self.bt_equity_label.configure(
+                image=None, text="0 trades — no equity chart", text_color=COLOR_DIM)
 
         # Equity PNG inline
         try:
@@ -6877,10 +7198,13 @@ class RLTradingStudio(ctk.CTk):
                  f"(L {res.get('long_trades',0):,} / S {res.get('short_trades',0):,})  ·  "
                  f"WR {pc(res.get('win_rate'),1)}  ·  PF {res.get('profit_factor',0):.2f}  ·  "
                  f"avg win {pc(res.get('avg_win'))} / loss {pc(res.get('avg_loss'))}")
+        sharpe_val = res.get('sharpe')
+        sharpe_txt = (f"{sharpe_val:.2f} [{res.get('sharpe_timeframe', 'unknown')} bars]"
+                      if sharpe_val is not None else "n/a (no timestamps)")
         L.append(f"P&L        return {pc(res.get('return_pct'))}  ·  "
                  f"final ${res.get('final_balance',0):,.0f}  ·  "
                  f"max DD {pc(res.get('max_drawdown'))}  ·  "
-                 f"sharpe {res.get('sharpe',0):.2f}")
+                 f"sharpe(ann) {sharpe_txt}")
         amb = res.get('ambiguous_share_of_sl_tp')
         L.append(f"Execution  ambiguous(SL+TP same bar) {res.get('ambiguous_bars',0)}  ·  "
                  f"M1-resolved {res.get('m1_resolved',0)}  ·  "
@@ -6929,6 +7253,7 @@ class RLTradingStudio(ctk.CTk):
         if path not in current:
             self.bt_m1_csv.configure(values=current + [path])
         self.bt_m1_csv.set(path)
+        self._bt_m1_auto_value = None
 
     def _schedule_backtest_skip_hint_update(self, delay_ms=250):
         if not hasattr(self, "bt_start_hint"):
@@ -7004,6 +7329,7 @@ class RLTradingStudio(ctk.CTk):
         self.status_label.configure(text="● Generating chart...", text_color=COLOR_PURPLE)
 
         # Run subprocess (no metric parsing needed for this)
+        self._bt_run_model = model
         self._start_runner(cmd, "backtest")
 
     def _open_chart(self):
@@ -7035,6 +7361,30 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showwarning("Setup", "Please select model and dataset")
             return
 
+        max_positions = self._parse_int_field(
+            self.bt_max_pos, 1, "Max Positions")
+        window_override = self._parse_int_field(
+            self.bt_window, 0, "Window", minimum=0)
+        random_baseline = self._parse_int_field(
+            self.bt_random_baseline, 20, "Random Baseline", minimum=0)
+        mc_runs = self._parse_int_field(self.bt_mc, 1000, "Monte Carlo Runs", minimum=0)
+        if None in (max_positions, window_override, random_baseline, mc_runs):
+            return
+
+        max_hold = 30
+        max_hold_source = "fallback"
+        model_meta = train_meta_path(model)
+        if model_meta.exists():
+            try:
+                hparams = json.loads(
+                    model_meta.read_text(encoding="utf-8-sig")
+                ).get("hyperparameters", {})
+                if hparams.get("max_hold") is not None:
+                    max_hold = int(hparams["max_hold"])
+                    max_hold_source = "model meta"
+            except Exception as exc:
+                self._log(self.bt_log, f"[warn] cannot read max_hold from meta: {exc}", "warn")
+
         # Map mode dropdown to CLI value
         mode_label = self.bt_mode.get()
         mode = "pure_agent" if "Pure" in mode_label else "agent_sltp"
@@ -7052,15 +7402,17 @@ class RLTradingStudio(ctk.CTk):
             sys.executable, "backtest_live.py", model, csv,
             "--conf", self.bt_conf.get() or "0",
             "--risk", self.bt_risk.get() or "0.01",
-            "--max_positions", self.bt_max_pos.get() or "1",
+            "--max_positions", str(max_positions),
+            "--max_hold", str(max_hold),
             "--atr_sl", self.bt_sl.get() or "2.0",
             "--atr_tp", self.bt_tp.get() or "4.0",
-            "--window", self.bt_window.get().strip() or "0",  # 0 = auto-detect from model
+            "--window", str(window_override),  # 0 = auto-detect from model
             "--start", str(self._parse_train_pct(self.bt_start.get(), 0.0)),  # skip frac
             "--mode", mode,
             "--intrabar", intrabar,
             "--stop_slippage", str(stop_slip),
         ]
+        self._log(self.bt_log, f"[settings] max_hold={max_hold} ({max_hold_source})", "info")
 
         # Optional M1 replay data for intrabar SL/TP resolution
         m1_choice = self.bt_m1_csv.get().strip() if hasattr(self, "bt_m1_csv") else ""
@@ -7077,19 +7429,16 @@ class RLTradingStudio(ctk.CTk):
                 "--swap_short", str(_pct_field(self.bt_swap_short))]
 
         # Statistical validation
-        try:
-            cmd += ["--random_baseline", str(int(self.bt_random_baseline.get().strip() or "20"))]
-        except ValueError:
-            cmd += ["--random_baseline", "20"]
-        try:
-            cmd += ["--mc", str(int(self.bt_mc.get().strip() or "1000"))]
-        except ValueError:
-            cmd += ["--mc", "1000"]
+        cmd += ["--random_baseline", str(random_baseline)]
+        cmd += ["--mc", str(mc_runs)]
 
         self._log(self.bt_log, f"$ {' '.join(cmd)}", "info")
         self.bt_run_btn.configure(state="disabled")
         self.status_label.configure(text="● Backtesting...", text_color=COLOR_ACCENT)
 
+        # Remember which model this run is for — the report renderer must not
+        # follow the dropdown if the user switches models mid-run
+        self._bt_run_model = model
         self._start_runner(cmd, "backtest")
 
     # --------------------------------------------------------
@@ -7348,23 +7697,35 @@ class RLTradingStudio(ctk.CTk):
             entry.delete(0, "end")
             entry.insert(0, str(value))
 
+        # WF never receives the loaded reward/action JSON files themselves, so
+        # diff against the BASE profile — otherwise JSON-sourced values would
+        # collapse to {} here while the Train sliders still display them
+        validated_overrides = self._get_train_reward_overrides(
+            compare_loaded_json=False)
+        validated_formula = self._get_train_reward_formula()
+        validated_action_params = self._get_train_action_params(
+            compare_loaded_json=False)
+        if (validated_overrides is None or validated_formula is None or
+                validated_action_params is None):
+            return
+
         put(self.wf_window, self.train_window.get() or "10")
         put(self.wf_maxhold, self.train_maxhold.get() or "30")
         self.wf_reward_mode.set(self.train_reward.get())
         self.wf_reward_profile.set(self.train_reward_profile.get())
 
-        overrides = self._get_train_reward_overrides()
+        overrides = validated_overrides
         if overrides is None:
             return  # invalid slider state — error dialog already shown
         self.wf_reward_overrides_value = "" if overrides in ("{}", "") else overrides
 
-        formula = self._get_train_reward_formula()
+        formula = validated_formula
         if formula is None:
             return
         self.wf_reward_formula_value = formula
 
         self.wf_action_profile.set(self.train_action_profile.get())
-        action_params = self._get_train_action_params()
+        action_params = validated_action_params
         if action_params is None:
             return
         self.wf_action_params_value = "" if action_params in ("{}", "") else action_params
@@ -7405,6 +7766,19 @@ class RLTradingStudio(ctk.CTk):
         if csv in ("(none)", ""):
             messagebox.showwarning("Setup", "Please select dataset")
             return
+        windows = self._parse_int_field(self.wf_windows, 5, "WF Windows")
+        steps = self._parse_int_field(self.wf_steps, 50000, "WF Steps")
+        window = self._parse_int_field(self.wf_window, 10, "WF Window")
+        max_hold = self._parse_int_field(self.wf_maxhold, 30, "WF Max Hold")
+        nsteps = self._parse_int_field(self.wf_nsteps, 2048, "WF N Steps")
+        nepochs = self._parse_int_field(self.wf_nepochs, 10, "WF N Epochs")
+        batch = self._parse_int_field(self.wf_batch, 64, "WF Batch Size")
+        if None in (windows, steps, window, max_hold, nsteps, nepochs, batch):
+            return
+        output_name = self._normalize_output_name(
+            self.wf_name, "wf_prod", "Walk-Forward output name")
+        if output_name is None:
+            return
         action_profile = "basic_4"
         if hasattr(self, "wf_action_profile"):
             action_profile = action_profile_key_from_label(self.wf_action_profile.get())
@@ -7415,20 +7789,20 @@ class RLTradingStudio(ctk.CTk):
 
         cmd = [
             sys.executable, "rl_walkforward.py", csv,
-            "--windows", self.wf_windows.get() or "5",
-            "--steps", self.wf_steps.get() or "50000",
-            "--window", self.wf_window.get() or "10",
-            "--max_hold", self.wf_maxhold.get() or "30",
-            "--name", self.wf_name.get() or "wf_prod",
+            "--windows", str(windows),
+            "--steps", str(steps),
+            "--window", str(window),
+            "--max_hold", str(max_hold),
+            "--name", output_name,
             "--action_profile", action_profile,
             "--reward_mode", self.wf_reward_mode.get().split()[0],
             "--reward_profile", reward_profile_key_from_label(self.wf_reward_profile.get()),
             "--learning_rate", self.wf_lr.get() or "3e-4",
             "--clip_range", self.wf_clip.get() or "0.2",
             "--ent_coef", self.wf_ent.get() or "0.01",
-            "--n_steps", self.wf_nsteps.get() or "2048",
-            "--n_epochs", self.wf_nepochs.get() or "10",
-            "--batch_size", self.wf_batch.get() or "64",
+            "--n_steps", str(nsteps),
+            "--n_epochs", str(nepochs),
+            "--batch_size", str(batch),
             "--gamma", self.wf_gamma.get() or "0.99",
             "--gae_lambda", self.wf_gae.get() or "0.95",
             "--vf_coef", self.wf_vf.get() or "0.5",
@@ -7513,7 +7887,7 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(c3, text="Mode", text_color=COLOR_DIM
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
-        ctk.CTkLabel(c3, text="Mix Ratio (old %)", text_color=COLOR_DIM
+        ctk.CTkLabel(c3, text="Mix Ratio (old, 0-1 or %)", text_color=COLOR_DIM
                       ).grid(row=1, column=1, sticky="w", padx=8, pady=(8, 4))
         ctk.CTkLabel(c3, text="Learning Rate", text_color=COLOR_DIM
                       ).grid(row=1, column=2, sticky="w", padx=18, pady=(8, 4))
@@ -7613,16 +7987,41 @@ class RLTradingStudio(ctk.CTk):
         if base in ("(none)", "") or old in ("(none)", "") or new in ("(none)", ""):
             messagebox.showwarning("Setup", "Please select all 3: base model + old + new CSV")
             return
+        steps = self._parse_int_field(self.ft_steps, 50000, "Fine-tune Steps")
+        if steps is None:
+            return
+        try:
+            mix_ratio = float(self.ft_mix.get().strip() or "0.3")
+        except ValueError:
+            messagebox.showwarning("Invalid mix ratio", "Mix Ratio must be numeric.")
+            return
+        if 1 <= mix_ratio <= 100:
+            mix_ratio /= 100.0
+        if not 0 <= mix_ratio < 1:
+            messagebox.showwarning(
+                "Invalid mix ratio", "Mix Ratio must be 0-1, or a percent from 1-100.")
+            return
+
+        output_name = self._normalize_output_name(
+            self.ft_name, f"{base}_ft", "New Model Name")
+        if output_name is None:
+            return
+        if output_name.casefold() == base.casefold():
+            messagebox.showwarning(
+                "Name collision",
+                "New Model Name must differ from the base model. Try adding _v2 or _ft.",
+            )
+            return
 
         cmd = [
             sys.executable, "rl_finetune.py", base,
             "--old_csv", old,
             "--new_csv", new,
             "--mode", self.ft_mode.get().split()[0],
-            "--mix_ratio", self.ft_mix.get() or "0.3",
+            "--mix_ratio", str(mix_ratio),
             "--lr", self.ft_lr.get() or "1e-4",
-            "--steps", self.ft_steps.get() or "50000",
-            "--name", self.ft_name.get() or "rl_prod_v2",
+            "--steps", str(steps),
+            "--name", output_name,
         ]
 
         self._log(self.ft_log, f"$ {' '.join(cmd)}", "info")
@@ -7976,6 +8375,18 @@ class RLTradingStudio(ctk.CTk):
         if not path:
             return
         self.regime_csv_path = path
+        previous_results_csv = getattr(self, "_regime_results_csv", None)
+        if previous_results_csv:
+            try:
+                stale = Path(previous_results_csv).resolve() != Path(path).resolve()
+            except Exception:
+                stale = str(previous_results_csv) != str(path)
+            if stale:
+                for item in self.regime_tree.get_children():
+                    self.regime_tree.delete(item)
+                self.regime_summary.configure(
+                    text="Breakpoints are from a previous CSV — re-run detection",
+                    text_color=COLOR_YELLOW)
         name = Path(path).name
         try:
             import pandas as pd
@@ -8114,6 +8525,7 @@ class RLTradingStudio(ctk.CTk):
 
         breaks = data.get("breaks", [])
         events = data.get("events", {})
+        self._regime_results_csv = data.get("csv")
         method = data.get("method", "?").upper()
         score = data.get("score", 0)
         n_bars = data.get("n_bars", 0)
@@ -8173,6 +8585,17 @@ class RLTradingStudio(ctk.CTk):
         if not getattr(self, "regime_csv_path", None):
             messagebox.showwarning("No CSV", "No CSV loaded.")
             return
+        results_csv = getattr(self, "_regime_results_csv", None)
+        try:
+            same_source = (results_csv is not None and
+                           Path(results_csv).resolve() == Path(self.regime_csv_path).resolve())
+        except Exception:
+            same_source = str(results_csv) == str(self.regime_csv_path)
+        if not same_source:
+            messagebox.showerror(
+                "Stale breakpoint",
+                "These breakpoints were generated from another CSV. Re-run detection first.")
+            return
 
         date_str = self.regime_tree.item(sel[0])["values"][0]
         match_label = self.regime_tree.item(sel[0])["values"][1]
@@ -8202,6 +8625,11 @@ class RLTradingStudio(ctk.CTk):
             cutoff = pd.Timestamp(date_str)
             df = df[df["timestamp"] >= cutoff].reset_index(drop=True)
             after = len(df)
+            if after == 0:
+                messagebox.showerror(
+                    "Cutoff outside CSV",
+                    f"Cutoff {date_str} leaves no rows in {src_csv.name}.")
+                return
             df.to_csv(dst_csv, index=False)
         except Exception as e:
             messagebox.showerror("Filter failed", str(e))
@@ -8253,7 +8681,7 @@ class RLTradingStudio(ctk.CTk):
         compare_btns = ctk.CTkFrame(compare, fg_color="transparent")
         compare_btns.grid(row=1, column=0, sticky="ew", padx=18, pady=(10, 8))
         ctk.CTkButton(compare_btns, text="Refresh table",
-                      command=self._refresh_model_comparison,
+                      command=lambda: self._refresh_model_comparison(force=True),
                       fg_color=COLOR_BG_INPUT, hover_color=COLOR_HOVER,
                       corner_radius=8, height=34, width=130
                       ).pack(side="left", padx=(0, 8))
@@ -8407,8 +8835,11 @@ class RLTradingStudio(ctk.CTk):
             config_mqh = next((p for p in config_candidates if p.exists()), config_candidates[0])
             if params_sidecar and params_sidecar.exists():
                 params_label, params_color = "✓ sidecar", COLOR_GREEN
-            elif config_mqh.exists() and "RL_ApplyDataCollectorConfig" in \
-                    config_mqh.read_text(encoding="utf-8", errors="ignore"):
+            elif config_mqh.exists() and (
+                    "#define RL_PARAMS_EMBEDDED 1" in
+                    config_mqh.read_text(encoding="utf-8", errors="ignore") or
+                    "// Embedded from" in
+                    config_mqh.read_text(encoding="utf-8", errors="ignore")):
                 params_label, params_color = "✓ embedded", COLOR_GREEN
             else:
                 params_label, params_color = "— defaults", COLOR_YELLOW
@@ -8923,6 +9354,12 @@ Built with: CustomTkinter + stable-baselines3
         return text
 
     def _log(self, widget, text, tag="info"):
+        if threading.current_thread() is not threading.main_thread():
+            try:
+                self.after(0, lambda: self._log(widget, text, tag))
+            except RuntimeError:
+                pass
+            return
         widget.configure(state="normal")
         ts = datetime.now().strftime("%H:%M:%S")
         widget.insert("end", f"[{ts}] ", "info")
@@ -9104,21 +9541,34 @@ Built with: CustomTkinter + stable-baselines3
                     self.wf_progress_label.configure(
                         text=f"Progress: {pct * 100:.1f}%{suffix}",
                         text_color=COLOR_PURPLE if pct < 1.0 else COLOR_GREEN)
-            if 'ROBUST' in line and 'NOT' not in line:
-                self.wf_verdict_icon.configure(text="✅")
-                self.wf_verdict_text.configure(text="ROBUST", text_color=COLOR_GREEN)
-                self.wf_verdict_sub.configure(text="All windows passed gate")
-            elif 'UNSTABLE' in line:
-                self.wf_verdict_icon.configure(text="⚠️")
-                self.wf_verdict_text.configure(text="UNSTABLE", text_color=COLOR_YELLOW)
-                self.wf_verdict_sub.configure(text="Some windows failed")
+            if 'MOSTLY ROBUST' in line:
+                match = re.search(r'(\d+/\d+)\s+windows', line)
+                suffix = f" ({match.group(1)} passed)" if match else ""
+                self.wf_verdict_icon.configure(text="🟡")
+                self.wf_verdict_text.configure(text="MOSTLY ROBUST", text_color=COLOR_YELLOW)
+                self.wf_verdict_sub.configure(text=f"Most windows passed{suffix} — use with caution")
             elif 'NOT ROBUST' in line:
                 self.wf_verdict_icon.configure(text="❌")
                 self.wf_verdict_text.configure(text="NOT ROBUST", text_color=COLOR_RED)
                 self.wf_verdict_sub.configure(text="Most windows failed")
+            elif 'UNSTABLE' in line:
+                self.wf_verdict_icon.configure(text="⚠️")
+                self.wf_verdict_text.configure(text="UNSTABLE", text_color=COLOR_YELLOW)
+                self.wf_verdict_sub.configure(text="Some windows failed")
+            elif 'ROBUST' in line:
+                self.wf_verdict_icon.configure(text="✅")
+                self.wf_verdict_text.configure(text="ROBUST", text_color=COLOR_GREEN)
+                self.wf_verdict_sub.configure(text="All windows passed gate")
 
     def _update_stat(self, old_card, new_value, color=None):
         """Replace stat card content"""
+        value_label = getattr(old_card, "value_label", None)
+        if value_label is not None:
+            kwargs = {"text": new_value}
+            if color:
+                kwargs["text_color"] = color
+            value_label.configure(**kwargs)
+            return old_card
         # Find label
         for w in old_card.winfo_children():
             if isinstance(w, ctk.CTkLabel):
@@ -9191,9 +9641,11 @@ Built with: CustomTkinter + stable-baselines3
         # Populate the backtest report panel on success
         if page == 'backtest' and rc == 0 and hasattr(self, 'bt_report_box'):
             try:
-                self._load_backtest_report()
+                self._load_backtest_report(getattr(self, "_bt_run_model", None))
             except Exception as exc:
                 self._log(self.bt_log, f"(report render failed: {exc})", "warn")
+        if page == 'backtest':
+            self._bt_run_model = None
 
         # Populate regime breakpoint table on success
         if page == 'regime' and rc == 0:

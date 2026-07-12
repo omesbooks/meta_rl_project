@@ -36,7 +36,7 @@ Examples:
     # Custom deploy name and output dir
     python export_to_onnx.py rl_prod_v10_enriched --name rl_v10
 """
-import sys, io, argparse, shutil, json
+import sys, io, argparse, shutil, json, re
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -54,7 +54,16 @@ from artifact_paths import (
 )
 from action_profiles import ACTION_PRIMITIVES, action_ids_by_name, get_action_profile, profile_for_action_count
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if (sys.stdout is not None and hasattr(sys.stdout, "buffer") and
+        str(getattr(sys.stdout, "encoding", "")).lower().replace("-", "") != "utf8"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+
+def sanitize_deploy_name(name: str) -> str:
+    clean = re.sub(r"[^A-Za-z0-9_]+", "_", str(name)).strip("_")
+    if clean and clean[0].isdigit():
+        clean = "m_" + clean
+    return clean
 
 
 class PolicyWrapper(nn.Module):
@@ -87,6 +96,14 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
 
     if deploy_name is None:
         deploy_name = model_name
+    raw_deploy_name = deploy_name
+    deploy_name = sanitize_deploy_name(deploy_name)
+    if not deploy_name:
+        print(f"ERROR: deploy name {raw_deploy_name!r} has no valid ASCII identifier characters")
+        return 1
+    if deploy_name != raw_deploy_name:
+        print(f"[warn] deploy name sanitized: {raw_deploy_name!r} -> {deploy_name!r}")
+    macro_base = deploy_name.upper()
 
     if output_dir is None:
         package_dir = SCRIPT_DIR / "mt5_files" / "packages" / deploy_name
@@ -295,8 +312,8 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     mqh.append(f"//| Input dim: {obs_dim} = window({window}) × features({feat_count}) + 3")
     mqh.append(f"//| Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
     mqh.append("//+------------------------------------------------------------------+")
-    mqh.append(f"#ifndef {deploy_name.upper()}_CONFIG_MQH")
-    mqh.append(f"#define {deploy_name.upper()}_CONFIG_MQH")
+    mqh.append(f"#ifndef {macro_base}_CONFIG_MQH")
+    mqh.append(f"#define {macro_base}_CONFIG_MQH")
     mqh.append("")
     mqh.append(f"#define RL_INPUT_DIM     {obs_dim}")
     mqh.append(f"#define RL_OUTPUT_DIM    {n_actions}")
@@ -342,11 +359,16 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     params_file = find_params_path(model_name)
     mqh.append("//=== DataCollector feature-computation params (for parity) ===")
     if params_file and params_file.exists():
+        # Build the whole embed block in a temp list first — appending the
+        # EMBEDDED-1 define before a mid-walk exception would leave BOTH
+        # defines in the file (MQL5 redefinition + GUI misreads it as embedded)
         try:
             params = _json.loads(params_file.read_text(encoding="utf-8"))
-            mqh.append(f"// Embedded from {params_file.name} — applied via")
-            mqh.append("// RL_ApplyDataCollectorConfig() (call in OnInit before RL_InitIndicators).")
-            mqh.append("")
+            block = []
+            block.append("#define RL_PARAMS_EMBEDDED 1")
+            block.append(f"// Embedded from {params_file.name} — applied via")
+            block.append("// RL_ApplyDataCollectorConfig() (call in OnInit before RL_InitIndicators).")
+            block.append("")
             INT_KEYS = (
                 "PMIN", "PMAX", "PSTEP", "PERIOD", "WINDOW", "FAST", "SLOW",
                 "SIGNAL", "_P", "START", "END", "TYPE", "METHOD", "PRICE"
@@ -365,21 +387,24 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
                 if kind == "int":  return str(int(v))
                 return f"{float(v):.6f}"
 
-            mqh.append("void RL_ApplyDataCollectorConfig()")
-            mqh.append("{")
+            block.append("void RL_ApplyDataCollectorConfig()")
+            block.append("{")
             for k, v in params.items():
                 kind = "bool" if k in BOOL_KEYS else _kind(k, v)
-                mqh.append(f"   {k} = {_fmt(v, kind)};")
-            mqh.append("}")
+                block.append(f"   {k} = {_fmt(v, kind)};")
+            block.append("}")
+            mqh.extend(block)
         except Exception as e:
             mqh.append(f"// WARN: could not parse params.json ({e})")
+            mqh.append("#define RL_PARAMS_EMBEDDED 0")
             mqh.append("void RL_ApplyDataCollectorConfig() { /* no params */ }")
     else:
         mqh.append("// No params.json sidecar — EA will use RL_Indicators defaults.")
+        mqh.append("#define RL_PARAMS_EMBEDDED 0")
         mqh.append("void RL_ApplyDataCollectorConfig() { /* no-op */ }")
 
     mqh.append("")
-    mqh.append(f"#endif // {deploy_name.upper()}_CONFIG_MQH")
+    mqh.append(f"#endif // {macro_base}_CONFIG_MQH")
 
     config_path.write_text('\n'.join(mqh), encoding='utf-8')
     print(f"\n[config] -> {config_path}")

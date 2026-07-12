@@ -1361,7 +1361,7 @@ void RL_NormalizeFeatures(double &features[], const double &means[], const doubl
 {
    int n = ArraySize(features);
    for(int i = 0; i < n; i++) {
-      double s = stds[i] + 1e-8;
+       double s = stds[i];
       features[i] = (features[i] - means[i]) / s;
    }
 }

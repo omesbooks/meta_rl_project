@@ -29,7 +29,7 @@ import pandas as pd
 
 
 GEMINI_MODEL = "gemini-2.5-flash"  # free tier, fast, JSON-friendly
-EVENTS_FILE = "known_events.json"
+EVENTS_FILE = str(Path(__file__).parent.resolve() / "known_events.json")
 RATE_LIMIT_SLEEP = 4.5  # 15 req/min free tier => sleep 4s between calls
 
 
@@ -169,7 +169,7 @@ def refresh_known_events(csv_path: str, symbol: str, api_key: str,
     if not api_key:
         if verbose:
             print("[gemini] no API key provided; saving shock dates without labels", flush=True)
-        labeled = [{**s, "event": f"Shock @ {s['date'][:7]}",
+        labeled = [{**s, "event": f"Shock @ {s['date']}",
                     "category": "unknown", "confidence": 0.0, "source": "auto-detect"}
                    for s in shocks]
     else:
@@ -192,6 +192,19 @@ def refresh_known_events(csv_path: str, symbol: str, api_key: str,
                       flush=True)
             if i < len(shocks):
                 time.sleep(RATE_LIMIT_SLEEP)  # respect 15 req/min free tier
+
+    # Gemini may reuse a generic label for several distinct shocks. Keep every
+    # date addressable in downstream dict-based readers.
+    seen_names = set()
+    for ev in labeled:
+        base = str(ev.get("event") or f"Shock @ {ev['date']}")
+        name = base if base not in seen_names else f"{base} ({ev['date']})"
+        suffix = 2
+        while name in seen_names:
+            name = f"{base} ({ev['date']}, {suffix})"
+            suffix += 1
+        ev["event"] = name
+        seen_names.add(name)
 
     output = {
         "symbol": symbol,
@@ -217,7 +230,16 @@ def load_known_events(path: str = EVENTS_FILE) -> dict[str, pd.Timestamp]:
     if not p.exists():
         return {}
     data = json.loads(p.read_text(encoding="utf-8"))
-    return {ev["event"]: pd.Timestamp(ev["date"]) for ev in data.get("events", [])}
+    events = {}
+    for ev in data.get("events", []):
+        base = str(ev.get("event") or f"Shock @ {ev.get('date', '?')}")
+        name = base if base not in events else f"{base} ({ev['date']})"
+        suffix = 2
+        while name in events:
+            name = f"{base} ({ev['date']}, {suffix})"
+            suffix += 1
+        events[name] = pd.Timestamp(ev["date"])
+    return events
 
 
 # -------------------- CLI --------------------

@@ -458,7 +458,9 @@ int CountMyPositions()
 void CalcSLTP(int direction, double price, double &out_sl, double &out_tp)
 {
    double atr_buf[];
-   if(CopyBuffer(g_h_atr[14 - ATR_PMIN], 0, 1, 1, atr_buf) <= 0) {
+   // Always size entries from the dedicated ATR(14) reference.  The dynamic
+   // ATR grid may not contain period 14 when ATR_PSTEP != 1.
+   if(CopyBuffer(g_h_atr14_ref, 0, 1, 1, atr_buf) <= 0) {
       out_sl = 0;
       out_tp = 0;
       return;

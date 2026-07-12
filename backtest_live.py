@@ -88,6 +88,20 @@ def _write_json(path, payload):
     path.write_text(json.dumps(_jsonable(payload), indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _write_failed_meta(path, payload):
+    """Preserve the last complete result when a later attempt fails early."""
+    target = path
+    if path.exists():
+        try:
+            current = json.loads(path.read_text(encoding="utf-8-sig"))
+            if current.get("status") == "complete":
+                target = path.with_name(path.name.replace(".meta.json", ".failed.json"))
+        except Exception:
+            pass
+    _write_json(target, payload)
+    return target
+
+
 def _resolve_action_profile(args, model):
     """Resolve action profile for a loaded model, preferring train metadata."""
     n_actions = int(model.action_space.n)
@@ -126,6 +140,23 @@ def _resolve_action_profile(args, model):
             f"but model outputs {n_actions}. Retrain or choose the matching profile."
         )
     return key, profile, action_profile_json_meta
+
+
+def _resolve_max_hold(args):
+    """Resolve max-hold from CLI, then the selected model's train metadata."""
+    if args.max_hold is not None:
+        return int(args.max_hold), "cli"
+
+    meta_file = train_meta_path(args.model)
+    if meta_file.exists():
+        try:
+            hparams = json.loads(meta_file.read_text(encoding="utf-8-sig")).get(
+                "hyperparameters", {})
+            if hparams.get("max_hold") is not None:
+                return int(hparams["max_hold"]), "model meta"
+        except Exception as exc:
+            print(f"[max_hold] warn: could not read train metadata: {exc}")
+    return 30, "fallback"
 
 
 # =============================================================
@@ -451,6 +482,7 @@ class SimAccount:
 # Backtest Engine
 # =============================================================
 def run_backtest_live(args):
+    args.max_hold, max_hold_source = _resolve_max_hold(args)
     print("=" * 60)
     print("  BACKTEST WITH LIVE_TRADER LOGIC")
     print("=" * 60)
@@ -459,7 +491,7 @@ def run_backtest_live(args):
     print(f"  Confidence  : >= {args.conf}")
     print(f"  Risk/trade  : {args.risk:.0%}")
     print(f"  Max positions: {args.max_positions}")
-    print(f"  Max hold    : {args.max_hold} bars")
+    print(f"  Max hold    : {args.max_hold} bars ({max_hold_source})")
     print(f"  Hard DD     : {args.hard_dd:.0%}")
     print(f"  Intrabar    : {getattr(args, 'intrabar', 'pessimistic')}"
           f" | stop slippage {getattr(args, 'stop_slippage', 0.0):.4%}")
@@ -492,7 +524,7 @@ def run_backtest_live(args):
         norm = pd.read_csv(norm_path, index_col=0)
         for c in feature_cols:
             if c in norm.index:
-                df[c] = (df[c] - norm.at[c, 'mean']) / (norm.at[c, 'std'] + 1e-8)
+                df[c] = (df[c] - norm.at[c, 'mean']) / norm.at[c, 'std']
         print(f"[norm] applied from {norm_path}")
     else:
         print(f"[norm] not found for {args.model}; using raw feature scale")
@@ -556,7 +588,7 @@ def run_backtest_live(args):
     model_path = find_model_path(args.model, "final")
     if model_path is None:
         print(f"\nERROR: model not found: {args.model}")
-        _write_json(meta_path, {**meta, "status": "failed", "error": "model not found"})
+        _write_failed_meta(meta_path, {**meta, "status": "failed", "error": "model not found"})
         return 1
     meta["model_path"] = str(model_path)
     print(f"\n[load] {model_path}")
@@ -565,7 +597,7 @@ def run_backtest_live(args):
         action_profile_key, action_profile_cfg, action_profile_json_meta = _resolve_action_profile(args, model)
     except Exception as exc:
         print(f"\nERROR: {exc}")
-        _write_json(meta_path, {**meta, "status": "failed", "error": str(exc)})
+        _write_failed_meta(meta_path, {**meta, "status": "failed", "error": str(exc)})
         return 1
     action_ids = action_ids_by_name(action_profile_cfg)
     action_names = action_names_for_profile(action_profile_cfg)
@@ -641,7 +673,7 @@ def run_backtest_live(args):
         print(f"  -> this dataset is NOT the one this model was trained on.")
         print(f"     Pick the matching dataset (same feature set/collector run),")
         print(f"     or the matching model for this dataset.")
-        _write_json(meta_path, {**meta, "status": "failed",
+        _write_failed_meta(meta_path, {**meta, "status": "failed",
                     "error": f"feature mismatch: model obs_dim={obs_dim}, csv features={n_feat}"})
         return 1
 
@@ -847,6 +879,10 @@ def run_backtest_live(args):
             out_csv.parent.mkdir(parents=True, exist_ok=True)
             pd.DataFrame(columns=TRADE_COLUMNS).to_csv(out_csv, index=False)
             print(f"[save] empty trades -> {out_csv}")
+            stale_equity = artifact_equity_path(args.model)
+            if stale_equity.exists():
+                stale_equity.unlink()
+                print(f"[save] removed stale equity -> {stale_equity}")
             _write_json(meta_path, meta)
             print(f"[meta] -> {meta_path}")
         return 0
@@ -871,11 +907,30 @@ def run_backtest_live(args):
     dd = (eq - peak) / peak
     max_dd = dd.min()
 
-    # Sharpe
-    if len(pnls) > 1:
-        sharpe = np.mean(pnls) / (np.std(pnls) + 1e-9) * np.sqrt(252 * 24)  # H1
+    # Annualized Sharpe from the bar-level equity series.  bars/year comes
+    # from the ACTUAL bar count over the tested calendar span — a calendar
+    # 365.25d/median-delta formula overstates it on markets that close
+    # (forex H4 has ~1565 bars/yr, not 2191) and inflates sharpe ~19%.
+    bar_returns = np.diff(eq) / np.maximum(eq[:-1], 1e-12)
+    sharpe_timeframe = "unknown"
+    bars_per_year = 0.0
+    if "timestamp" in df.columns and len(df) > 1:
+        valid_ts = pd.to_datetime(df["timestamp"], errors="coerce").dropna()
+        if len(valid_ts) > 1:
+            span_seconds = (valid_ts.iloc[-1] - valid_ts.iloc[0]).total_seconds()
+            years = span_seconds / (365.25 * 24 * 3600)
+            if years > 0:
+                bars_per_year = len(valid_ts) / years
+            median_delta = valid_ts.diff().dropna().median()
+            seconds = median_delta.total_seconds()
+            if seconds > 0:
+                sharpe_timeframe = (f"{seconds / 3600:g}h" if seconds < 86400
+                                    else f"{seconds / 86400:g}d")
+    if len(bar_returns) > 1 and np.std(bar_returns, ddof=1) > 0 and bars_per_year > 0:
+        sharpe = (np.mean(bar_returns) / np.std(bar_returns, ddof=1)
+                  * np.sqrt(bars_per_year))
     else:
-        sharpe = 0
+        sharpe = None  # not computable (no timestamps / flat curve)
 
     print(f"  Total trades       : {len(trades):,}")
     print(f"    Long  trades     : {sum(1 for t in trades if t['side']=='long'):,}")
@@ -888,7 +943,10 @@ def run_backtest_live(args):
     print(f"  Final balance      : ${account.balance:,.2f} (start ${args.balance:,.0f})")
     print(f"  Return             : {(account.balance / args.balance - 1):+.2%}")
     print(f"  Max drawdown       : {max_dd:.2%}")
-    print(f"  Sharpe (annualized): {sharpe:.2f}")
+    if sharpe is not None:
+        print(f"  Sharpe (annualized): {sharpe:.2f} ({sharpe_timeframe} bars)")
+    else:
+        print(f"  Sharpe (annualized): n/a (no usable timestamps)")
 
     # Exit reason breakdown
     print(f"\n  Exit reasons:")
@@ -1149,6 +1207,8 @@ def run_backtest_live(args):
         "return_pct": account.balance / args.balance - 1,
         "max_drawdown": max_dd,
         "sharpe": sharpe,
+        "sharpe_timeframe": sharpe_timeframe,
+        "bars_per_year": bars_per_year,
         "exit_reasons": dict(reasons),
         "signals": n_signals,
         "executed": n_executed,
@@ -1225,8 +1285,8 @@ def main():
     ap.add_argument("--risk", type=float, default=0.01,
                     help="risk per trade (default 1%%)")
     ap.add_argument("--max_positions", type=int, default=1)
-    ap.add_argument("--max_hold", type=int, default=30,
-                    help="force close after N bars")
+    ap.add_argument("--max_hold", type=int, default=None,
+                    help="force close after N bars (default: model metadata, then 30)")
     ap.add_argument("--hard_dd", type=float, default=0.15,
                     help="hard stop drawdown (default 15%%)")
     ap.add_argument("--atr_sl", type=float, default=1.5,

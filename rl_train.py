@@ -230,7 +230,8 @@ def main():
     print("[normalize] z-score features (train-only stats) ...")
     train_slice = df[feature_cols].iloc[:split]
     feat_mean = train_slice.mean()
-    feat_std = train_slice.std() + 1e-8
+    feat_std = train_slice.std()
+    feat_std = feat_std.mask(feat_std < 1e-6, 1.0)
     df[feature_cols] = (df[feature_cols] - feat_mean) / feat_std
     # fill NaN
     df = df.fillna(0).reset_index(drop=True)
@@ -293,6 +294,17 @@ def main():
             f"ERROR: eval/test data too small ({len(test_df)} rows). Need > window+2 rows.")
 
     print(f"\n[split] train: {len(train_df):,} | eval: {len(test_df):,} ({eval_source})")
+    algo_hparams = {
+        "learning_rate": args.learning_rate,
+        "clip_range": args.clip_range if args.algo == "ppo" else None,
+        "ent_coef": args.ent_coef if args.algo in ("ppo", "a2c") else None,
+        "n_steps": args.n_steps if args.algo in ("ppo", "a2c") else None,
+        "n_epochs": args.n_epochs if args.algo == "ppo" else None,
+        "batch_size": args.batch_size if args.algo in ("ppo", "dqn") else None,
+        "gamma": args.gamma,
+        "gae_lambda": args.gae_lambda if args.algo in ("ppo", "a2c") else None,
+        "vf_coef": args.vf_coef if args.algo in ("ppo", "a2c") else None,
+    }
     meta_path = train_meta_path(args.name)
     meta = {
         "model": args.name,
@@ -330,6 +342,7 @@ def main():
             "reward_profile_overrides": reward_overrides,
             "reward_profile_config": reward_profile_cfg,
             "reward_formula": args.reward_formula.strip(),
+            "reward_profile_active": args.reward_mode != "mtm",
             "action_profile": args.action_profile,
             "action_profile_label": action_profile_cfg["label"] if args.action_profile == "custom" else action_profile_label(args.action_profile),
             "action_profile_json": action_profile_json_meta,
@@ -337,15 +350,7 @@ def main():
             "action_profile_config": action_profile_cfg,
             "max_hold": args.max_hold,
             "net_arch": net_arch,
-            "learning_rate": args.learning_rate,
-            "clip_range": args.clip_range,
-            "ent_coef": args.ent_coef,
-            "n_steps": args.n_steps,
-            "n_epochs": args.n_epochs,
-            "batch_size": args.batch_size,
-            "gamma": args.gamma,
-            "gae_lambda": args.gae_lambda,
-            "vf_coef": args.vf_coef,
+            **algo_hparams,
         },
     }
     meta_path.write_text(json.dumps(_jsonable(meta), indent=2, ensure_ascii=False), encoding="utf-8")
@@ -388,6 +393,8 @@ def main():
     # ---------- create model ----------
     print(f"\n[model] {args.algo.upper()}")
     print(f"[reward] mode={args.reward_mode} | profile={reward_profile_label(args.reward_profile)}")
+    if args.reward_mode == "mtm" and (reward_overrides or args.reward_formula.strip()):
+        print("[warn] MTM reward mode ignores reward profile overrides/formula")
     print(f"[action] profile={action_profile_cfg['label']} | actions={len(action_profile_cfg['actions'])}")
     if args.reward_formula.strip():
         print("[reward] developer formula enabled")
@@ -420,10 +427,10 @@ def main():
     elif args.algo == "dqn":
         model = DQN(
             "MlpPolicy", train_env,
-            learning_rate=1e-4,
+            learning_rate=args.learning_rate,
             buffer_size=50_000,
-            batch_size=64,
-            gamma=0.99,
+            batch_size=args.batch_size,
+            gamma=args.gamma,
             exploration_fraction=0.3,
             exploration_final_eps=0.05,
             target_update_interval=500,
@@ -431,9 +438,24 @@ def main():
             tensorboard_log=log_dir,
             policy_kwargs=dict(net_arch=net_arch),
         )
+        print(f"[hyper] lr={args.learning_rate}, batch={args.batch_size}, gamma={args.gamma}")
+        print("[hyper] DQN ignores PPO-only clip/epochs/GAE/entropy/value settings")
     else:  # a2c
-        model = A2C("MlpPolicy", train_env, learning_rate=7e-4,
-                    verbose=1, tensorboard_log=log_dir)
+        model = A2C(
+            "MlpPolicy", train_env,
+            learning_rate=args.learning_rate,
+            n_steps=args.n_steps,
+            gamma=args.gamma,
+            gae_lambda=args.gae_lambda,
+            ent_coef=args.ent_coef,
+            vf_coef=args.vf_coef,
+            verbose=1,
+            tensorboard_log=log_dir,
+            policy_kwargs=dict(net_arch=net_arch),
+        )
+        print(f"[hyper] lr={args.learning_rate}, n_steps={args.n_steps}, gamma={args.gamma}")
+        print(f"[hyper] gae_lambda={args.gae_lambda}, ent={args.ent_coef}, vf={args.vf_coef}")
+        print("[hyper] A2C ignores PPO-only clip/epochs and GUI batch size")
 
     # ---------- train ----------
     print(f"\n[train] {args.steps:,} steps ...")

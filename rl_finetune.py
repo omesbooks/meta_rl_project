@@ -225,6 +225,11 @@ def main():
         raise SystemExit("ERROR: --mix_ratio must be >= 0 and < 1")
 
     out_name = args.name or f"{args.base_model}_ft"
+    if out_name.casefold() == args.base_model.casefold():
+        raise SystemExit(
+            "ERROR: --name must differ from the base model "
+            "(would overwrite its weights and train metadata)"
+        )
     model_root = ensure_model_dirs(out_name)
     meta_path = train_meta_path(out_name)
 
@@ -301,13 +306,18 @@ def main():
         norm = pd.read_csv(base_norm, index_col=0)
         for c in feature_cols:
             if c in norm.index:
-                train_df[c] = (train_df[c] - norm.at[c, "mean"]) / (norm.at[c, "std"] + 1e-8)
+                # divide by the saved std exactly — same convention as every
+                # other consumer (backtest/analyze/EA); saved stds are never 0
+                train_df[c] = (train_df[c] - norm.at[c, "mean"]) / norm.at[c, "std"]
         out_norm.parent.mkdir(parents=True, exist_ok=True)
         norm.to_csv(out_norm)
     else:
         print("\n[norm] base stats not found; recomputing from fine-tune data")
         feat_mean = train_df[feature_cols].mean()
-        feat_std = train_df[feature_cols].std() + 1e-8
+        # floor degenerate stds like rl_train does — a saved std of ~0 would
+        # blow up every exact-divide consumer at inference
+        feat_std = train_df[feature_cols].std()
+        feat_std = feat_std.mask(feat_std < 1e-6, 1.0)
         train_df[feature_cols] = (train_df[feature_cols] - feat_mean) / feat_std
         norm = pd.DataFrame({"mean": feat_mean, "std": feat_std})
         out_norm.parent.mkdir(parents=True, exist_ok=True)
@@ -412,7 +422,7 @@ def main():
         eval_df = new_df.copy()
         for c in feature_cols:
             if c in norm.index:
-                eval_df[c] = (eval_df[c] - norm.at[c, "mean"]) / (norm.at[c, "std"] + 1e-8)
+                eval_df[c] = (eval_df[c] - norm.at[c, "mean"]) / norm.at[c, "std"]
         eval_df = eval_df.fillna(0).reset_index(drop=True)
         eval_env = TradingEnv(
             eval_df,

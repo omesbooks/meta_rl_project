@@ -57,10 +57,19 @@ class TradingEnv(gym.Env):
         self.df = df.reset_index(drop=True)
         self.feature_cols = feature_cols
         self.window_size = window_size
+        if len(self.df) < int(window_size) + 3:
+            raise ValueError(
+                f"TradingEnv needs at least window_size + 3 rows; "
+                f"got rows={len(self.df)}, window_size={window_size}"
+            )
         self.spread = spread_pct
         self.commission = commission
         self.n_features = len(feature_cols)
-        self.max_steps = max_steps if max_steps else len(df) - window_size - 2
+        available_steps = max(1, len(self.df) - int(window_size) - 2)
+        requested_steps = int(max_steps) if max_steps is not None else available_steps
+        if requested_steps <= 0:
+            requested_steps = available_steps
+        self.max_steps = min(requested_steps, available_steps)
         self.max_hold_bars = max_hold_bars
         self.reward_mode = reward_mode
         self.reward_profile_name, self.reward_cfg = get_reward_profile(reward_profile, reward_overrides)
@@ -398,7 +407,7 @@ class TradingEnv(gym.Env):
         # ---- termination ----
         terminated = False
         truncated = False
-        if self.t >= self.start_t + self.max_steps:
+        if self.t >= self.start_t + self.max_steps or self.t >= len(self.df) - 1:
             truncated = True
             # auto-close at end — ⭐ Phase 2: apply exit spread for consistency
             if self.position != 0:

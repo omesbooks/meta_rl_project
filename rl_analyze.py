@@ -10,6 +10,7 @@ Usage:
 import sys
 import io
 import argparse
+import json
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -25,7 +26,8 @@ def main():
     ap.add_argument("csv")
     ap.add_argument("--start", type=float, default=0.8)
     ap.add_argument("--window", type=int, default=10)
-    ap.add_argument("--max_hold", type=int, default=30)
+    ap.add_argument("--max_hold", type=int, default=None,
+                    help="default = read from model train metadata, then 30")
     args = ap.parse_args()
 
     # load + normalize
@@ -40,7 +42,7 @@ def main():
         df = df.sort_values("timestamp").reset_index(drop=True)
 
     # Resolve artifacts via artifact_paths (post-reorg layout with legacy fallback)
-    from artifact_paths import find_norm_path, find_model_path
+    from artifact_paths import find_norm_path, find_model_path, train_meta_path
     norm_path = find_norm_path(args.model)
     if norm_path is None or not Path(norm_path).exists():
         print(f"ERROR: norm stats not found for model '{args.model}' "
@@ -49,7 +51,7 @@ def main():
     norm = pd.read_csv(norm_path, index_col=0)
     for c in feature_cols:
         if c in norm.index:
-            df[c] = (df[c] - norm.at[c, "mean"]) / (norm.at[c, "std"] + 1e-8)
+            df[c] = (df[c] - norm.at[c, "mean"]) / norm.at[c, "std"]
     df = df.fillna(0).reset_index(drop=True)
 
     start = int(len(df) * args.start)
@@ -63,6 +65,43 @@ def main():
         sys.exit(1)
     print(f"[load] {model_path}")
     model = PPO.load(str(model_path))
+
+    # Resolve the training contract from metadata.  Older models may not have
+    # metadata, so action-count detection remains the safe fallback.
+    from action_profiles import get_action_profile, profile_for_action_count
+    hparams = {}
+    meta_path = train_meta_path(args.model)
+    if meta_path.exists():
+        try:
+            hparams = json.loads(meta_path.read_text(encoding="utf-8-sig")).get(
+                "hyperparameters", {})
+        except Exception as exc:
+            print(f"[contract] warn: could not read {meta_path}: {exc}")
+
+    n_actions = int(model.action_space.n)
+    action_value = hparams.get("action_profile_config") or hparams.get("action_profile")
+    action_params = hparams.get("action_profile_params") or {}
+    if action_value is None:
+        action_key, action_profile = profile_for_action_count(n_actions)
+        action_source = "model action count"
+    else:
+        action_key, action_profile = get_action_profile(action_value, action_params)
+        action_source = "train metadata"
+    if len(action_profile["actions"]) != n_actions:
+        print(
+            f"ERROR: action profile '{action_profile['label']}' has "
+            f"{len(action_profile['actions'])} actions but model outputs {n_actions}."
+        )
+        sys.exit(1)
+
+    max_hold = args.max_hold
+    max_hold_source = "CLI"
+    if max_hold is None:
+        max_hold = int(hparams.get("max_hold", 30))
+        max_hold_source = "train metadata" if "max_hold" in hparams else "fallback"
+    action_display = hparams.get("action_profile") or action_key
+    print(f"[contract] action_profile={action_display} ({n_actions} actions; {action_source})")
+    print(f"[contract] max_hold={max_hold} bars ({max_hold_source})")
 
     # Auto-detect window from the model's observation space (same rule as
     # backtest_live): obs_dim = window * n_features + 3
@@ -83,7 +122,8 @@ def main():
 
     env = TradingEnv(test_df, feature_cols, window_size=window,
                      max_steps=len(test_df) - window - 2,
-                     max_hold_bars=args.max_hold, reward_mode="realized")
+                     max_hold_bars=max_hold, reward_mode="realized",
+                     action_profile=action_profile)
     obs, _ = env.reset()
 
     records = []

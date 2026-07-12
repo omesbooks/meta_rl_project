@@ -232,7 +232,7 @@ def run_trading_loop(mode: str = "demo"):
                 for c in feature_cols:
                     if c in norm.index:
                         df_features[c] = (df_features[c] - norm.at[c, 'mean']) / \
-                                          (norm.at[c, 'std'] + 1e-8)
+                                          norm.at[c, 'std']
 
             # ----- Build state -----
             position_side = mt5_conn.current_position_side() if mt5_conn else 0

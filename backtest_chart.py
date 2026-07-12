@@ -24,7 +24,7 @@ import numpy as np
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-from artifact_paths import chart_path as artifact_chart_path, find_trades_path
+from artifact_paths import chart_path as artifact_chart_path, find_trades_path, mc_chart_path
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -318,6 +318,29 @@ def main():
     output = Path(args.output) if args.output else artifact_chart_path(args.model)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.write_html(output, include_plotlyjs='cdn')
+
+    # Append the Monte Carlo fan chart (if the last backtest produced one) so
+    # the shareable HTML carries the full picture, embedded as base64 — the
+    # file stays self-contained when copied elsewhere
+    mc_png = mc_chart_path(args.model)
+    if mc_png.exists():
+        import base64
+        b64 = base64.b64encode(mc_png.read_bytes()).decode("ascii")
+        section = (
+            '\n<div style="max-width:1400px;margin:12px auto;padding:0 8px;'
+            'font-family:Segoe UI,Tahoma,sans-serif">'
+            '<h3 style="margin:8px 0 4px">Monte Carlo — shuffled-order equity paths</h3>'
+            '<p style="margin:0 0 8px;color:#555;font-size:13px">'
+            'ทุกเส้นจบจุดเดียวกันเสมอ (สลับลำดับไม่เปลี่ยนกำไรสุทธิ) — '
+            'อ่านความกว้างของพัดระหว่างทาง = ช่วง drawdown ที่เป็นไปได้ · แกน X คือลำดับ trade</p>'
+            f'<img src="data:image/png;base64,{b64}" '
+            'style="width:100%;height:auto;border:1px solid #ddd;border-radius:6px"/>'
+            "</div>\n"
+        )
+        html = output.read_text(encoding="utf-8")
+        html = html.replace("</body>", section + "</body>", 1)
+        output.write_text(html, encoding="utf-8")
+        print(f"[chart] embedded MC fan chart from {mc_png.name}")
 
     print(f"\n[save] -> {output}")
     print(f"  Open in browser to view interactive chart")

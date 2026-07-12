@@ -1297,9 +1297,9 @@ def run_backtest_live(args):
                 # ALL shuffled paths — alpha scales down with count so 1000
                 # lines read as a density cloud instead of a solid blob
                 n_lines = len(mc_paths)
-                alpha = max(0.006, min(0.08, 12.0 / n_lines))
+                alpha = max(0.03, min(0.15, 45.0 / n_lines))
                 for row in mc_paths:
-                    ax.plot(x, row, color='#64748b', alpha=alpha, linewidth=0.6)
+                    ax.plot(x, row, color='#475569', alpha=alpha, linewidth=0.8)
                 ax.fill_between(x, env[0], env[4], color='#2563eb', alpha=0.12,
                                 label='5–95% envelope')
                 ax.fill_between(x, env[1], env[3], color='#2563eb', alpha=0.18,

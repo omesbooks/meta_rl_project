@@ -1300,12 +1300,21 @@ def run_backtest_live(args):
                 alpha = max(0.03, min(0.15, 45.0 / n_lines))
                 for row in mc_paths:
                     ax.plot(x, row, color='#475569', alpha=alpha, linewidth=0.8)
-                ax.fill_between(x, env[0], env[4], color='#2563eb', alpha=0.12,
+                # Envelope fills + explicit boundary lines — the dense
+                # spaghetti cloud drowns out fills alone, so the band edges
+                # get their own visible outlines drawn on top
+                ax.fill_between(x, env[0], env[4], color='#60a5fa', alpha=0.15,
                                 label='5–95% envelope')
-                ax.fill_between(x, env[1], env[3], color='#2563eb', alpha=0.18,
+                ax.fill_between(x, env[1], env[3], color='#2563eb', alpha=0.25,
                                 label='25–75% envelope')
-                ax.plot(x, env[2], color='#2563eb', linewidth=1.0,
-                        linestyle='--', alpha=0.8, label='median path')
+                for row_i, (lw, col) in ((0, (1.0, '#60a5fa')),
+                                         (4, (1.0, '#60a5fa')),
+                                         (1, (1.2, '#1d4ed8')),
+                                         (3, (1.2, '#1d4ed8'))):
+                    ax.plot(x, env[row_i], color=col, linewidth=lw,
+                            alpha=0.9, label='_nolegend_')
+                ax.plot(x, env[2], color='#1e40af', linewidth=1.4,
+                        linestyle='--', alpha=0.95, label='median path')
                 ax.plot(x, real_eq, color='#f59e0b', linewidth=2.0,
                         label='actual order')
                 ax.axhline(args.balance, color='gray', linestyle='--',

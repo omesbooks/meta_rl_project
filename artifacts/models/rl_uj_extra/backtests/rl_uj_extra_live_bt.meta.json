@@ -1,6 +1,6 @@
 {
   "model": "rl_uj_extra",
-  "created_at": "2026-07-12T19:26:10",
+  "created_at": "2026-07-23T17:39:56",
   "data_csv": "uj_h4_extra_features.csv",
   "data_rows_before_start": 8493,
   "data_period_before_start": {
@@ -30,18 +30,18 @@
     "max_positions": 1,
     "max_hold": 40,
     "hard_dd": 0.15,
-    "atr_sl": 2.0,
-    "atr_tp": 4.0,
+    "atr_sl": 1.5,
+    "atr_tp": 3.0,
     "mode": "pure_agent",
     "balance": 10000,
     "spread": 0.0002,
     "commission": 0.0001,
     "intrabar": "pessimistic",
-    "stop_slippage": 0.0001,
+    "stop_slippage": 0.0,
     "swap_long": 0.0,
     "swap_short": 0.0,
-    "random_baseline": 20,
-    "mc": 500,
+    "random_baseline": 0,
+    "mc": 300,
     "window": 0,
     "action_profile": "custom",
     "action_profile_label": "Basic 4 (Hold/Buy/Sell/Close)",
@@ -83,8 +83,7 @@
         "role": "exit",
         "name": "close"
       }
-    ],
-    "m1_csv": "uj_h4_extra_features_m1.csv"
+    ]
   },
   "status": "complete",
   "result": {
@@ -133,21 +132,12 @@
     "ambiguous_share_of_sl_tp": 0.0,
     "swap_rollovers": 0,
     "swap_net_impact": 0.0,
-    "random_baseline": {
-      "runs": 20,
-      "random_return_median": -0.5120353927539992,
-      "random_return_p5": -0.6072158693466186,
-      "random_return_p95": -0.36518481190982316,
-      "model_return": 3.353815959745222,
-      "beats": 20,
-      "percentile": 1.0,
-      "verdict": "edge distinguishable from random (>=95th percentile)"
-    },
+    "random_baseline": null,
     "monte_carlo": {
-      "shuffles": 500,
-      "dd_median": -0.05531754983554138,
-      "dd_p95_worst_case": -0.07955922921773813,
-      "dd_worst": -0.10709980366358064,
+      "shuffles": 300,
+      "dd_median": -0.053945057331840504,
+      "dd_p95_worst_case": -0.08307073285000326,
+      "dd_worst": -0.09604376825566498,
       "p_hit_hard_dd": 0.0
     },
     "significance": {

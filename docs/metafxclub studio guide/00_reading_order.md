@@ -56,6 +56,10 @@
     - Deep dive อัลกอริทึม regime detection: HMM / K-Means / PELT มองตลาดคนละมุมยังไง
     - ตาราง parameter ของแต่ละ method (คนละชุดกัน ไม่ได้ใช้ร่วมกัน), ค่า fix ในโค้ด, วิธีจูน penalty/window/states และข้อจำกัด
 
+14. [14_mc_chart_reading.html](14_mc_chart_reading.html)
+    - คู่มืออ่านกราฟ Monte Carlo ทีละค่า: เส้น/แถบทุกตัวในแผงพัด, ตัวเลข median / 95% worst / P(hit hard stop)
+    - แผง verdict PASS/CAUTION/FAIL, วิธีอ่านตำแหน่งเส้นส้ม, เช็คลิสต์ 10 วินาที และกับดัก (in-sample trap ฯลฯ)
+
 ## Codex Prompt Files
 
 - [Codex Git Update Prompt](../codex_git_update_prompts.md)
@@ -86,7 +90,7 @@
 
 ไฟล์ที่จะทำต่อในโฟลเดอร์นี้ควรเป็นไฟล์ที่แตกจาก flow หลักโดยตรง:
 
-- `14_export_mt5_detail.html` สำหรับสอน export ONNX, config, EA และการเอาไปใช้ใน MT5 Strategy Tester (ยังไม่เขียน — เลขถัดจาก 13)
+- `15_export_mt5_detail.html` สำหรับสอน export ONNX, config, EA และการเอาไปใช้ใน MT5 Strategy Tester (ยังไม่เขียน — เลขถัดจาก 14)
 
 ## Rule For This Folder
 

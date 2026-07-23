@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MC Chart Reading Guide</title>
+  <style>
+    :root {
+      --bg: #f6f8f3;
+      --paper: #ffffff;
+      --ink: #101828;
+      --muted: #52637a;
+      --line: #d9e2d6;
+      --soft: #edf6ee;
+      --soft-blue: #edf4ff;
+      --soft-warn: #fff7df;
+      --green: #008060;
+      --blue: #2457a6;
+      --yellow: #b7791f;
+      --red: #b42318;
+      --dark: #111827;
+      --code: #eef3ec;
+      --purple: #6d28d9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      line-height: 1.65;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 56px; }
+    header, section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+    }
+    header { padding: 28px; box-shadow: 0 10px 28px rgba(16, 24, 40, 0.06); }
+    section { margin-top: 18px; }
+    h1, h2, h3 { line-height: 1.25; margin: 0; }
+    h1 { font-size: clamp(28px, 4vw, 46px); margin-top: 14px; }
+    h2 { font-size: 26px; margin-bottom: 14px; }
+    h3 { font-size: 19px; margin-bottom: 8px; }
+    p { margin: 8px 0 0; }
+    a { color: var(--blue); text-decoration: none; font-weight: 650; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code);
+      border: 1px solid #dfe8dd;
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    pre {
+      background: var(--dark);
+      color: #e5eef9;
+      border-radius: 8px;
+      padding: 16px 18px;
+      overflow-x: auto;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.55;
+      margin: 14px 0 0;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #ede9fe;
+      color: var(--purple);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 13px;
+    }
+    .lead { max-width: 900px; color: var(--muted); font-size: 18px; margin-top: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fbfdf9;
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--line); background: #fbfdf9; border-radius: 8px; padding: 16px; }
+    .card.blue { background: var(--soft-blue); border-color: #c9daf8; }
+    .card.green { background: var(--soft); border-color: #cce8d8; }
+    .card.warn { background: var(--soft-warn); border-color: #f3dc9a; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: #e8edf3;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .tag.green { background: #def5ea; color: var(--green); }
+    .tag.blue { background: #dbeafe; color: var(--blue); }
+    .tag.warn { background: #fff2bf; color: var(--yellow); }
+    .tag.red { background: #ffe4e0; color: var(--red); }
+    .tag.purple { background: #ede9fe; color: var(--purple); }
+    ul, ol { margin: 10px 0 0 20px; padding: 0; }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    th { background: #eef3ec; color: #233044; font-size: 14px; }
+    tr:last-child td { border-bottom: 0; }
+    .callout {
+      border-left: 5px solid var(--purple);
+      background: #f4f0ff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 14px;
+    }
+    .callout.warn { border-left-color: var(--yellow); background: var(--soft-warn); }
+    .swatch {
+      display: inline-block; width: 30px; height: 12px; border-radius: 3px;
+      vertical-align: middle; margin-right: 6px; border: 1px solid rgba(0,0,0,.15);
+    }
+    .footer { color: var(--muted); font-size: 14px; margin-top: 18px; text-align: center; }
+    @media (max-width: 860px) {
+      .grid, .two { grid-template-columns: 1fr; }
+      header, section { padding: 18px; }
+      table { display: block; overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <span class="eyebrow">Reading Guide · Monte Carlo Chart</span>
+      <h1>วิธีอ่านกราฟ Monte Carlo ทีละค่า</h1>
+      <p class="lead">
+        คู่มืออ่านกราฟ MC ในหน้า Backtest แบบชี้ทีละองค์ประกอบ:
+        แผงพัดด้านบนบอก "ระหว่างทางเจ็บได้แค่ไหน" แผง histogram ด้านล่างตัดสิน
+        PASS / CAUTION / FAIL ให้เลย — ตัวอย่างประกอบใช้ตัวเลขจริงจาก
+        <code>rl_uj_extra</code> (300 shuffles)
+      </p>
+      <nav>
+        <a href="#overview">ภาพรวม 2 แผง</a>
+        <a href="#fan">แผงบน: เส้นทุกเส้น</a>
+        <a href="#values">ตัวเลขทุกตัว</a>
+        <a href="#verdict">แผงล่าง: เกณฑ์ตัดสิน</a>
+        <a href="#orange">อ่านเส้นส้ม</a>
+        <a href="#checklist">เช็คลิสต์ 5 ข้อ</a>
+        <a href="#pitfalls">กับดักที่ต้องรู้</a>
+      </nav>
+    </header>
+
+    <section id="overview">
+      <h2>ภาพรวม: กราฟนี้มี 2 แผง ตอบคนละคำถาม</h2>
+      <div class="grid two">
+        <div class="card blue">
+          <span class="tag blue">แผงบน · Fan Chart</span>
+          <h3>"ไม้ชุดเดิม ดวงเรียงต่างไป หน้าตาเป็นยังไง"</h3>
+          <p>ระบบเอา trade ทั้งหมดจาก backtest มาสลับลำดับสุ่ม (เหมือนสับไพ่)
+          ตามจำนวนที่ตั้งใน <code>Monte Carlo Shuffles</code> แล้ววาดเส้นทุน
+          ของทุกการสับซ้อนกัน — ความกว้างของพัดคือ "ช่วงชะตากรรมที่เป็นไปได้"</p>
+        </div>
+        <div class="card green">
+          <span class="tag green">แผงล่าง · Verdict</span>
+          <h3>"มีกี่โลกที่พาพอร์ตชนเส้นตาย แล้วผ่านเกณฑ์มั้ย"</h3>
+          <p>เก็บค่า Max Drawdown ของทุกโลกมาเรียงเป็น histogram
+          เทียบกับเส้น hard stop แล้วสรุปผลเป็น PASS / CAUTION / FAIL
+          บนหัวกราฟพร้อมสี — ไม่ต้องตีความเอง</p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>กติกาฟิสิกส์ของกราฟนี้:</strong> การสลับลำดับไม่เปลี่ยนกำไรรวม
+        (คูณสลับที่ได้) → <strong>ทุกเส้นหุบมาจบจุดเดียวกันเสมอ</strong>
+        อย่าตกใจว่าทำไมปลายพัดรวบ — สิ่งที่ต้องอ่านคือ "ระหว่างทาง" ไม่ใช่ปลายทาง
+      </div>
+    </section>
+
+    <section id="fan">
+      <h2>แผงบน — องค์ประกอบทีละเส้น</h2>
+      <table>
+        <tr>
+          <th style="width:26%">องค์ประกอบ</th>
+          <th style="width:37%">มันคืออะไร</th>
+          <th>อ่านยังไง</th>
+        </tr>
+        <tr>
+          <td><span class="swatch" style="background:#8b97a8"></span>เส้นเทาจาง ๆ (spaghetti)</td>
+          <td>เส้นทุนของ<strong>ทุก</strong> shuffle — ตั้ง 300 ก็วาด 300 เส้น
+          ความโปร่งใสปรับอัตโนมัติ</td>
+          <td>ตรงไหน<strong>เข้ม</strong> = เส้นผ่านหนาแน่น = โซนที่เกิดบ่อย ·
+          เส้นเดี่ยว ๆ ที่หลุดขอบ = เคสสุดขั้วที่หายาก</td>
+        </tr>
+        <tr>
+          <td><span class="swatch" style="background:#dbe7fb"></span>แถบฟ้าอ่อน (5–95% envelope)</td>
+          <td>ที่แต่ละลำดับ trade — 90% ของทุกโลกอยู่ในแถบนี้</td>
+          <td>ใช้เป็น "ขอบเขตปกติแบบกว้าง" — อะไรที่หลุดนอกแถบคือ 10% สุดขั้ว</td>
+        </tr>
+        <tr>
+          <td><span class="swatch" style="background:#b7cdf5"></span>แถบฟ้าเข้ม (25–75% envelope)</td>
+          <td>ครึ่งกลางเป๊ะของทุกความเป็นไปได้</td>
+          <td>"โซนคาดหวัง" — ถ้าไป live แล้ว equity เกาะโซนนี้ = เป็นไปตามคาด</td>
+        </tr>
+        <tr>
+          <td><span class="swatch" style="background:#2563eb"></span>เส้นฟ้าประ (median path)</td>
+          <td>เส้นทางตัวแทนตรงกลางสุดของทุก shuffle</td>
+          <td>ใช้เป็น "ตัวแทนที่แฟร์" ของระบบ แทนที่จะยึดเส้นจริงที่อาจโชคดี/ร้าย</td>
+        </tr>
+        <tr>
+          <td><span class="swatch" style="background:#f59e0b"></span>เส้นส้มหนา (actual order)</td>
+          <td>ลำดับจริงตามเวลาจาก backtest ของคุณ</td>
+          <td>ดูว่าอยู่ส่วนไหนของพัด — รายละเอียดใน
+          <a href="#orange">หัวข้ออ่านเส้นส้ม</a></td>
+        </tr>
+        <tr>
+          <td><span class="swatch" style="background:#9ca3af"></span>เส้นเทาประแนวนอน</td>
+          <td>ทุนเริ่มต้น (เช่น $10,000)</td>
+          <td>เส้นแบ่งกำไร/ขาดทุน — พัดที่ลอยเหนือเส้นนี้ทั้งพัด = ทุกโลกจบบวก</td>
+        </tr>
+        <tr>
+          <td><span class="swatch" style="background:#ef4444"></span>เส้นแดงประ (safety line)</td>
+          <td>ระดับ hard stop คิดจากทุนเริ่มต้น เช่น 15% → $8,500</td>
+          <td>เส้นตาย — ถ้ามีเส้นเทาเส้นไหนจุ่มลงแตะ = โลกใบนั้นโดนบังคับหยุดเทรด</td>
+        </tr>
+        <tr>
+          <td>แกน X — Trade #</td>
+          <td>ลำดับไม้ที่ 1, 2, 3, … <strong>ไม่ใช่เวลา</strong></td>
+          <td>เส้น shuffle ไม่มี timestamp ของตัวเอง จึงเทียบกันด้วยลำดับไม้</td>
+        </tr>
+        <tr>
+          <td>แกน Y — Equity ($)</td>
+          <td>มูลค่าพอร์ต ทบต้นตามกำไร % ของแต่ละไม้</td>
+          <td>พัดโค้งขึ้นแบบเร่งตัวเป็นเรื่องปกติของ compounding ไม่ใช่สัญญาณพิเศษ</td>
+        </tr>
+      </table>
+    </section>
+
+    <section id="values">
+      <h2>ตัวเลขทุกตัว — นิยาม + ตัวอย่างจริงจาก rl_uj_extra</h2>
+      <table>
+        <tr>
+          <th style="width:22%">ค่า</th>
+          <th style="width:16%">ตัวอย่างจริง</th>
+          <th>ความหมายตรง ๆ</th>
+        </tr>
+        <tr>
+          <td><code>N order shuffles</code></td>
+          <td>300</td>
+          <td>จำนวนโลกทางเลือกที่จำลอง = ค่าที่ตั้งในช่อง Monte Carlo Shuffles
+          — ยิ่งเยอะ histogram ยิ่งเนียน (1000 คือค่าแนะนำ, 300 ยังหยาบอยู่บ้าง)</td>
+        </tr>
+        <tr>
+          <td><code>median</code> (DD)</td>
+          <td>−5.4%</td>
+          <td>ครึ่งหนึ่งของทุกโลกเจ็บ<strong>ไม่เกิน</strong> −5.4% —
+          นี่คือ "DD ที่ควรคาดหวัง" แทนที่จะยึด DD ของลำดับจริงเส้นเดียว</td>
+        </tr>
+        <tr>
+          <td><code>95% worst</code></td>
+          <td>−8.3%</td>
+          <td>มีเพียง 5% ของโลกทั้งหมดที่เจ็บลึกกว่า −8.3% —
+          ใช้ค่านี้วางแผนเงิน: "เตรียมใจรับ DD ราว 8%" ไม่ใช่ 5%</td>
+        </tr>
+        <tr>
+          <td><code>hard stop</code></td>
+          <td>−15%</td>
+          <td>เพดานขาดทุนที่ยอมรับได้ (ตั้งผ่าน <code>--hard_dd</code>) —
+          DD ที่ทะลุค่านี้ = ถือว่าพอร์ตตาย</td>
+        </tr>
+        <tr>
+          <td><code>P(hit hard stop)</code></td>
+          <td>0.0%</td>
+          <td><strong>ตัวเลขสำคัญที่สุดในกราฟ</strong> — สัดส่วนโลกที่ DD ทะลุ
+          hard stop: 0.0% = ใน 300 โลก ไม่มีใครตายเลย ·
+          ถ้าเป็น 16% = ไม้ชุดเดียวกันนี้ ตายไป 48 จาก 300 โลก
+          ทั้งที่ลำดับจริง "รอด"</td>
+        </tr>
+      </table>
+      <div class="callout">
+        <strong>ทำไมต้องดู median แทน DD จริง:</strong> DD ของ backtest จริง
+        (เช่น −8.11%) คือผลของลำดับ<strong>ใบเดียว</strong> —
+        ถ้ามันต่ำกว่า median มาก แปลว่าลำดับจริงแค่โชคดี
+        ตอนไป live ควรคาดหวังตามการกระจาย (median ถึง 95% worst) ไม่ใช่ตามเส้นเดียว
+      </div>
+    </section>
+
+    <section id="verdict">
+      <h2>แผงล่าง — histogram + เกณฑ์ตัดสิน</h2>
+      <p>
+        แต่ละแท่งคือ "จำนวนโลก" ที่ Max DD ตกในช่วงนั้น เช่น แท่งสูงสุดแถว −5%
+        หมายถึงโลกส่วนใหญ่เจ็บลึกราว 5% — แล้วอ่าน 3 เส้นแนวตั้ง:
+      </p>
+      <ul>
+        <li><span class="swatch" style="background:#2563eb"></span><strong>ฟ้าประ = median</strong> — จุดกึ่งกลางการกระจาย</li>
+        <li><span class="swatch" style="background:#f59e0b"></span><strong>ส้มประ = 95% worst</strong> — ขอบเคสร้าย</li>
+        <li><span class="swatch" style="background:#ef4444"></span><strong>แดงประ = hard stop</strong> — เส้นตาย</li>
+      </ul>
+      <h3>เกณฑ์ตัดสิน (ระบบสรุปให้บนหัวกราฟพร้อมสี)</h3>
+      <table>
+        <tr><th style="width:20%">Verdict</th><th style="width:28%">เงื่อนไข</th><th>ความหมาย</th></tr>
+        <tr>
+          <td><span class="tag green">PASS</span></td>
+          <td>P(hit hard stop) &lt; 5%</td>
+          <td>เสี่ยงเชิงลำดับต่ำ — ขนาด risk/trade ที่ใช้อยู่ปลอดภัยกับ trade ชุดนี้</td>
+        </tr>
+        <tr>
+          <td><span class="tag warn">CAUTION</span></td>
+          <td>5% – 10%</td>
+          <td>ก้ำกึ่ง — ควรลด risk/trade ลง หรือยอมรับว่ามีโอกาส 1 ใน 10-20 ที่จะโดนหยุด</td>
+        </tr>
+        <tr>
+          <td><span class="tag red">FAIL</span></td>
+          <td>&gt; 10%</td>
+          <td>อย่าเพิ่ง live — ลด risk/trade แล้วรัน backtest ใหม่จน P ต่ำกว่าเกณฑ์</td>
+        </tr>
+      </table>
+      <p>
+        <strong>วิธีอ่านด้วยตาโดยไม่ต้องดูตัวเลข:</strong> ดูช่องว่างระหว่าง
+        "ก้อน histogram" กับ "เส้นแดง" — ตัวอย่าง rl_uj_extra:
+        ก้อนกระจุกช่วง −4% ถึง −9% ส่วนเส้นแดงอยู่ −15% ห่างกันมาก = ปลอดภัยชัดเจน
+        · เมื่อไหร่ที่หางก้อนเริ่มลามทับเส้นแดง = สัญญาณอันตราย
+      </p>
+    </section>
+
+    <section id="orange">
+      <h2>อ่านตำแหน่งเส้นส้ม (ลำดับจริง) — บอกนิสัยของ model</h2>
+      <table>
+        <tr><th style="width:30%">ตำแหน่งเส้นส้ม</th><th>ตีความ</th></tr>
+        <tr>
+          <td>วิ่งกลางพัด ใกล้ median</td>
+          <td>ลำดับจริงเป็นตัวแทนที่ดี — ตัวเลข backtest เชื่อถือได้ตามที่เห็น</td>
+        </tr>
+        <tr>
+          <td>วิ่งขอบบน / หลุดเหนือพัด</td>
+          <td>ลำดับจริง "โชคดี" กว่าค่าเฉลี่ย — ผลจริงตอน live มีแนวโน้มต่ำกว่า
+          backtest ให้ยึด median เป็นความคาดหวังแทน</td>
+        </tr>
+        <tr>
+          <td>วิ่งขอบล่าง / จุ่มใต้พัด</td>
+          <td>ลำดับจริง "โชคร้าย" กว่าค่าเฉลี่ย — ระบบอาจดีกว่าที่ backtest โชว์</td>
+        </tr>
+        <tr>
+          <td>สลับข้าง เช่น ใต้พัดช่วงต้น → เหนือพัดช่วงปลาย
+          (แบบ rl_uj_extra ในภาพ)</td>
+          <td>กำไร<strong>กระจุกตามช่วงเวลา</strong> (regime clustering) —
+          trade ไม่ได้อิสระต่อกันจริง แปลว่าตอน live อาจเจอช่วงแห้งแล้งยาวกว่า
+          ที่พัดบอก เพราะ MC เกลี่ยช่วงแย่กระจายทิ้งไปแล้ว</td>
+        </tr>
+      </table>
+    </section>
+
+    <section id="checklist">
+      <h2>เช็คลิสต์อ่านกราฟใน 10 วินาที</h2>
+      <ol>
+        <li><strong>พัดชี้ขึ้นมั้ย?</strong> — ปลายพัดสูงกว่าทุนเริ่มต้น = ทุกลำดับจบกำไร</li>
+        <li><strong>Verdict สีอะไร?</strong> — เขียว PASS / ส้ม CAUTION / แดง FAIL (แผงล่าง)</li>
+        <li><strong>ก้อน histogram ห่างเส้นแดงแค่ไหน?</strong> — ยิ่งห่างยิ่งปลอดภัย</li>
+        <li><strong>พัดแคบหรือบาน?</strong> — แคบ = ระบบนิ่ง · บานมาก = ผลขึ้นกับดวงเยอะ</li>
+        <li><strong>เส้นส้มอยู่ส่วนไหนของพัด?</strong> — กลาง = เชื่อ backtest ได้ ·
+        ขอบ/นอกพัด = ปรับความคาดหวังไปที่ median</li>
+      </ol>
+    </section>
+
+    <section id="pitfalls">
+      <h2>กับดักที่กราฟสวยก็ช่วยไม่ได้</h2>
+      <div class="grid two">
+        <div class="card warn">
+          <span class="tag warn">กับดัก 1</span>
+          <h3>In-sample trap — กับดักที่เจอบ่อยสุด</h3>
+          <p>MC ประเมิน "trade ชุดที่ป้อนเข้ามา" — มันไม่รู้ว่า trade
+          นั้นมาจากข้อมูลที่ model เคยเห็นตอนเทรนหรือเปล่า
+          ถ้า backtest รันทับช่วง train (Skip = 0) พัดจะสวยหลอก ๆ
+          → ตั้ง <code>Skip %</code> ให้พ้นช่วง train ก่อนเสมอ (เช่น 85)</p>
+        </div>
+        <div class="card warn">
+          <span class="tag warn">กับดัก 2</span>
+          <h3>MC สมมติว่า trade อิสระต่อกัน</h3>
+          <p>ตลาดจริงแพ้/ชนะเป็นช่วงตาม regime — การสับไพ่ทำลาย clustering
+          นั้นทิ้ง ผลคือ DD ที่ประเมินได้มัก "มองโลกดีเกินไปเล็กน้อย"
+          ใช้แถบเป็น floor ของความเสี่ยง ไม่ใช่เพดาน</p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">กับดัก 3</span>
+          <h3>ปลายทางเดียวกัน ≠ การันตีกำไร</h3>
+          <p>ทุกเส้นจบจุดเดียวกันเพราะคณิตศาสตร์ของการสลับลำดับ
+          ไม่ใช่เพราะระบบเก่ง — คำถามว่า "กำไรนี้จริงมั้ย" ต้องดูจาก
+          Random Baseline + Significance + OOS test ไม่ใช่จากกราฟนี้</p>
+        </div>
+        <div class="card blue">
+          <span class="tag blue">กับดัก 4</span>
+          <h3>Shuffles น้อย = ตัวเลขหยาบ</h3>
+          <p>300 shuffles อ่าน P(hard stop) ได้ละเอียดสุดแค่ 0.33% ต่อสไลซ์
+          และ histogram เป็นหยัก ๆ — ใช้ 1000 ขึ้นไปเมื่อจะตัดสินใจจริง
+          (ต้นทุนเวลาคำนวณเพิ่มไม่กี่วินาที)</p>
+        </div>
+      </div>
+      <p class="footer">
+        อ่านคู่กับ <a href="12_monte_carlo_deep_dive.html">12 · Monte Carlo Deep Dive</a> (แนวคิด/กระบวนการ)
+        · <a href="05_backtest_page_detail.html">05 · Backtest Page Detail</a> (การตั้งค่า)
+        · กลับไป <a href="00_reading_order.md">สารบัญซีรีส์</a>
+      </p>
+    </section>
+  </main>
+</body>
+</html>

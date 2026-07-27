@@ -69,7 +69,7 @@ input double   InpConfidence        = 0.95;       // Confidence threshold (filte
 
 input group "=== Risk Management ==="
 input double   InpRiskPct           = 0.01;       // Risk per trade (1%)
-input int      InpMaxPositions      = 3;          // Max concurrent positions
+input int      InpMaxPositions      = 1;          // Max concurrent positions (training env = 1; >1 breaks state parity)
 input int      InpMaxHoldBars       = 30;         // Force close after N bars
 input double   InpATR_SL_Mult       = 2.0;        // SL = ATR × this
 input double   InpATR_TP_Mult       = 4.0;        // TP = ATR × this
@@ -914,11 +914,13 @@ void OnTick()
    }
 
    if(action == RL_ACTION_BUY) {
-      // Skip if already long
-      if(pos_side != 1) OpenPosition(1);
+      // Open only when FLAT — TradingEnv opens with `position == 0` gate.
+      // Opening while short would create a hedge pair the model has never
+      // seen (its state carries one pos_side/unrealized slot only).
+      if(pos_side == 0) OpenPosition(1);
    }
    else if(action == RL_ACTION_SELL) {
-      if(pos_side != -1) OpenPosition(2);
+      if(pos_side == 0) OpenPosition(2);
    }
    else if(action == RL_ACTION_CLOSE) {
       if(pos_side != 0) CloseAllPositions("signal");

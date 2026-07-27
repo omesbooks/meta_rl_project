@@ -5482,7 +5482,7 @@ class RLTradingStudio(ctk.CTk):
 
         # === Run + Progress + Log ===
         c4 = Card(page, title="🚀 Training")
-        c4.grid(row=5, column=0, sticky="ew")
+        c4.grid(row=5, column=0, sticky="ew", pady=(0, 12))
         c4.grid_columnconfigure(0, weight=1)
 
         btn_row = ctk.CTkFrame(c4, fg_color="transparent")
@@ -5592,6 +5592,91 @@ class RLTradingStudio(ctk.CTk):
         log_frame.grid(row=6, column=0, sticky="ew", padx=18, pady=(0, 16))
 
         self.train_log = self._make_log_widget(log_frame, height=14)
+
+        # --- Training Diagnosis card (auto-filled after each train) ---
+        c_diag = Card(page, title="🩺 Training Diagnosis")
+        c_diag.grid(row=6, column=0, sticky="ew")
+        c_diag.grid_columnconfigure(0, weight=1)
+
+        diag_head = ctk.CTkFrame(c_diag, fg_color="transparent")
+        diag_head.grid(row=1, column=0, sticky="ew", padx=18, pady=(4, 4))
+        diag_head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(diag_head,
+            text="วินิจฉัยจาก TensorBoard log อัตโนมัติหลังเทรนจบ: overfit point · "
+                 "plateau · KL stability · signal strength · entropy",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=11),
+            wraplength=800, justify="left").grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(diag_head, text="🩺 Diagnose",
+            command=lambda: self._run_train_diagnosis(
+                (self.train_name.get() or "").strip()),
+            fg_color=COLOR_BG_INPUT, hover_color="#2d333b",
+            border_width=1, border_color="#484f58",
+            height=30, width=120).grid(row=0, column=1, sticky="e")
+
+        self.train_diag_text = ctk.CTkTextbox(c_diag, height=110,
+            font=ctk.CTkFont(size=12), fg_color="#0a0e14", wrap="word")
+        self.train_diag_text.grid(row=2, column=0, sticky="ew",
+                                  padx=18, pady=(0, 8))
+        self.train_diag_text.insert("1.0", "ยังไม่มีผลวินิจฉัย — จะรันอัตโนมัติเมื่อเทรนจบ "
+                                            "หรือกด 🩺 Diagnose เพื่อตรวจ model ตามช่องชื่อด้านบน")
+        self.train_diag_text.configure(state="disabled")
+
+        self.train_diag_img_label = ctk.CTkLabel(c_diag, text="")
+        self.train_diag_img_label.grid(row=3, column=0, padx=18, pady=(0, 16))
+
+    def _run_train_diagnosis(self, model_name):
+        """Run train_diagnose.py for the model and render chart + verdicts.
+
+        Read-only and fast — runs in a daemon thread, independent of the
+        main process runner, and marshals all widget updates via after()."""
+        if not model_name:
+            messagebox.showwarning("Diagnose", "ใส่ชื่อ model ก่อน")
+            return
+
+        def worker():
+            import subprocess
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "train_diagnose.py", model_name],
+                    capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", cwd=str(WORK_DIR), timeout=180)
+                out = proc.stdout or ""
+            except Exception as e:
+                out = f"DIAG|warn|🟡 diagnosis failed: {e}"
+            try:
+                self.after(0, lambda: self._render_train_diagnosis(model_name, out))
+            except RuntimeError:
+                pass  # mainloop gone (shutdown)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _render_train_diagnosis(self, model_name, output):
+        lines = [ln.split("|", 2)[2] for ln in output.splitlines()
+                 if ln.startswith("DIAG|") and ln.count("|") >= 2]
+        if not hasattr(self, "train_diag_text"):
+            return
+        self.train_diag_text.configure(state="normal")
+        self.train_diag_text.delete("1.0", "end")
+        header = f"— {model_name} —\n"
+        self.train_diag_text.insert("1.0", header + ("\n".join(lines) if lines
+                                    else "(ไม่พบ training log ของ model นี้)"))
+        self.train_diag_text.configure(state="disabled")
+        try:
+            from PIL import Image
+            from artifact_paths import train_diag_path
+            p = train_diag_path(model_name)
+            if p.exists():
+                img = Image.open(p)
+                w = 900
+                h = int(img.height * w / img.width)
+                self._train_diag_imgref = ctk.CTkImage(img, size=(w, h))
+                self.train_diag_img_label.configure(
+                    image=self._train_diag_imgref, text="")
+            else:
+                self._train_diag_imgref = None
+                self.train_diag_img_label.configure(image=None, text="")
+        except Exception:
+            pass
 
     def _toggle_advanced(self):
         """Show/hide advanced PPO settings"""
@@ -6859,6 +6944,7 @@ class RLTradingStudio(ctk.CTk):
         self.train_status.configure(text="Starting...")
 
         self._train_steps_total = steps_int
+        self._train_run_name = name  # for post-train auto-diagnosis
         # ⭐ reset reward graph + threshold tracker for new run
         self._reset_reward_tracking()
         self._start_runner(cmd, "train")
@@ -9734,6 +9820,8 @@ Built with: CustomTkinter + stable-baselines3
         # Refresh model list if was training
         if page in ('train', 'finetune'):
             self._refresh_dropdowns()
+        if page == 'train' and rc == 0 and getattr(self, "_train_run_name", ""):
+            self._run_train_diagnosis(self._train_run_name)
 
         if page == 'walkfwd':
             if rc == 0:

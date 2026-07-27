@@ -319,5 +319,39 @@
     "max_dd": -0.08107189582188991,
     "profit_factor": 1.2215038196625279
   },
-  "updated_at": "2026-07-03T18:51:46"
+  "updated_at": "2026-07-03T18:51:46",
+  "train_diagnosis": {
+    "findings": [
+      {
+        "level": "bad",
+        "text": "OVERFIT หลัง step ~130,000 — eval พีค 3.03 แล้วร่วงเหลือ -2.87 ตอนจบ → ใช้ best_model.zip (checkpoint ที่ ~52% ของการเทรน) แทน final"
+      },
+      {
+        "level": "warn",
+        "text": "train reward ยังไต่อยู่ตอนจบ (+5.21 ในช่วงท้าย) — ยังไม่ plateau, เพิ่ม steps ได้อีก"
+      },
+      {
+        "level": "bad",
+        "text": "approx_kl เฉลี่ยครึ่งหลัง 0.192 สูงมาก (โซนแนะนำ <0.05) — policy กระโดดแรงต่อ update → ลด learning rate หรือ clip_range"
+      },
+      {
+        "level": "ok",
+        "text": "explained_variance 0.60 ดี — features อธิบาย return ได้"
+      },
+      {
+        "level": "ok",
+        "text": "entropy ลดลงแบบค่อยเป็นค่อยไป — การสำรวจปกติ"
+      }
+    ],
+    "eval_peak_step": 130000,
+    "eval_peak_value": 3.0262,
+    "eval_end_value": -2.874442,
+    "overfit_after_peak": true,
+    "train_still_rising": true,
+    "train_reward_end": 10.223462,
+    "approx_kl_late_mean": 0.191834,
+    "explained_variance_end": 0.597549,
+    "entropy_start": -1.377701,
+    "entropy_end": -0.678955
+  }
 }

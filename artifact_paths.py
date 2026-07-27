@@ -93,6 +93,11 @@ def mc_chart_path(model_name: str) -> Path:
     return backtests_dir(model_name) / f"{model_name}_live_bt_mc.png"
 
 
+def train_diag_path(model_name: str) -> Path:
+    """4-panel training-diagnosis chart rendered by train_diagnose.py."""
+    return model_dir(model_name) / f"{model_name}_train_diag.png"
+
+
 def legacy_equity_path(model_name: str) -> Path:
     return ROOT / f"{model_name}_live_bt_equity.png"
 

@@ -6981,9 +6981,18 @@ class RLTradingStudio(ctk.CTk):
 
         ctk.CTkLabel(setup, text="Model", text_color=COLOR_DIM
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
-        self.bt_model = ScrollableOptionMenu(setup, values=["(none)"],
+        model_row = ctk.CTkFrame(setup, fg_color="transparent")
+        model_row.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
+        model_row.grid_columnconfigure(0, weight=1)
+        self.bt_model = ScrollableOptionMenu(model_row, values=["(none)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.bt_model.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
+        self.bt_model.grid(row=0, column=0, sticky="ew")
+        # Which checkpoint: final .zip vs best/ (EvalCallback pick — the
+        # pre-overfit snapshot the training diagnosis recommends)
+        self.bt_model_source = ctk.CTkOptionMenu(model_row,
+            values=["Final ⭐", "Best (pre-overfit)"],
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT, width=170)
+        self.bt_model_source.grid(row=0, column=1, padx=(8, 0))
 
         ctk.CTkLabel(setup, text="Test Dataset", text_color=COLOR_DIM
                       ).grid(row=3, column=0, sticky="w", padx=18, pady=(0, 4))
@@ -7347,8 +7356,9 @@ class RLTradingStudio(ctk.CTk):
                  f"{meta.get('backtest_rows',0):,} rows  ·  "
                  f"{(meta.get('backtest_period') or {}).get('start','?')} -> "
                  f"{(meta.get('backtest_period') or {}).get('end','?')}")
-        L.append(f"Settings   mode={s.get('mode')}  conf={s.get('conf')}  "
-                 f"risk={pc(s.get('risk'))}  maxpos={s.get('max_positions')}  "
+        L.append(f"Settings   model={s.get('model_source','final')}  mode={s.get('mode')}  "
+                 f"conf={s.get('conf')}  risk={pc(s.get('risk'))}  "
+                 f"maxpos={s.get('max_positions')}  "
                  f"SL/TP={s.get('atr_sl')}/{s.get('atr_tp')} ATR")
         L.append(f"Realism    intrabar={s.get('intrabar')}  slip={pc(s.get('stop_slippage'),3)}  "
                  f"swap L/S={pc(s.get('swap_long'),4)}/{pc(s.get('swap_short'),4)}  "
@@ -7558,8 +7568,12 @@ class RLTradingStudio(ctk.CTk):
             stop_slip = 0.0
 
         # Use backtest_live.py for realistic results
+        model_source = "final"
+        if hasattr(self, "bt_model_source") and "Best" in self.bt_model_source.get():
+            model_source = "best"
         cmd = [
             sys.executable, "backtest_live.py", model, csv,
+            "--source", model_source,
             "--conf", self.bt_conf.get() or "0",
             "--risk", self.bt_risk.get() or "0.01",
             "--max_positions", str(max_positions),

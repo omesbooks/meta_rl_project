@@ -586,13 +586,15 @@ def run_backtest_live(args):
     # Load model
     from stable_baselines3 import PPO
     import torch
-    model_path = find_model_path(args.model, "final")
+    source = getattr(args, "source", "final") or "final"
+    model_path = find_model_path(args.model, source)
     if model_path is None:
-        print(f"\nERROR: model not found: {args.model}")
+        print(f"\nERROR: model not found: {args.model} (source={source})")
         _write_failed_meta(meta_path, {**meta, "status": "failed", "error": "model not found"})
         return 1
     meta["model_path"] = str(model_path)
-    print(f"\n[load] {model_path}")
+    meta["settings"]["model_source"] = source
+    print(f"\n[load] {model_path}  (source={source})")
     model = PPO.load(str(model_path))
     try:
         action_profile_key, action_profile_cfg, action_profile_json_meta = _resolve_action_profile(args, model)
@@ -1389,6 +1391,9 @@ def run_backtest_live(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("model", help="model name (without .zip)")
+    ap.add_argument("--source", default="final", choices=["final", "best", "auto"],
+                    help="which checkpoint to test: final .zip, best/ (EvalCallback "
+                         "checkpoint before overfit), or auto (final then best)")
     ap.add_argument("csv", help="historical data CSV")
 
     # Filter & risk (เหมือน live_trader.py CONFIG)

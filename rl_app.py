@@ -5729,9 +5729,26 @@ class RLTradingStudio(ctk.CTk):
             self.reward_formula_status.configure(text="Formula valid; it will override realized reward shaping.", text_color=COLOR_GREEN)
         return formula
 
+    def _reward_display_scale(self, spec):
+        return float(spec.get("display_scale", 1))
+
     def _reward_value_text(self, spec, value):
-        decimals = int(spec.get("decimals", 3))
-        return f"{float(value):.{decimals}f}"
+        # `value` is always the RAW (stored/JSON) value; only the entry text
+        # is rendered in display units (e.g. percent for price fractions).
+        scale = self._reward_display_scale(spec)
+        decimals = int(spec.get("display_decimals", spec.get("decimals", 3)))
+        return f"{float(value) * scale:.{decimals}f}"
+
+    def _reward_range_text(self, spec):
+        scale = self._reward_display_scale(spec)
+        suffix = spec.get("display_suffix", "")
+        lo = float(spec["min"]) * scale
+        hi = float(spec["max"]) * scale
+        fmt = int(spec.get("display_decimals", spec.get("decimals", 3)))
+        # Trim trailing zeros for readability of the range hint
+        lo_s = f"{lo:.{fmt}f}".rstrip("0").rstrip(".") or "0"
+        hi_s = f"{hi:.{fmt}f}".rstrip("0").rstrip(".") or "0"
+        return f"{lo_s}..{hi_s}{suffix}"
 
     def _set_reward_entry_text(self, entry, text):
         entry.delete(0, "end")
@@ -5749,9 +5766,10 @@ class RLTradingStudio(ctk.CTk):
             top = ctk.CTkFrame(box, fg_color="transparent")
             top.grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 2))
             top.grid_columnconfigure(0, weight=1)
+            label_suffix = spec.get("display_suffix", "")
             ctk.CTkLabel(
                 top,
-                text=spec["label"],
+                text=spec["label"] + (f" ({label_suffix})" if label_suffix else ""),
                 text_color=COLOR_TEXT,
                 font=ctk.CTkFont(size=13, weight="bold"),
                 anchor="w",
@@ -5775,7 +5793,7 @@ class RLTradingStudio(ctk.CTk):
 
             ctk.CTkLabel(
                 box,
-                text=f"{spec['description']} ({spec['min']}..{spec['max']})",
+                text=f"{spec['description']} ({self._reward_range_text(spec)})",
                 text_color=COLOR_DIM,
                 font=ctk.CTkFont(size=12),
                 anchor="w",
@@ -5829,7 +5847,8 @@ class RLTradingStudio(ctk.CTk):
         entry = control["entry"]
         raw = entry.get().strip()
         try:
-            value = float(raw)
+            # entry text is in display units — convert back to raw
+            value = float(raw) / self._reward_display_scale(spec)
         except ValueError:
             messagebox.showerror("Invalid reward value", f"{spec['label']} must be numeric.")
             self._set_reward_entry_text(
@@ -5890,14 +5909,15 @@ class RLTradingStudio(ctk.CTk):
             spec = control["spec"]
             raw = control["entry"].get().strip()
             try:
-                value = float(raw)
+                # entry text is in display units — convert back to raw
+                value = float(raw) / self._reward_display_scale(spec)
             except ValueError:
                 messagebox.showerror("Invalid reward value", f"{spec['label']} must be numeric.")
                 return None
             if value < float(spec["min"]) or value > float(spec["max"]):
                 messagebox.showerror(
                     "Invalid reward value",
-                    f"{spec['label']} must be between {spec['min']} and {spec['max']}.",
+                    f"{spec['label']} must be between {self._reward_range_text(spec)}.",
                 )
                 return None
             baseline = float(defaults[key])

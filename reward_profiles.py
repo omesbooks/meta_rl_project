@@ -150,7 +150,11 @@ REWARD_PARAM_SPECS = [
         "max": 0.02,
         "steps": 40,
         "decimals": 4,
-        "description": "ต้องกำไรเกินเท่าไรจึงได้ bonus",
+        # GUI displays percent (raw × 100); stored/JSON values stay raw fractions
+        "display_scale": 100,
+        "display_decimals": 2,
+        "display_suffix": "%",
+        "description": "ต้องกำไรเกินกี่ % จึงได้ bonus",
     },
     {
         "key": "profit_bonus",
@@ -177,7 +181,10 @@ REWARD_PARAM_SPECS = [
         "max": 0.01,
         "steps": 50,
         "decimals": 4,
-        "description": "กำไรลอยตัวขั้นต่ำก่อนจับ give-back",
+        "display_scale": 100,
+        "display_decimals": 2,
+        "display_suffix": "%",
+        "description": "กำไรลอยตัวขั้นต่ำกี่ % ก่อนจับ give-back",
     },
     {
         "key": "giveback_fraction",
@@ -186,7 +193,10 @@ REWARD_PARAM_SPECS = [
         "max": 0.9,
         "steps": 70,
         "decimals": 2,
-        "description": "เหลือกี่ส่วนของ peak จึงโดน penalty",
+        "display_scale": 100,
+        "display_decimals": 0,
+        "display_suffix": "%",
+        "description": "เหลือกี่ % ของ peak จึงโดน penalty",
     },
     {
         "key": "giveback_penalty",
@@ -222,7 +232,10 @@ REWARD_PARAM_SPECS = [
         "max": 1.0,
         "steps": 90,
         "decimals": 2,
-        "description": "เริ่ม decay หลังถือเกินสัดส่วนของ max hold",
+        "display_scale": 100,
+        "display_decimals": 0,
+        "display_suffix": "%",
+        "description": "เริ่ม decay หลังถือเกินกี่ % ของ max hold",
     },
     {
         "key": "time_decay_penalty",

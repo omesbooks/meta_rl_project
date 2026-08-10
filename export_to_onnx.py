@@ -86,6 +86,8 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 TEMPLATE_EA     = SCRIPT_DIR / "mt5_files" / "MQL5" / "Experts" / "ML_RL_Trader_template.mq5"
 TEMPLATE_INC    = SCRIPT_DIR / "mt5_files" / "MQL5" / "Include"  / "RL_Indicators.mqh"
 TEMPLATE_CANDLE = SCRIPT_DIR / "mt5_files" / "MQL5" / "Indicators" / "CandlePatterns.mq5"
+TEMPLATE_DIVERGENCE = SCRIPT_DIR / "mt5_files" / "MQL5" / "Indicators" / "PriceDivergence.mq5"
+TEMPLATE_NEARNESS = SCRIPT_DIR / "mt5_files" / "MQL5" / "Indicators" / "PriceNearness.mq5"
 
 
 def export_model(model_name: str, deploy_name: str = None, output_dir: str = None,
@@ -437,6 +439,19 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     shutil.copy2(TEMPLATE_CANDLE, candle_dest)
     print(f"[ind]    -> {candle_dest}")
 
+    # PriceDivergence / PriceNearness — required by models with *_div_* or
+    # near_*/range_pos_N features; harmless extra files for models without
+    # them (RL_Indicators loads them lazily). Missing sources would make
+    # iCustom fail silently on a fresh terminal, so fail the export instead.
+    for tmpl, fname in ((TEMPLATE_DIVERGENCE, "PriceDivergence.mq5"),
+                        (TEMPLATE_NEARNESS, "PriceNearness.mq5")):
+        if not tmpl.exists():
+            print(f"ERROR: required indicator source not found: {tmpl}")
+            return 1
+        dest = out_indicators / fname
+        shutil.copy2(tmpl, dest)
+        print(f"[ind]    -> {dest}")
+
     # === Summary ===
     print()
     print("=" * 70)
@@ -452,7 +467,9 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     print(f"  │   ├── {config_filename}")
     print(f"  │   └── RL_Indicators.mqh")
     print(f"  ├── Indicators/")
-    print(f"  │   └── CandlePatterns.mq5")
+    print(f"  │   ├── CandlePatterns.mq5")
+    print(f"  │   ├── PriceDivergence.mq5")
+    print(f"  │   └── PriceNearness.mq5")
     print(f"  └── Experts/")
     print(f"      └── {ea_filename}")
 
@@ -460,8 +477,9 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     print(f"  1. Open MT5 → File → Open Data Folder")
     print(f"  2. Copy {output_dir}/* contents → MQL5/")
     print(f"     (mirrors structure: Files/, Include/, Experts/, Indicators/)")
-    print(f"  3. Open MetaEditor → Experts/{ea_filename}")
-    print(f"  4. Compile (F7)")
+    print(f"  3. Open MetaEditor → compile each file in Indicators/ (F7)")
+    print(f"     (the EA loads them via iCustom — they must be compiled first)")
+    print(f"  4. Open MetaEditor → Experts/{ea_filename} → Compile (F7)")
     print(f"  5. Strategy Tester → select {deploy_name}_EA")
 
     print(f"\n⚙️  EA Settings to match training:")

@@ -121,6 +121,22 @@ input bool   InpCP_MatholdReqBreak  = true;
 input bool   InpCP_InsideStrict     = true;
 input double InpCP_PiercingMinBody  = 0.5;
 
+input group "=== Price Divergence (must sync with EA) ==="
+input int InpDiv_RSI_Period  = 14;   // RSI period (column rsi_14_div_*)
+input int InpDiv_MACD_Fast   = 12;
+input int InpDiv_MACD_Slow   = 26;
+input int InpDiv_MACD_Signal = 9;
+input int InpDiv_PivotLeft   = 3;    // bars left of price pivot
+input int InpDiv_PivotRight  = 3;    // bars right (confirmation delay)
+input int InpDiv_MinSpan     = 5;    // min bars between pivots
+input int InpDiv_MaxSpan     = 60;   // max bars between pivots
+input int InpDiv_AgeCap      = 50;   // div_*_age cap
+
+input group "=== Price Nearness horizons (must sync with EA) ==="
+input int InpNear_N1 = 100;   // short anchor  (H4: ~3 สัปดาห์)
+input int InpNear_N2 = 250;   // medium anchor (H4: ~2 เดือน)
+input int InpNear_N3 = 1500;  // long anchor   (H4: ~1 ปี ≈ 52-week high)
+
 int      g_fh   = INVALID_HANDLE;
 datetime g_last = 0;
 long     g_rows = 0;
@@ -193,6 +209,37 @@ int OnInit()
    CP_InsideStrict      = InpCP_InsideStrict;
    CP_PiercingMinBody   = InpCP_PiercingMinBody;
 
+   // Apply price-divergence inputs to RL_Indicators globals — must be set
+   // BEFORE RL_InitIndicators so RL_BuildAllFeatureNames names columns
+   // with the right RSI period (rsi_<period>_div_*).
+   DIV_RSI_PERIOD  = InpDiv_RSI_Period;
+   DIV_MACD_FAST   = InpDiv_MACD_Fast;
+   DIV_MACD_SLOW   = InpDiv_MACD_Slow;
+   DIV_MACD_SIGNAL = InpDiv_MACD_Signal;
+   DIV_PIVOT_LEFT  = InpDiv_PivotLeft;
+   DIV_PIVOT_RIGHT = InpDiv_PivotRight;
+   DIV_MIN_SPAN    = InpDiv_MinSpan;
+   DIV_MAX_SPAN    = InpDiv_MaxSpan;
+   DIV_AGE_CAP     = InpDiv_AgeCap;
+
+   // Apply nearness horizons BEFORE RL_InitIndicators — column names embed
+   // the periods (near_high_<N> / near_low_<N> / range_pos_<N>).
+   NEAR_N1 = InpNear_N1;
+   NEAR_N2 = InpNear_N2;
+   NEAR_N3 = InpNear_N3;
+
+   // Horizons must be positive, distinct, and must not collide with the
+   // legacy in-code range_pos_50 / range_pos_20 features — a duplicate
+   // column name would map models to the first (wrong) feature.
+   if(NEAR_N1 < 1 || NEAR_N2 < 1 || NEAR_N3 < 1 ||
+      NEAR_N1 == NEAR_N2 || NEAR_N1 == NEAR_N3 || NEAR_N2 == NEAR_N3 ||
+      NEAR_N1 == 50 || NEAR_N2 == 50 || NEAR_N3 == 50 ||
+      NEAR_N1 == 20 || NEAR_N2 == 20 || NEAR_N3 == 20) {
+      Print("[COL] Invalid nearness horizons: must be positive, distinct, ",
+            "and not 20/50 (range_pos_20/range_pos_50 already exist)");
+      return INIT_FAILED;
+   }
+
    if(!RL_InitIndicators(_Symbol, _Period)) {
       Print("[COL] RL_InitIndicators failed");
       return INIT_FAILED;
@@ -218,6 +265,32 @@ int OnInit()
    if(g_h_candles == INVALID_HANDLE) {
       Print("[COL] Failed to load CandlePatterns (err=", GetLastError(),
             "). Compile CandlePatterns.mq5 in MQL5/Indicators/.");
+      return INIT_FAILED;
+   }
+
+   // Force-load PriceDivergence so *_div_* features compute in the dynamic
+   // dump. Uses DIV_* globals (just set from inputs above) — identical to
+   // the EA's RL_BuildFeatureMap call, so collector and EA stay in parity.
+   g_uses_divergence = true;
+   g_h_divergence = iCustom(_Symbol, _Period, "PriceDivergence",
+      DIV_RSI_PERIOD, DIV_MACD_FAST, DIV_MACD_SLOW, DIV_MACD_SIGNAL,
+      DIV_PIVOT_LEFT, DIV_PIVOT_RIGHT, DIV_MIN_SPAN, DIV_MAX_SPAN,
+      DIV_AGE_CAP,
+      false);  // visual markers — always off in collector
+   if(g_h_divergence == INVALID_HANDLE) {
+      Print("[COL] Failed to load PriceDivergence (err=", GetLastError(),
+            "). Compile PriceDivergence.mq5 in MQL5/Indicators/.");
+      return INIT_FAILED;
+   }
+
+   // Force-load PriceNearness so near_*/range_pos_N features compute in the
+   // dynamic dump. Same parity contract as the EA's RL_BuildFeatureMap call.
+   g_uses_nearness = true;
+   g_h_nearness = iCustom(_Symbol, _Period, "PriceNearness",
+      NEAR_N1, NEAR_N2, NEAR_N3);
+   if(g_h_nearness == INVALID_HANDLE) {
+      Print("[COL] Failed to load PriceNearness (err=", GetLastError(),
+            "). Compile PriceNearness.mq5 in MQL5/Indicators/.");
       return INIT_FAILED;
    }
 
@@ -360,7 +433,19 @@ void OnDeinit(const int reason)
       FileWriteString(pf, "  \"CP_MatholdMidMax\": "     + DoubleToString(CP_MatholdMidMax, 4)    + ",\r\n");
       FileWriteString(pf, "  \"CP_MatholdReqBreak\": "   + (CP_MatholdReqBreak ? "true" : "false")+ ",\r\n");
       FileWriteString(pf, "  \"CP_InsideStrict\": "      + (CP_InsideStrict    ? "true" : "false")+ ",\r\n");
-      FileWriteString(pf, "  \"CP_PiercingMinBody\": "   + DoubleToString(CP_PiercingMinBody, 4)  + "\r\n");
+      FileWriteString(pf, "  \"CP_PiercingMinBody\": "   + DoubleToString(CP_PiercingMinBody, 4)  + ",\r\n");
+      FileWriteString(pf, "  \"DIV_RSI_PERIOD\": "       + IntegerToString(DIV_RSI_PERIOD)        + ",\r\n");
+      FileWriteString(pf, "  \"DIV_MACD_FAST\": "        + IntegerToString(DIV_MACD_FAST)         + ",\r\n");
+      FileWriteString(pf, "  \"DIV_MACD_SLOW\": "        + IntegerToString(DIV_MACD_SLOW)         + ",\r\n");
+      FileWriteString(pf, "  \"DIV_MACD_SIGNAL\": "      + IntegerToString(DIV_MACD_SIGNAL)       + ",\r\n");
+      FileWriteString(pf, "  \"DIV_PIVOT_LEFT\": "       + IntegerToString(DIV_PIVOT_LEFT)        + ",\r\n");
+      FileWriteString(pf, "  \"DIV_PIVOT_RIGHT\": "      + IntegerToString(DIV_PIVOT_RIGHT)       + ",\r\n");
+      FileWriteString(pf, "  \"DIV_MIN_SPAN\": "         + IntegerToString(DIV_MIN_SPAN)          + ",\r\n");
+      FileWriteString(pf, "  \"DIV_MAX_SPAN\": "         + IntegerToString(DIV_MAX_SPAN)          + ",\r\n");
+      FileWriteString(pf, "  \"DIV_AGE_CAP\": "          + IntegerToString(DIV_AGE_CAP)           + ",\r\n");
+      FileWriteString(pf, "  \"NEAR_N1\": "              + IntegerToString(NEAR_N1)               + ",\r\n");
+      FileWriteString(pf, "  \"NEAR_N2\": "              + IntegerToString(NEAR_N2)               + ",\r\n");
+      FileWriteString(pf, "  \"NEAR_N3\": "              + IntegerToString(NEAR_N3)               + "\r\n");
       FileWriteString(pf, "}\r\n");
       FileClose(pf);
       Print("[COL] Wrote params -> Common\\Files\\", params_file);

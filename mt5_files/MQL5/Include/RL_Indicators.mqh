@@ -152,6 +152,25 @@ bool   CP_MatholdReqBreak   = true;
 bool   CP_InsideStrict      = true;
 double CP_PiercingMinBody   = 0.5;
 
+//=== Price Divergence params (PriceDivergence.mq5) — runtime overridable.
+//=== Defaults match tools/data/divergence_features.py. Collector/EA can
+//=== override before calling RL_BuildFeatureMap() to keep parity.
+int DIV_RSI_PERIOD  = 14;
+int DIV_MACD_FAST   = 12;
+int DIV_MACD_SLOW   = 26;
+int DIV_MACD_SIGNAL = 9;
+int DIV_PIVOT_LEFT  = 3;
+int DIV_PIVOT_RIGHT = 3;
+int DIV_MIN_SPAN    = 5;
+int DIV_MAX_SPAN    = 60;
+int DIV_AGE_CAP     = 50;
+
+//=== Price Nearness params (PriceNearness.mq5) — runtime overridable.
+//=== Nearness to N-bar high/low, 3 horizons (H4: ~3wk / ~2mo / ~1yr).
+int NEAR_N1 = 100;
+int NEAR_N2 = 250;
+int NEAR_N3 = 1500;
+
 //=== Indicator handle storage ===
 int g_h_rsi[];     // RSI handles for PMIN..PMAX using PSTEP
 int g_h_atr[];     // ATR handles for PMIN..PMAX using PSTEP
@@ -186,11 +205,19 @@ int g_h_ex_wpr       = INVALID_HANDLE;
 // ⭐ Candle Patterns indicator handle (loaded via iCustom)
 int g_h_candles = INVALID_HANDLE;
 
+// ⭐ Price Divergence indicator handle (loaded via iCustom)
+int g_h_divergence = INVALID_HANDLE;
+
+// ⭐ Price Nearness indicator handle (loaded via iCustom)
+int g_h_nearness = INVALID_HANDLE;
+
 // Feature name → all_values index map (built once from RL_FEATURE_NAMES)
 // -1 means feature not found in master list (will use 0 as fallback)
 int g_feature_idx_map[];
 int g_feature_legacy_idx_map[];
 bool g_uses_candles = false;   // true if any candle_* feature in model
+bool g_uses_divergence = false;  // true if any *_div_* / div_*_age feature in model
+bool g_uses_nearness = false;    // true if any near_high_*/near_low_*/range_pos_N feature in model
 bool g_needs_legacy_features = false;
 
 //+------------------------------------------------------------------+
@@ -345,6 +372,31 @@ void RL_BuildAllFeatureNames()
    RL_AddFeatureName("candle_harami");
    RL_AddFeatureName("candle_piercing");
    RL_AddFeatureName("candle_mathold");
+
+   // ⭐ Price divergence (PriceDivergence.mq5 buffers 0..9, same order).
+   //   Names follow divergence_features.py: "<osc column>_div_<kind>".
+   string div_rsi = "rsi_" + IntegerToString(DIV_RSI_PERIOD);
+   RL_AddFeatureName(div_rsi + "_div_bull");
+   RL_AddFeatureName(div_rsi + "_div_bear");
+   RL_AddFeatureName(div_rsi + "_div_hbull");
+   RL_AddFeatureName(div_rsi + "_div_hbear");
+   RL_AddFeatureName("macd_hist_div_bull");
+   RL_AddFeatureName("macd_hist_div_bear");
+   RL_AddFeatureName("macd_hist_div_hbull");
+   RL_AddFeatureName("macd_hist_div_hbear");
+   RL_AddFeatureName("div_bull_age");
+   RL_AddFeatureName("div_bear_age");
+
+   // ⭐ Price nearness (PriceNearness.mq5 buffers 0..8, same order).
+   //   Per horizon N: near_high_N, near_low_N, range_pos_N.
+   int near_ns[3];
+   near_ns[0] = NEAR_N1; near_ns[1] = NEAR_N2; near_ns[2] = NEAR_N3;
+   for(int ni = 0; ni < 3; ni++) {
+      string n = IntegerToString(near_ns[ni]);
+      RL_AddFeatureName("near_high_" + n);
+      RL_AddFeatureName("near_low_" + n);
+      RL_AddFeatureName("range_pos_" + n);
+   }
 }
 
 int RL_FindAllFeatureIndex(string name)
@@ -362,6 +414,27 @@ int RL_FindAllFeatureIndex(string name)
 bool RL_IsCandleFeature(string name)
 {
    return (StringFind(name, "candle_") == 0);
+}
+
+bool RL_IsDivergenceFeature(string name)
+{
+   // matches rsi_14_div_bull, macd_hist_div_hbear, div_bull_age, ...
+   return (StringFind(name, "_div_") >= 0 || StringFind(name, "div_") == 0);
+}
+
+bool RL_IsNearnessFeature(string name)
+{
+   if(StringFind(name, "near_high_") == 0 || StringFind(name, "near_low_") == 0)
+      return true;
+   // range_pos_N only for the nearness horizons — range_pos_50/range_pos_20
+   // are legacy in-code features and must NOT trigger the indicator load
+   if(StringFind(name, "range_pos_") == 0) {
+      string suffix = StringSubstr(name, StringLen("range_pos_"));
+      return (suffix == IntegerToString(NEAR_N1) ||
+              suffix == IntegerToString(NEAR_N2) ||
+              suffix == IntegerToString(NEAR_N3));
+   }
+   return false;
 }
 
 bool RL_CheckHandle(int handle, string label)
@@ -556,6 +629,7 @@ bool RL_BuildFeatureMap(string symbol, ENUM_TIMEFRAMES tf)
    ArrayResize(g_feature_idx_map, RL_FEATURE_COUNT);
    ArrayResize(g_feature_legacy_idx_map, RL_FEATURE_COUNT);
    g_uses_candles = false;
+   g_uses_divergence = false;
    g_needs_legacy_features = false;
    int unknown_count = 0;
 
@@ -572,6 +646,10 @@ bool RL_BuildFeatureMap(string symbol, ENUM_TIMEFRAMES tf)
          unknown_count++;
       } else if(RL_IsCandleFeature(want)) {
          g_uses_candles = true;
+      } else if(RL_IsDivergenceFeature(want)) {
+         g_uses_divergence = true;
+      } else if(RL_IsNearnessFeature(want)) {
+         g_uses_nearness = true;
       }
       if(legacy_idx >= 0)
          g_needs_legacy_features = true;
@@ -606,6 +684,40 @@ bool RL_BuildFeatureMap(string symbol, ENUM_TIMEFRAMES tf)
          return false;
       }
       Print("[RL] ✅ CandlePatterns loaded for candle_* features");
+   }
+
+   // Load PriceDivergence indicator only if needed
+   if(g_uses_divergence) {
+      // ⭐ Uses DIV_* globals — override before this call to keep parity
+      //   with the collector/dataset (same contract as CandlePatterns).
+      g_h_divergence = iCustom(symbol, tf, "PriceDivergence",
+         DIV_RSI_PERIOD, DIV_MACD_FAST, DIV_MACD_SLOW, DIV_MACD_SIGNAL,
+         DIV_PIVOT_LEFT, DIV_PIVOT_RIGHT, DIV_MIN_SPAN, DIV_MAX_SPAN,
+         DIV_AGE_CAP,
+         false   // Visual markers — always off in EA
+      );
+      if(g_h_divergence == INVALID_HANDLE) {
+         Print("[RL] ❌ Failed to load PriceDivergence indicator (err=",
+               GetLastError(), ")");
+         Print("     Make sure PriceDivergence.mq5 is compiled in MQL5/Indicators/");
+         return false;
+      }
+      Print("[RL] ✅ PriceDivergence loaded for *_div_* features");
+   }
+
+   // Load PriceNearness indicator only if needed
+   if(g_uses_nearness) {
+      // ⭐ Uses NEAR_* globals — override before this call to keep parity
+      //   with the collector/dataset (same contract as CandlePatterns).
+      g_h_nearness = iCustom(symbol, tf, "PriceNearness",
+         NEAR_N1, NEAR_N2, NEAR_N3);
+      if(g_h_nearness == INVALID_HANDLE) {
+         Print("[RL] ❌ Failed to load PriceNearness indicator (err=",
+               GetLastError(), ")");
+         Print("     Make sure PriceNearness.mq5 is compiled in MQL5/Indicators/");
+         return false;
+      }
+      Print("[RL] ✅ PriceNearness loaded for near_*/range_pos_N features");
    }
 
    PrintFormat("[RL] Feature mapping: %d model features → %d known, %d unknown",
@@ -653,6 +765,8 @@ void RL_DeinitIndicators()
    IndicatorRelease(g_h_ex_roc);
    IndicatorRelease(g_h_ex_wpr);
    if(g_h_candles != INVALID_HANDLE) IndicatorRelease(g_h_candles);
+   if(g_h_divergence != INVALID_HANDLE) IndicatorRelease(g_h_divergence);
+   if(g_h_nearness != INVALID_HANDLE) IndicatorRelease(g_h_nearness);
 }
 
 //+------------------------------------------------------------------+
@@ -1035,6 +1149,26 @@ bool RL_BuildAllFeatures(string symbol, ENUM_TIMEFRAMES tf, int shift,
    } else {
       for(int b = 0; b < 10; b++)
          features[out++] = 0.0;
+   }
+
+   // ⭐ Price divergence buffers 0..9 (flags + ages). Fallback when the
+   //   indicator is not loaded: flags 0, ages 1.0 (= no recent signal).
+   if(g_uses_divergence && g_h_divergence != INVALID_HANDLE) {
+      for(int b = 0; b < 10; b++)
+         features[out++] = GetVal(g_h_divergence, b, shift);
+   } else {
+      for(int b = 0; b < 10; b++)
+         features[out++] = (b >= 8) ? 1.0 : 0.0;
+   }
+
+   // ⭐ Price nearness buffers 0..8 (per horizon: high ratio, low ratio,
+   //   range pos). Fallback when not loaded: ratios 1.0, range_pos 0.5.
+   if(g_uses_nearness && g_h_nearness != INVALID_HANDLE) {
+      for(int b = 0; b < 9; b++)
+         features[out++] = GetVal(g_h_nearness, b, shift);
+   } else {
+      for(int b = 0; b < 9; b++)
+         features[out++] = (b % 3 == 2) ? 0.5 : 1.0;
    }
 
    if(out != RL_ALL_FEATURES_COUNT) {

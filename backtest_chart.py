@@ -277,6 +277,8 @@ def main():
                     help="limit bars (default 5000) — set 0 for all")
     ap.add_argument("--output", help="output HTML path")
     args = ap.parse_args()
+    from artifact_paths import pin_model_generation
+    pin_model_generation(args.model)
 
     print("=" * 60)
     print(f"  Backtest Chart Generator")

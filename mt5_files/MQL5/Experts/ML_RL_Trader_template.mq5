@@ -655,10 +655,13 @@ void OpenPosition(int action)
    double price = (action == 1) ?
                   SymbolInfoDouble(_Symbol, SYMBOL_ASK) :
                   SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double sl, tp;
-   CalcSLTP((action == 1) ? 1 : -1, price, sl, tp);
+   double sl = 0.0, tp = 0.0;
+   // Entry brackets are independent of later RL-managed SL actions.
+   if(InpUseSLTP) {
+      CalcSLTP((action == 1) ? 1 : -1, price, sl, tp);
+   }
 
-   double sl_dist = MathAbs(price - sl);
+   double sl_dist = (sl > 0.0) ? MathAbs(price - sl) : 0.0;
    double lot = CalcLot(sl_dist);
 
    bool ok;

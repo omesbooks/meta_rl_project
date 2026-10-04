@@ -10,11 +10,12 @@ RL Trainer — PPO + TradingEnv
     python rl_train.py EURUSD_H1.csv --steps 200000 --name rl_v1
 
 output:
-    artifacts/models/rl_v1/rl_v1.zip
-    artifacts/models/rl_v1/rl_v1_norm.csv
-    artifacts/models/rl_v1/rl_v1.train.json
-    artifacts/models/rl_v1/best/best_model.zip
-    artifacts/models/rl_v1/logs/        (tensorboard logs)
+    artifacts/models/rl_v1/current.json  (published run pointer)
+    artifacts/models/rl_v1/runs/<run_id>/rl_v1.zip
+    artifacts/models/rl_v1/runs/<run_id>/rl_v1_norm.csv
+    artifacts/models/rl_v1/runs/<run_id>/rl_v1.train.json
+    artifacts/models/rl_v1/runs/<run_id>/best/best_model.zip
+    artifacts/models/rl_v1/runs/<run_id>/logs/  (tensorboard logs)
 """
 import sys
 import io
@@ -26,7 +27,8 @@ import numpy as np
 import pandas as pd
 
 # Windows console UTF-8
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if __name__ == "__main__":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 from artifact_paths import (
     best_dir,
@@ -53,6 +55,10 @@ from action_profiles import (
     load_action_profile_json,
 )
 from trading_env import TradingEnv
+from artifact_paths import ArtifactRun
+from training_data import (load_dataset, feature_columns, split_training_data,
+                           fit_preprocessing, apply_normalization,
+                           check_selection_scope, validate_hyperparameters)
 
 
 def _period(df):
@@ -81,7 +87,7 @@ def _jsonable(value):
     return value
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv", help="CSV file with OHLC + features")
     ap.add_argument("--steps", type=int, default=200_000, help="training steps")
@@ -89,6 +95,8 @@ def main():
     ap.add_argument("--window", type=int, default=10, help="state window size")
     ap.add_argument("--train_pct", type=float, default=0.8, help="train/test split")
     ap.add_argument("--eval_csv", default="", help="optional separate CSV for eval/test")
+    ap.add_argument("--corr_threshold", type=float, default=1.0,
+                    help="train-only correlation pruning (1 = constant features only)")
     ap.add_argument("--ep_len", type=int, default=2000, help="bars per episode")
     ap.add_argument("--algo", default="ppo", choices=["ppo", "dqn", "a2c"])
     ap.add_argument("--reward_mode", default="realized",
@@ -139,7 +147,48 @@ def main():
                     help="GAE lambda — advantage smoothing (default 0.95)")
     ap.add_argument("--vf_coef", type=float, default=0.5,
                     help="value function loss coefficient (default 0.5)")
-    args = ap.parse_args()
+    ap.add_argument("--expected_recipe_sha256", default="", help="confirmed dashboard recipe fingerprint")
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
+    prepared = prepare_training(args)
+    with ArtifactRun(args.name) as run:
+        return train(args, run, prepared)
+
+
+def _input_fingerprints(args):
+    import hashlib
+    files = {}
+    for value in (args.csv, args.eval_csv, args.reward_profile_json, args.action_profile_json,
+                  str(Path(args.csv).with_suffix(".params.json")),
+                  str(Path(args.csv).with_suffix(".features.json"))):
+        if not value:
+            continue
+        path = Path(value).resolve()
+        digest = hashlib.sha256()
+        if path.is_file():
+            with path.open("rb") as source:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(block)
+            files[str(path)] = digest.hexdigest()
+        else:
+            files[str(path)] = None
+    return files
+
+
+def prepare_training(args):
+    """Resolve and validate the exact recipe without writing training artifacts."""
+    import copy
+    args = copy.deepcopy(args)
+    validate_hyperparameters(args)
+    from artifact_paths import _model_home
+    _model_home(args.name)
+    files = _input_fingerprints(args)
+    params_file = Path(args.csv).with_suffix(".params.json")
+    if params_file.exists() and not isinstance(json.loads(params_file.read_text(encoding="utf-8-sig")), dict):
+        raise ValueError("Collector sidecar must contain a JSON object")
     try:
         reward_overrides = {}
         reward_profile_json_meta = None
@@ -158,8 +207,7 @@ def main():
             validate_reward_formula(args.reward_formula.strip())
         reward_profile_key, reward_profile_cfg = get_reward_profile(args.reward_profile, reward_overrides)
     except Exception as exc:
-        print(f"ERROR: invalid reward overrides: {exc}")
-        sys.exit(1)
+        raise ValueError(f"Invalid reward overrides: {exc}") from exc
     args.reward_profile = reward_profile_key
 
     try:
@@ -174,10 +222,8 @@ def main():
             action_params.update(coerce_action_params(json.loads(args.action_params)))
         action_profile_key, action_profile_cfg = get_action_profile(action_profile_value, action_params)
     except Exception as exc:
-        print(f"ERROR: invalid action profile: {exc}")
-        sys.exit(1)
+        raise ValueError(f"Invalid action profile: {exc}") from exc
     args.action_profile = action_profile_key
-    model_root = ensure_model_dirs(args.name)
 
     # Auto-scale NN by window size
     if args.net_arch == "auto":
@@ -189,6 +235,8 @@ def main():
             net_arch = [128, 64]
     else:
         net_arch = [int(x) for x in args.net_arch.split(",")]
+    if not net_arch or any(n <= 0 for n in net_arch):
+        raise ValueError("Network layers must be positive integers")
     print(f"[net] arch = {net_arch}")
 
     print("=" * 60)
@@ -197,103 +245,105 @@ def main():
 
     # ---------- load data ----------
     print(f"\n[load] {args.csv}")
-    df = pd.read_csv(args.csv)
-    print(f"  rows: {len(df):,}")
+    df = load_dataset(args.csv)
     source_rows = len(df)
+    candidates = feature_columns(df)
+    external = load_dataset(args.eval_csv, candidates) if args.eval_csv else None
+    train_pct = float(args.train_pct)
+    raw_train, raw_validation, raw_test, split = split_training_data(
+        df, train_pct, args.window, external)
+    check_selection_scope(args.csv, raw_train)
+    feature_cols, norm, preprocessing = fit_preprocessing(
+        raw_train, candidates, args.corr_threshold)
+    selection_path = Path(args.csv).with_suffix(".features.json")
+    if selection_path.exists():
+        preprocessing["upstream_selection"] = json.loads(selection_path.read_text(encoding="utf-8"))
+    feat_mean, feat_std = norm["mean"], norm["std"]
+    train_df = apply_normalization(raw_train, feature_cols, norm)
+    validation_df = (apply_normalization(raw_validation, feature_cols, norm)
+                     if raw_validation is not None else None)
+    if raw_test is None:
+        test_df = train_df.tail(min(len(train_df), max(args.ep_len, args.window + 3))).copy()
+        eval_source = "in-sample diagnostic; no unseen Test"
+    else:
+        test_df = apply_normalization(raw_test, feature_cols, norm)
+        eval_source = "held-out Test (not used by EvalCallback)"
 
-    # drop leaky columns + non-feature columns
-    leaky = [c for c in df.columns
-             if any(k in c.lower() for k in ("future_", "forward_", "next_", "target"))]
-    if leaky:
-        print(f"  drop leaky/target: {leaky}")
-        df = df.drop(columns=leaky)
+    import hashlib
+    if files != _input_fingerprints(args):
+        raise ValueError("Data or recipe changed during preparation. Review the training summary again.")
+    recipe = dict(
+        schema="metafxclub.confirmed_training.v1",
+        settings={k: v for k, v in vars(args).items() if k != "expected_recipe_sha256"},
+        net_arch=net_arch, effective_episode_steps=min(args.ep_len, len(train_df)-args.window-2),
+        train_period=_period(train_df), validation_period=_period(validation_df) if validation_df is not None else None,
+        test_period=_period(raw_test) if raw_test is not None else None,
+        train_rows=len(train_df), validation_rows=len(validation_df) if validation_df is not None else 0,
+        test_rows=len(raw_test) if raw_test is not None else 0,
+        evaluation_role=eval_source, features=feature_cols, preprocessing=preprocessing,
+        normalization=norm.to_dict(), reward_config=reward_profile_cfg,
+        reward_formula=args.reward_formula, action_config=action_profile_cfg,
+        input_sha256=files,
+        output_root=str((__import__("artifact_paths").MODELS_DIR / args.name / "runs").resolve()),
+    )
+    recipe = _jsonable(recipe)
+    digest = hashlib.sha256(json.dumps(recipe, sort_keys=True, allow_nan=False).encode()).hexdigest()
+    if args.expected_recipe_sha256 and args.expected_recipe_sha256 != digest:
+        raise ValueError("Data or recipe changed after confirmation. Review the training summary again.")
+    return {
+        "args": args, "net_arch": net_arch, "source_rows": source_rows, "candidates": candidates,
+        "train_pct": train_pct, "raw_train": raw_train, "raw_validation": raw_validation,
+        "raw_test": raw_test, "split": split, "feature_cols": feature_cols, "norm": norm,
+        "preprocessing": preprocessing, "feat_mean": feat_mean, "feat_std": feat_std,
+        "train_df": train_df, "validation_df": validation_df, "test_df": test_df,
+        "eval_source": eval_source, "reward_overrides": reward_overrides,
+        "reward_profile_json_meta": reward_profile_json_meta, "reward_profile_cfg": reward_profile_cfg,
+        "action_profile_json_meta": action_profile_json_meta, "action_profile_cfg": action_profile_cfg,
+        "recipe": recipe, "recipe_sha256": digest,
+    }
 
-    # detect feature columns (numeric, exclude OHLC + ids)
-    skip = {"timestamp", "symbol", "ticker", "open", "high", "low", "close", "volume"}
-    feature_cols = [c for c in df.columns
-                    if c not in skip and pd.api.types.is_numeric_dtype(df[c])]
-    print(f"  features ({len(feature_cols)}): {feature_cols}")
 
-    # parse timestamp + sort
-    if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-        df = df.sort_values("timestamp").reset_index(drop=True)
-
-    # ---------- split index (computed BEFORE normalize to avoid test leakage) ----------
-    train_pct = min(max(float(args.train_pct), 0.01), 1.0)
-    split = int(len(df) * train_pct)
-
-    # normalize features using TRAIN-ONLY stats (RL ชอบ scaled input)
-    # mean/std from the train slice only -> no look-ahead leakage from test.
-    # With --eval_csv, train_pct is typically 1.0 so stats cover the full train
-    # file, and the separate eval set is normalized with these same stats below.
-    print("[normalize] z-score features (train-only stats) ...")
-    train_slice = df[feature_cols].iloc[:split]
-    feat_mean = train_slice.mean()
-    feat_std = train_slice.std()
-    feat_std = feat_std.mask(feat_std < 1e-6, 1.0)
-    df[feature_cols] = (df[feature_cols] - feat_mean) / feat_std
-    # fill NaN
-    df = df.fillna(0).reset_index(drop=True)
-
-    # save normalization stats so inference (EA) uses identical scaling
+def train(args, run, prepared=None):
+    prepared = prepared or prepare_training(args)
+    args = prepared["args"]
+    net_arch = prepared["net_arch"]
+    source_rows = prepared["source_rows"]
+    candidates = prepared["candidates"]
+    train_pct = prepared["train_pct"]
+    raw_train = prepared["raw_train"]
+    raw_validation = prepared["raw_validation"]
+    raw_test = prepared["raw_test"]
+    split = prepared["split"]
+    feature_cols = prepared["feature_cols"]
+    norm = prepared["norm"]
+    preprocessing = prepared["preprocessing"]
+    feat_mean = prepared["feat_mean"]
+    feat_std = prepared["feat_std"]
+    train_df = prepared["train_df"]
+    validation_df = prepared["validation_df"]
+    test_df = prepared["test_df"]
+    eval_source = prepared["eval_source"]
+    reward_overrides = prepared["reward_overrides"]
+    reward_profile_json_meta = prepared["reward_profile_json_meta"]
+    reward_profile_cfg = prepared["reward_profile_cfg"]
+    action_profile_json_meta = prepared["action_profile_json_meta"]
+    action_profile_cfg = prepared["action_profile_cfg"]
+    model_root = ensure_model_dirs(args.name)
     norm_path = artifact_norm_path(args.name)
-    pd.DataFrame({"mean": feat_mean, "std": feat_std}).to_csv(norm_path)
-    print(f"  saved norm stats -> {norm_path}")
-
-    # Forward params.json sidecar from input CSV → model artifacts (for export)
+    norm.to_csv(norm_path)
     import shutil as _shutil
-    src_params = Path(args.csv).with_suffix("").with_suffix(".params.json")
-    if not src_params.exists():
-        src_params = Path(args.csv).parent / (Path(args.csv).stem + ".params.json")
+    src_params = Path(args.csv).with_suffix(".params.json")
     if src_params.exists():
-        dst_params = artifact_params_path(args.name)
-        _shutil.copy(src_params, dst_params)
-        print(f"  forwarded params -> {dst_params}")
-
-    # ---------- split ----------
-    train_df = df.iloc[:split].reset_index(drop=True)
-    test_df = df.iloc[split:].reset_index(drop=True)
-    eval_source = "internal split"
-
-    if args.eval_csv:
-        print(f"\n[load] eval: {args.eval_csv}")
-        test_df = pd.read_csv(args.eval_csv)
-        print(f"  rows: {len(test_df):,}")
-
-        leaky_eval = [c for c in test_df.columns
-                      if any(k in c.lower() for k in ("future_", "forward_", "next_", "target"))]
-        if leaky_eval:
-            print(f"  drop eval leaky/target: {leaky_eval}")
-            test_df = test_df.drop(columns=leaky_eval)
-
-        if "timestamp" in test_df.columns:
-            test_df["timestamp"] = pd.to_datetime(test_df["timestamp"], errors="coerce")
-            test_df = test_df.sort_values("timestamp").reset_index(drop=True)
-
-        for col in feature_cols:
-            if col not in test_df.columns:
-                print(f"  [warn] eval missing feature {col}; filling 0")
-                test_df[col] = 0.0
-            test_df[col] = pd.to_numeric(test_df[col], errors="coerce")
-
-        test_df[feature_cols] = (test_df[feature_cols] - feat_mean) / feat_std
-        test_df = test_df.fillna(0).reset_index(drop=True)
-        eval_source = Path(args.eval_csv).name
-    elif len(test_df) <= args.window + 2:
-        fallback_rows = min(len(train_df), max(args.window + 3, min(args.ep_len, len(train_df))))
-        test_df = train_df.tail(fallback_rows).copy().reset_index(drop=True)
-        eval_source = "train tail fallback"
-        print("  [warn] eval split is empty/small; using train tail for EvalCallback")
-
-    if len(train_df) <= args.window + 2:
-        raise SystemExit(
-            f"ERROR: train data too small ({len(train_df)} rows). Need > window+2 rows.")
-    if len(test_df) <= args.window + 2:
-        raise SystemExit(
-            f"ERROR: eval/test data too small ({len(test_df)} rows). Need > window+2 rows.")
-
-    print(f"\n[split] train: {len(train_df):,} | eval: {len(test_df):,} ({eval_source})")
+        payload = json.loads(src_params.read_text(encoding="utf-8-sig"))
+        if not isinstance(payload, dict):
+            raise ValueError("Collector sidecar must contain a JSON object")
+        _shutil.copy(src_params, artifact_params_path(args.name))
+    print(f"[features] {len(candidates)} -> {len(feature_cols)}; dropped: {preprocessing['dropped']}")
+    print(f"[split] train: {len(train_df):,} | validation: {len(validation_df) if validation_df is not None else 0:,} | test: {len(raw_test) if raw_test is not None else 0:,}")
+    print(f"[eval] {eval_source}")
+    print(f"[period] Train: {_period(train_df)}")
+    print(f"[period] Validation: {_period(validation_df) if validation_df is not None else 'none'}")
+    print(f"[period] Test/diagnostic: {_period(test_df)}")
     algo_hparams = {
         "learning_rate": args.learning_rate,
         "clip_range": args.clip_range if args.algo == "ppo" else None,
@@ -312,6 +362,13 @@ def main():
         "train_csv": args.csv,
         "eval_csv": args.eval_csv or "",
         "eval_source": eval_source,
+        "environment_version": "2.0-episode-liquidation",
+        "confirmed_recipe": prepared["recipe"],
+        "recipe_sha256": prepared["recipe_sha256"],
+        "preprocessing": preprocessing,
+        "validation_rows": len(validation_df) if validation_df is not None else 0,
+        "validation_period": _period(validation_df) if validation_df is not None else None,
+        "test_is_unseen": raw_test is not None,
         "train_pct": train_pct,
         "split_index": split,
         "source_rows": source_rows,
@@ -376,9 +433,10 @@ def main():
 
     def make_eval_env():
         return Monitor(TradingEnv(
-            test_df, feature_cols,
+            validation_df, feature_cols,
             window_size=args.window,
-            max_steps=len(test_df) - args.window - 2,
+            max_steps=len(validation_df) - args.window - 2,
+            random_start=False,
             reward_mode=args.reward_mode,
             reward_profile=args.reward_profile,
             reward_overrides=reward_overrides,
@@ -388,7 +446,7 @@ def main():
         ))
 
     train_env = DummyVecEnv([make_train_env])
-    eval_env = DummyVecEnv([make_eval_env])
+    eval_env = DummyVecEnv([make_eval_env]) if validation_df is not None else None
 
     # ---------- create model ----------
     print(f"\n[model] {args.algo.upper()}")
@@ -401,11 +459,6 @@ def main():
     log_dir = str(logs_dir(args.name))
 
     if args.algo == "ppo":
-        # Sanity: batch_size must be <= n_steps and n_steps % batch_size == 0
-        if args.batch_size > args.n_steps:
-            print(f"[warn] batch_size({args.batch_size}) > n_steps({args.n_steps}); clamping to n_steps")
-            args.batch_size = args.n_steps
-
         model = PPO(
             "MlpPolicy", train_env,
             learning_rate=args.learning_rate,
@@ -467,11 +520,11 @@ def main():
         best_model_save_path=str(best_dir(args.name)),
         log_path=log_dir,
         eval_freq=10_000,
-        n_eval_episodes=3,
+        n_eval_episodes=1,
         deterministic=True,
         render=False,
         verbose=0,
-    )
+    ) if eval_env is not None else None
 
     model.learn(total_timesteps=args.steps, callback=eval_cb, progress_bar=True)
 
@@ -483,6 +536,7 @@ def main():
     # ---------- quick test ----------
     print("\n[eval] quick run on test set ...")
     test_env_raw = TradingEnv(test_df, feature_cols, window_size=args.window,
+                              random_start=False,
                               max_steps=len(test_df) - args.window - 2,
                               reward_mode=args.reward_mode,
                               reward_profile=args.reward_profile,
@@ -498,6 +552,7 @@ def main():
         done = terminated or truncated
 
     stats = test_env_raw.get_stats()
+    meta["actual_timesteps"] = model.num_timesteps
     meta["quick_eval_stats"] = stats
 
     # ---------- MC robustness — measured from the very first training ----------
@@ -564,8 +619,12 @@ def main():
     meta["updated_at"] = datetime.now().isoformat(timespec="seconds")
     meta_path.write_text(json.dumps(_jsonable(meta), indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"[meta] updated -> {meta_path}")
+    run.publish(model)
+    train_env.close()
+    if eval_env is not None:
+        eval_env.close()
     print("\n" + "=" * 50)
-    print("  Quick test on out-of-sample")
+    print(f"  Quick evaluation: {eval_source}")
     print("=" * 50)
     for k, v in stats.items():
         if isinstance(v, float):

@@ -483,6 +483,8 @@ class SimAccount:
 # Backtest Engine
 # =============================================================
 def run_backtest_live(args):
+    from artifact_paths import pin_model_generation
+    pin_model_generation(args.model)
     args.max_hold, max_hold_source = _resolve_max_hold(args)
     print("=" * 60)
     print("  BACKTEST WITH LIVE_TRADER LOGIC")
@@ -522,14 +524,15 @@ def run_backtest_live(args):
     # Apply normalization
     norm_path = find_norm_path(args.model)
     if norm_path and norm_path.exists():
+        from training_data import apply_normalization
         norm = pd.read_csv(norm_path, index_col=0)
-        for c in feature_cols:
-            if c in norm.index:
-                df[c] = (df[c] - norm.at[c, 'mean']) / norm.at[c, 'std']
+        feature_cols = list(norm.index)
+        df = apply_normalization(df, feature_cols, norm)
         print(f"[norm] applied from {norm_path}")
+        print(f"[features] using {len(feature_cols)} saved features in training order")
     else:
-        print(f"[norm] not found for {args.model}; using raw feature scale")
-    df = df.fillna(0).reset_index(drop=True)
+        print(f"ERROR: norm stats missing for {args.model}; cannot reproduce training inputs")
+        return 1
 
     # Apply start fraction (use last X% as test)
     start_idx = 0

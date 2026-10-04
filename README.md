@@ -4,6 +4,16 @@ End-to-end Reinforcement Learning trading studio for MT5 data collection, PPO tr
 
 The active application is `rl_app.py` through the Windows launcher `run_rl_app.bat`.
 
+## Training Safety Update (2026-09-05)
+
+- Train 85% now means chronological Train 85%, Validation about 7.5%, and final Test about 7.5%. Validation selects checkpoints; Test is evaluated after training. Train 100% has no unseen Test unless a later external evaluation CSV is supplied.
+- Feature cleanup fits only the selected Train fraction and writes a `.features.json` sidecar. Older `_clean.csv` files without provenance must be recreated from the original dataset. Walk-Forward fits selection and normalization separately per window using that original dataset.
+- New Train and Fine-tune outputs are complete generations under `artifacts/models/<name>/runs/<run_id>/`. The `current.json` pointer in the model folder selects the active generation. Failed/cancelled runs do not replace a previous model; older model locations remain readable. Use the Dashboard or `artifact_paths` helpers instead of hardcoding paths.
+- Episode-end liquidation now contributes its closing reward. Retrain to learn the corrected behavior; existing weights do not change automatically.
+- Fine-tune uses contiguous old/new episodes, preserves the saved reward/action recipe, and updates the PPO learning-rate schedule. Its quick evaluation on new training data is explicitly in-sample, not deployment validation.
+
+Progress and verification: [training improvement checklist](docs/training_improvement_checklist_2026-09-05.md).
+
 ## Quick Install
 
 Prerequisites on Windows:

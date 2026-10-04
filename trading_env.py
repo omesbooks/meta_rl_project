@@ -34,6 +34,33 @@ from reward_profiles import get_reward_profile
 from action_profiles import action_ids_by_name, get_action_profile
 
 
+class SegmentedTradingEnv(gym.Env):
+    """Replay separate contiguous segments without crossing source boundaries."""
+
+    def __init__(self, frames, feature_cols, **kwargs):
+        super().__init__()
+        self.envs = [TradingEnv(frame, feature_cols, **kwargs) for frame in frames]
+        self.action_space = self.envs[0].action_space
+        self.observation_space = self.envs[0].observation_space
+        weights = np.array([len(e.df) / e.max_steps for e in self.envs], dtype=float)
+        self.weights = weights / weights.sum()
+        self.segment_steps = [0] * len(self.envs)
+        self.active = 0
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.active = int(self.np_random.choice(len(self.envs), p=self.weights))
+        return self.envs[self.active].reset(seed=int(self.np_random.integers(2**31)))
+
+    def step(self, action):
+        self.segment_steps[self.active] += 1
+        return self.envs[self.active].step(action)
+
+    def close(self):
+        for env in self.envs:
+            env.close()
+
+
 class TradingEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
 
@@ -52,11 +79,15 @@ class TradingEnv(gym.Env):
         reward_formula: str = "",
         action_profile: str | dict = "basic_4",
         action_params: dict | None = None,
+        random_start: bool = True,
     ):
         super().__init__()
         self.df = df.reset_index(drop=True)
         self.feature_cols = feature_cols
         self.window_size = window_size
+        self.random_start = random_start
+        if window_size < 1 or max_hold_bars < 1:
+            raise ValueError("Window and max hold must be positive")
         if len(self.df) < int(window_size) + 3:
             raise ValueError(
                 f"TradingEnv needs at least window_size + 3 rows; "
@@ -113,7 +144,7 @@ class TradingEnv(gym.Env):
         min_start = self.window_size - 1
         # max start: ต้องเหลือพื้นที่ให้ episode รันได้ครบ max_steps
         max_start = len(self.df) - self.max_steps - 2
-        if max_start > min_start:
+        if self.random_start and max_start > min_start:
             # Random uniform start within valid range
             self.t = int(self.np_random.integers(min_start, max_start + 1))
         else:
@@ -128,6 +159,7 @@ class TradingEnv(gym.Env):
         self.peak_equity = 1.0
         self.trades = []
         self._curve = [self.equity]
+        self._last_mark_equity = self.equity
         # track unrealized P&L per bar for incremental reward shaping
         self._prev_unrealized = 0.0
         self._peak_unrealized = 0.0   # for "give-back" penalty
@@ -232,7 +264,9 @@ class TradingEnv(gym.Env):
     # --------------------------------------------------------------
     def step(self, action):
         action = int(action)
-        prev_equity = self.equity
+        if not self.action_space.contains(action):
+            raise ValueError("Action is outside the selected profile")
+        prev_equity = self._last_mark_equity
         price = self._closes[self.t]
         trade_closed_pnl = None
         just_opened = False   # ⭐ Phase 2: flag สำหรับ trade penalty (แทน cost > 0)
@@ -284,6 +318,12 @@ class TradingEnv(gym.Env):
         if self.position != 0 and self.bars_in_position >= self.max_hold_bars:
             trade_closed_pnl = self._close_current_position(price, "max_hold")
 
+        # Episodes liquidate their account, so no continuation value is bootstrapped.
+        episode_end = (self.t + 1 >= self.start_t + self.max_steps or
+                       self.t + 1 >= len(self.df) - 1)
+        if episode_end and self.position != 0:
+            trade_closed_pnl = self._close_current_position(price, "episode_end")
+
         # ---- update mark-to-market equity ----
         if self.position != 0:
             pnl_pct = (price - self.entry_price) / self.entry_price * self.position
@@ -318,7 +358,7 @@ class TradingEnv(gym.Env):
                 self._peak_unrealized = 0.0
             trade_closed = trade_closed_pnl is not None
             pnl_for_formula = 0.0 if trade_closed_pnl is None else float(trade_closed_pnl)
-            is_idle = action == 0 and self.position == 0
+            is_idle = self.position == 0 and not just_opened and trade_closed_pnl is None
             time_decay_active = (
                 self.position != 0 and
                 self.bars_in_position > self.max_hold_bars * cfg["time_decay_start"]
@@ -403,27 +443,11 @@ class TradingEnv(gym.Env):
         # ---- step forward ----
         self.t += 1
         self._curve.append(current_equity)
+        self._last_mark_equity = current_equity
 
         # ---- termination ----
-        terminated = False
+        terminated = episode_end
         truncated = False
-        if self.t >= self.start_t + self.max_steps or self.t >= len(self.df) - 1:
-            truncated = True
-            # auto-close at end — ⭐ Phase 2: apply exit spread for consistency
-            if self.position != 0:
-                exit_p = price * (1.0 - self.spread) if self.position == 1 else price * (1.0 + self.spread)
-                pnl_pct = (exit_p - self.entry_price) / self.entry_price * self.position
-                net_pnl = pnl_pct - self.commission
-                self.equity *= (1 + net_pnl)
-                self.trades.append({
-                    "entry": self.entry_price,
-                    "exit": exit_p,
-                    "side": self.position,
-                    "bars": self.bars_in_position,
-                    "pnl": net_pnl,
-                })
-                self.position = 0
-                self.stop_price = 0.0
 
         if self.equity < 0.5:  # blew up half the capital
             terminated = True
@@ -458,6 +482,6 @@ class TradingEnv(gym.Env):
             "max_dd": float(dd.min()),
             "profit_factor": (
                 sum(t["pnl"] for t in wins) / abs(sum(t["pnl"] for t in losses))
-                if losses else float("inf")
+                if sum(t["pnl"] for t in losses) < 0 else float("inf")
             ),
         }

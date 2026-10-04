@@ -224,7 +224,7 @@
       </div>
     </section>
 
-    <section id="workflow">
+<section id="workflow">
       <h2>ขั้นตอน Train ใน Dashboard</h2>
       <p>
         เวลาใช้สอน user ให้เริ่มจาก flow ตรงนี้ก่อน เพื่อให้เห็นว่าหน้า Train
@@ -269,10 +269,12 @@
           <div class="num">4</div>
           <div>
             <span class="tag green">Run</span>
-            <h3>กด Start Training</h3>
+            <h3>กด Start Training แล้วตรวจสรุปก่อนยืนยัน</h3>
             <p>
-              ระบบจะรัน <code>rl_train.py</code>, split แบบ time-based,
-              normalize จาก train stats เท่านั้น, train, save model และ quick test บน eval/test
+              ระบบจะตรวจข้อมูลและเปิด <strong>Confirm training</strong> ก่อนเริ่ม process ฝึก
+              ตรวจช่วง Train / Validation / Test, จำนวนฟีเจอร์หลังคัดเลือก, window, steps,
+              reward/action ที่ resolve จาก JSON และค่าหน้าแอปแล้ว รวมถึงโฟลเดอร์บันทึก
+              กด <strong>Start training</strong> ในหน้าสรุปเพื่อเริ่มจริง หรือ <strong>Cancel</strong> เพื่อกลับไปแก้
             </p>
           </div>
         </article>
@@ -290,13 +292,28 @@
       </div>
     </section>
 
+    <section id="training-update-20260905">
+      <h2>ก่อนเริ่ม Train: ตรวจช่วงข้อมูลและไฟล์ที่จะได้</h2>
+      <ol>
+        <li>เลือก CSV ต้นฉบับ หรือไฟล์ Clean ที่มี <code>.features.json</code> คู่กัน แล้วตรวจช่วงวันที่ในหน้า Train</li>
+        <li>เมื่อ Train = 85% ระบบใช้ 85% แรกเรียนรู้ แบ่งส่วนที่เหลือเป็น Validation ประมาณ 7.5% และ Test ประมาณ 7.5% ตามลำดับเวลา</li>
+        <li>Validation ใช้ติดตามระหว่างฝึกและเลือก best checkpoint ส่วน Test ใช้ประเมินหลังฝึกเสร็จ หาก Train = 100% จะไม่มี unseen Test และผลที่แสดงเป็น in-sample diagnostic</li>
+        <li>ตรวจหน้าสรุปก่อนยืนยันเริ่ม Train หากไฟล์ข้อมูลหรือ JSON เปลี่ยนหลังยืนยัน ระบบจะหยุดให้ตรวจใหม่ ไม่ฝึกด้วยชุดค่าที่เปลี่ยนไปเงียบ ๆ</li>
+        <li>รอจนสถานะสำเร็จ โมเดลใหม่จะถูกนำมาใช้เมื่อไฟล์ทั้งชุดตรวจผ่าน กด Stop หรือเกิดข้อผิดพลาดจะไม่เปลี่ยนชุดโมเดลเดิม</li>
+      </ol>
+      <p><strong>กรอกเปอร์เซ็นต์ให้ชัด:</strong> Train %, MC Skip %, Backtest Start และ Fine-tune Mix รองรับ <code>85</code>, <code>85%</code> หรือ <code>0.85</code> ในความหมาย 85% แต่ <code>1</code> หมายถึง 100%; ถ้าต้องการ 1% ให้ใช้ <code>1%</code> หรือ <code>0.01</code> ช่องว่าง, NaN/Inf, ค่าติดลบหรือเกินขอบเขตจะถูกปฏิเสธ ไม่เติม default ให้เอง; MC Skip และ Backtest Start ต้องน้อยกว่า 100%</p>
+      <p><strong>Full Pipeline:</strong> มีหน้าสรุปก่อนเริ่มเช่นกัน และแสดงช่วง Backtest ที่คำนวณจาก Test เมื่อเลือก <code>auto</code> ถ้าใช้ไฟล์ Backtest แยก ระบบจะแสดงช่วง Validation/Test ของไฟล์นั้นก่อนยืนยัน ค่าตั้งที่ส่งให้ Train รวมทั้งค่าเริ่มต้นของ Train CLI จะรวมอยู่ในรายละเอียดสรุป</p>
+      <p>ไฟล์รอบใหม่อยู่ใน <code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/</code> โดย <code>current.json</code> ในโฟลเดอร์ชื่อโมเดลระบุรอบที่ใช้งานอยู่ Dashboard เลือกชุดนี้ให้อัตโนมัติ โมเดลเก่าที่อยู่ตรงโฟลเดอร์ชื่อโมเดลยังเปิดได้</p>
+      <p>การปิดสถานะท้าย episode คิดกำไรขาดทุนและ reward ครบแล้ว เช่นเดียวกับการสั่ง Close ระบบจะเริ่มบัญชีจำลองใหม่ใน episode ถัดไป โมเดลเก่าต้อง Train ใหม่จึงจะเรียนรู้กติกาที่แก้แล้ว</p>
+    </section>
+
     <section id="inputs">
       <h2>ไฟล์ที่ Train ใช้และสร้างออกมา</h2>
       <p>
         ในหน้า Train ค่า <strong>Model Name</strong> จะกลายเป็นชื่อโฟลเดอร์และชื่อไฟล์ของโมเดล
         เช่นตั้งชื่อ <code>rl_usdjpy_h4_v1</code> แล้วกด Start Training สำเร็จ
         ระบบจะสร้างไฟล์หลักไว้ใต้ project root ที่
-        <code>artifacts/models/rl_usdjpy_h4_v1/</code>
+        <code>artifacts/models/rl_usdjpy_h4_v1/runs/&lt;run_id&gt;/</code>
       </p>
       <table>
         <thead>
@@ -319,32 +336,32 @@
           </tr>
           <tr>
             <td>Final model</td>
-            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.zip</code></td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/&lt;model&gt;.zip</code></td>
             <td>ไฟล์โมเดล PPO หลัก ใช้เลือกในหน้า Backtest, Fine-tune และ Export</td>
           </tr>
           <tr>
             <td>Normalization stats</td>
-            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;_norm.csv</code></td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/&lt;model&gt;_norm.csv</code></td>
             <td>ช่วยให้ inference/backtest/export ใช้ scale เดียวกับตอน train</td>
           </tr>
           <tr>
             <td>Params parity</td>
-            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.params.json</code></td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/&lt;model&gt;.params.json</code></td>
             <td>copy จาก dataset sidecar เพื่อให้ export/deploy ใช้ indicator setting ตรงกับ DataCollector_RL</td>
           </tr>
           <tr>
             <td>Train metadata</td>
-            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.train.json</code></td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/&lt;model&gt;.train.json</code></td>
             <td>บันทึก setting ตอน train, path ของ artifact และข้อมูลช่วยตรวจย้อนหลังเมื่อผลลัพธ์ผิดปกติ</td>
           </tr>
           <tr>
             <td>Best checkpoint</td>
-            <td><code>artifacts/models/&lt;model&gt;/best/best_model.zip</code></td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/best/best_model.zip</code></td>
             <td>checkpoint ที่ EvalCallback มองว่าดีที่สุดระหว่าง train ใช้เทียบกับ final model ได้</td>
           </tr>
           <tr>
             <td>Training logs</td>
-            <td><code>artifacts/models/&lt;model&gt;/logs/</code></td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/logs/</code></td>
             <td>เก็บ log/eval output จาก Stable-Baselines3 สำหรับดูประวัติ training</td>
           </tr>
         </tbody>
@@ -357,7 +374,7 @@
       </div>
       <div class="callout warn">
         <strong>จำ path แบบสั้น:</strong>
-        งาน train ใหม่จะอยู่ใน <code>artifacts/models/&lt;model&gt;/</code>
+        งาน train ใหม่จะอยู่ใน <code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/</code>
         ส่วนไฟล์โมเดลเก่าที่เคยอยู่หน้า root เช่น <code>&lt;model&gt;.zip</code>,
         <code>&lt;model&gt;_norm.csv</code> หรือ <code>&lt;model&gt;_best/best_model.zip</code>
         ระบบยังพยายามค้นหาให้เพื่อรองรับงานเก่า แต่เวลาสอน user ให้ยึดโครงสร้างใหม่เป็นหลัก
@@ -604,7 +621,7 @@
         ถ้าเปิด <strong>Show Reward Sliders</strong> ในหน้า Train
         ค่าที่เห็นคือ parameter ย่อยของ reward profile ปัจจุบัน ผู้ใช้สามารถเลื่อนเฉพาะค่าที่อยากทดลองได้
         ระบบจะส่งค่าที่ต่างจาก preset เข้า <code>rl_train.py --reward_overrides</code>
-        และบันทึกทั้ง overrides กับ config สุดท้ายไว้ใน <code>artifacts/models/&lt;model&gt;/&lt;model&gt;.train.json</code>
+        และบันทึกทั้ง overrides กับ config สุดท้ายไว้ใน <code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/&lt;model&gt;.train.json</code>
       </p>
       <table>
         <thead>
@@ -1492,17 +1509,17 @@
         <tbody>
           <tr>
             <td>Model artifact</td>
-            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.zip</code></td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/&lt;model&gt;.zip</code></td>
             <td>train ยังไม่จบหรือ error</td>
           </tr>
           <tr>
             <td>Normalization stats</td>
-            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;_norm.csv</code></td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/&lt;model&gt;_norm.csv</code></td>
             <td>อย่า backtest/export เพราะ input scale อาจไม่ตรง</td>
           </tr>
           <tr>
             <td>Params parity</td>
-            <td><code>artifacts/models/&lt;model&gt;/&lt;model&gt;.params.json</code> ถ้ามี sidecar ต้นทาง</td>
+            <td><code>artifacts/models/&lt;model&gt;/runs/&lt;run_id&gt;/&lt;model&gt;.params.json</code> ถ้ามี sidecar ต้นทาง</td>
             <td>ยัง backtest ได้ แต่ก่อน deploy ควรแก้ parity ให้ครบ</td>
           </tr>
         </tbody>
@@ -1523,4 +1540,3 @@
   </main>
 </body>
 </html>
-

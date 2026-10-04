@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--max_hold", type=int, default=None,
                     help="default = read from model train metadata, then 30")
     args = ap.parse_args()
+    from artifact_paths import pin_model_generation
+    pin_model_generation(args.model)
 
     # load + normalize
     df = pd.read_csv(args.csv)
@@ -49,10 +51,9 @@ def main():
               f"(looked in artifacts/models/{args.model}/ and repo root)")
         sys.exit(1)
     norm = pd.read_csv(norm_path, index_col=0)
-    for c in feature_cols:
-        if c in norm.index:
-            df[c] = (df[c] - norm.at[c, "mean"]) / norm.at[c, "std"]
-    df = df.fillna(0).reset_index(drop=True)
+    from training_data import apply_normalization
+    feature_cols = list(norm.index)
+    df = apply_normalization(df, feature_cols, norm)
 
     start = int(len(df) * args.start)
     test_df = df.iloc[start:].reset_index(drop=True)

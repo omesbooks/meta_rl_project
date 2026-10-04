@@ -233,8 +233,8 @@
         จุดสำคัญคือ fine-tune ไม่ได้ train ด้วย "data ใหม่อย่างเดียว"
         เพราะแบบนั้นจะเกิด <strong>catastrophic forgetting</strong> —
         network ปรับ weights ไปหาข้อมูลใหม่จนลืม pattern เก่าที่เคยใช้ได้
-        ระบบจึงใช้โหมด <code>mixed</code> เป็นค่าเริ่มต้น: สุ่ม data เก่ามาผสม ~30%
-        รวมกับ data ใหม่ทั้งหมด ~70% แล้วเรียงตาม timestamp ก่อน train
+        ระบบจึงใช้โหมด <code>mixed</code> เป็นค่าเริ่มต้น: สุ่มเลือกช่วงแท่งต่อเนื่องจาก data เก่าประมาณ 30%
+        ร่วมกับ data ใหม่ทั้งหมดประมาณ 70% โดยแยก episode ไม่ให้สถานะหรือหน้าต่างข้อมูลข้ามรอยต่อ
       </p>
       <div class="grid two">
         <div class="card blue">
@@ -332,7 +332,7 @@
       </div>
     </section>
 
-    <section id="workflow">
+<section id="workflow">
       <h2>ขั้นตอน Fine-tune ใน Dashboard</h2>
       <p>
         หน้า Fine-tune ตั้งใจให้เรียบที่สุด: เลือก 3 อย่าง (base model, old CSV, new CSV)
@@ -357,7 +357,7 @@
             <span class="tag blue">Data</span>
             <h3>เลือก Old CSV และ New CSV</h3>
             <p>
-              <code>Old Data CSV</code> = ไฟล์ที่ใช้ train base model (ไว้สุ่มมาผสมกันลืม)
+              <code>Old Data CSV</code> = ไฟล์ที่ใช้ train base model (ไว้เลือกช่วงต่อเนื่องมาฝึกทบทวน)
               และ <code>New Data CSV</code> = data ช่วงใหม่ที่อยากให้ model เรียนเพิ่ม
               ทั้งสองไฟล์ต้องมี feature columns ครบตามที่ base model ใช้
             </p>
@@ -402,6 +402,17 @@
       </div>
     </section>
 
+    <section id="training-update-20260905">
+      <h2>Fine-tune ใช้ข้อมูลและตั้งค่าอย่างไร</h2>
+      <ol>
+        <li>เลือกโมเดล PPO ที่มี normalization เดิมครบ แล้วเลือก Old CSV และ New CSV โดยข้อมูลใหม่ต้องอยู่หลังข้อมูลเก่าและไม่ซ้อนวันเวลา</li>
+        <li>โหมด Mixed เลือกข้อมูลเก่าเป็นช่วงแท่งต่อเนื่อง รวมกับข้อมูลใหม่ตามสัดส่วน แต่แต่ละ episode จะอยู่ในช่วงของตัวเอง ไม่ถือสถานะหรืออ่าน window ข้ามรอยต่อ</li>
+        <li>ระบบสืบทอด reward overrides, formula และ action config ของโมเดลเดิม และปรับ learning rate พร้อม schedule ที่ใช้จริง</li>
+        <li>ตั้งชื่อโมเดลใหม่แล้วเริ่ม Fine-tune ไฟล์และ logs อยู่ในรุ่นใหม่แยกจากโมเดลต้นฉบับ</li>
+      </ol>
+      <p>Quick eval บน New CSV เป็น <strong>in-sample diagnostic</strong> เพราะ New CSV ถูกใช้ฝึกแล้ว ต้องใช้ช่วงข้อมูลที่ยังไม่เคยเรียนเพื่อประเมินผลก่อนใช้งานจริง</p>
+    </section>
+
     <section id="fields">
       <h2>ค่าในหน้า Fine-tune</h2>
       <table>
@@ -422,7 +433,7 @@
           </tr>
           <tr>
             <td>Mode</td>
-            <td><code>mixed</code> สุ่ม data เก่ามาผสมตาม ratio + data ใหม่ทั้งหมด ·
+            <td><code>mixed</code> เลือกช่วงแท่งเก่าต่อเนื่องตาม ratio + data ใหม่ทั้งหมด โดยแยก episode ·
             <code>pure</code> ใช้ data ใหม่ล้วน (Mix Ratio ไม่ถูกใช้) ·
             <code>replay</code> ใช้ old+new ทั้งหมดแบบไม่สุ่ม (Mix Ratio ไม่ถูกใช้)</td>
             <td>ใช้ <code>mixed</code> เกือบทุกเคส — <code>pure</code> เฉพาะเมื่อ regime
@@ -437,7 +448,7 @@
           </tr>
           <tr>
             <td>Old Data CSV</td>
-            <td>data ชุดเดิม (ที่เคยใช้ train base) — ระบบสุ่มบางส่วนมาผสมเพื่อกัน catastrophic forgetting</td>
+            <td>data ชุดเดิม (ที่เคยใช้ train base) ระบบเลือกช่วงแท่งต่อเนื่องมาทบทวนเพื่อลดการลืมข้อมูลเก่า</td>
             <td>ใช้ไฟล์เดียวกับตอน train base model เพื่อให้ "ความจำเก่า" ตรงของจริง</td>
           </tr>
           <tr>
@@ -457,7 +468,7 @@
           </tr>
           <tr>
             <td>New Model Name</td>
-            <td>ชื่อ model ใหม่ — ระบบสร้างโฟลเดอร์ <code>artifacts/models/&lt;name&gt;/</code> แยกจาก base</td>
+            <td>ชื่อ model ใหม่ — ระบบสร้างโฟลเดอร์ <code>artifacts/models/&lt;name&gt;/runs/&lt;run_id&gt;/</code> แยกจาก base</td>
             <td>ตั้งชื่อแบบมี version เช่น <code>rl_uj_h4_v2</code> อย่าทับชื่อ base model เดิม</td>
           </tr>
         </tbody>
@@ -574,12 +585,12 @@
           <tr>
             <td>Old CSV / New CSV</td>
             <td>input: data สำหรับ mix (เก่า ~30% / ใหม่ทั้งไฟล์)</td>
-            <td>จำนวนแถวเก่าที่สุ่ม = <code>new_rows × ratio ÷ (1−ratio)</code> ไม่เกินจำนวนแถวเก่าที่มีจริง</td>
+            <td>ความยาวช่วงแท่งเก่าที่เลือก = <code>new_rows × ratio ÷ (1−ratio)</code> ไม่เกินจำนวนแถวเก่าที่มีจริง; จำนวน steps ที่ใช้แต่ละช่วงจริงบันทึกใน metadata</td>
           </tr>
           <tr>
-            <td><code>artifacts/models/&lt;name&gt;/&lt;name&gt;.zip</code></td>
+            <td><code>artifacts/models/&lt;name&gt;/runs/&lt;run_id&gt;/&lt;name&gt;.zip</code></td>
             <td>output: model ใหม่หลัง fine-tune</td>
-            <td>โผล่ใน dropdown ของหน้า Backtest / Walk-Forward / Export อัตโนมัติ</td>
+            <td>โผล่ใน dropdown ของหน้า Backtest / Export อัตโนมัติ; Walk-Forward ฝึกโมเดลใหม่ต่อ window จึงไม่ได้เลือกโมเดลนี้</td>
           </tr>
           <tr>
             <td><code>&lt;name&gt;_norm.csv</code></td>

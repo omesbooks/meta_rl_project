@@ -25,10 +25,22 @@ class Batch1GuiRegressionTests(unittest.TestCase):
         for page in ("tools", "train", "backtest", "walkfwd", "finetune"):
             cls.app.show_page(page)
         cls.app._is_process_busy = lambda: False
+        # These tests isolate command construction; confirmation has its own suite.
+        cls.app._review_training_command = lambda cmd, launch, context=None: launch(cmd)
 
     @classmethod
     def tearDownClass(cls):
+        for callback in cls.app.tk.call("after", "info"):
+            cls.app.tk.call("after", "cancel", callback)
         cls.app.destroy()
+
+    def setUp(self):
+        for name in ("showinfo", "showerror", "showwarning"):
+            p = patch.object(rl_app.messagebox, name)
+            mocked = p.start()
+            self.addCleanup(p.stop)
+            if name != "showinfo":
+                mocked.side_effect = lambda title, message: self.fail(f"{title}: {message}")
 
     def test_collector_and_export_autofill_follow_source(self):
         app = self.app
@@ -147,7 +159,7 @@ class Batch1GuiRegressionTests(unittest.TestCase):
         cmd = captured["cmd"]
         self.assertEqual(cmd[cmd.index("--mix_ratio") + 1], "0.3")
 
-    def test_invalid_reward_entry_reverts_only_that_field(self):
+    def test_invalid_reward_entry_is_preserved_for_correction(self):
         app = self.app
         keys = list(app.train_reward_controls)
         target, untouched = keys[0], keys[1]
@@ -160,13 +172,13 @@ class Batch1GuiRegressionTests(unittest.TestCase):
         with patch.object(rl_app.messagebox, "showerror"):
             self.assertFalse(app._on_reward_entry_change(target))
         self.assertEqual(untouched_entry.get(), "0.123")
+        self.assertEqual(target_entry.get(), "bad")
 
     def test_integer_parser_accepts_display_formats_before_run(self):
         entry = self.app.train_steps
         cases = {
             "300,000": 300000,
             "2e5": 200000,
-            "": 123,
             "50000": 50000,
         }
         for raw, expected in cases.items():
@@ -174,10 +186,11 @@ class Batch1GuiRegressionTests(unittest.TestCase):
             entry.insert(0, raw)
             self.assertEqual(
                 self.app._parse_int_field(entry, 123, "Steps"), expected)
-        entry.delete(0, "end")
-        entry.insert(0, "3.5")
-        with patch.object(rl_app.messagebox, "showwarning"):
-            self.assertIsNone(self.app._parse_int_field(entry, 123, "Steps"))
+        for raw in ("", "3.5"):
+            entry.delete(0, "end")
+            entry.insert(0, raw)
+            with patch.object(rl_app.messagebox, "showwarning"):
+                self.assertIsNone(self.app._parse_int_field(entry, 123, "Steps"))
 
     def test_pipeline_stop_uses_local_process_snapshot(self):
         app = self.app

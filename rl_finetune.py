@@ -36,6 +36,10 @@ from artifact_paths import (
     train_meta_path,
 )
 from trading_env import TradingEnv
+from trading_env import SegmentedTradingEnv
+from artifact_paths import ArtifactRun
+from training_data import load_dataset, apply_normalization
+from reward_profiles import REWARD_PARAM_SPEC_BY_KEY, get_reward_profile
 
 
 def _period(df):
@@ -73,7 +77,7 @@ def _load_json(path):
 
 
 def _load_csv(path):
-    df = pd.read_csv(path)
+    df = load_dataset(path)
     leaky = [
         c for c in df.columns
         if any(k in c.lower() for k in ("future_", "forward_", "next_", "target"))
@@ -114,7 +118,10 @@ def _resolve_base_contract(args, old_df):
 
     feature_cols = list(base_meta.get("features") or [])
     if not feature_cols:
-        feature_cols = _detect_feature_cols(old_df)
+        base_norm = find_norm_path(args.base_model)
+        if base_norm is None:
+            raise SystemExit("ERROR: original normalization is required for fine-tune")
+        feature_cols = list(pd.read_csv(base_norm, index_col=0).index)
 
     if not feature_cols:
         raise SystemExit("ERROR: no numeric feature columns found.")
@@ -157,6 +164,10 @@ def _resolve_base_contract(args, old_df):
     reward_mode = hparams.get("reward_mode", "realized")
     reward_profile = hparams.get("reward_profile", "balanced")
     reward_profile_config = hparams.get("reward_profile_config") or {}
+    reward_overrides = {k: v for k, v in reward_profile_config.items() if k in REWARD_PARAM_SPEC_BY_KEY}
+    if not reward_overrides:
+        reward_overrides = hparams.get("reward_profile_overrides") or {}
+    _, reward_profile_config = get_reward_profile(reward_profile, reward_overrides)
     reward_formula = hparams.get("reward_formula", "")
 
     return {
@@ -170,6 +181,7 @@ def _resolve_base_contract(args, old_df):
         "reward_mode": reward_mode,
         "reward_profile": reward_profile,
         "reward_profile_config": reward_profile_config,
+        "reward_overrides": reward_overrides,
         "reward_formula": reward_formula,
         "action_key": action_key,
         "action_profile": action_profile_cfg,
@@ -220,6 +232,8 @@ def main():
     ap.add_argument("--ep_len", type=int, default=None, help="default = base model metadata")
     ap.add_argument("--name", default=None, help="output model name")
     args = ap.parse_args()
+    if args.steps <= 0 or not np.isfinite(args.lr) or args.lr <= 0:
+        raise ValueError("Steps and learning rate must be positive")
 
     if not (0 <= args.mix_ratio < 1):
         raise SystemExit("ERROR: --mix_ratio must be >= 0 and < 1")
@@ -230,6 +244,13 @@ def main():
             "ERROR: --name must differ from the base model "
             "(would overwrite its weights and train metadata)"
         )
+    with ArtifactRun(out_name) as run:
+        return finetune(args, out_name, run)
+
+
+def finetune(args, out_name, run):
+    from artifact_paths import pin_model_generation
+    pin_model_generation(args.base_model)
     model_root = ensure_model_dirs(out_name)
     meta_path = train_meta_path(out_name)
 
@@ -271,32 +292,26 @@ def main():
     print(f"  max_hold      : {contract['max_hold']}")
     print(f"  ep_len        : {contract['ep_len']}")
 
+    if new_df is not None and new_df.timestamp.min() <= old_df.timestamp.max():
+        raise ValueError("New data must be strictly later than old data; remove overlapping rows")
     if args.mode == "pure":
-        train_df = new_df.copy()
-        print("\n[mode] PURE - fine-tune on new data only")
+        segments = [new_df.copy()]
     elif args.mode == "mixed":
-        old_sample_n = int(len(new_df) * args.mix_ratio / max(1 - args.mix_ratio, 1e-9))
-        old_sample_n = min(old_sample_n, len(old_df))
-        old_sample = old_df.sample(n=old_sample_n, random_state=42) if old_sample_n else old_df.iloc[0:0]
-        train_df = pd.concat([old_sample, new_df], ignore_index=True)
-        if "timestamp" in train_df.columns:
-            train_df = train_df.sort_values("timestamp").reset_index(drop=True)
-        print("\n[mode] MIXED - replay old sample + all new data")
-        print(f"  old sampled: {len(old_sample):,} rows")
-        print(f"  new (all)  : {len(new_df):,} rows")
-        print(f"  total mix  : {len(train_df):,} rows")
+        old_sample_n = min(len(old_df), int(len(new_df) * args.mix_ratio / (1 - args.mix_ratio)))
+        segments = []
+        if old_sample_n:
+            if old_sample_n < contract["window"] + 3:
+                raise ValueError("Old replay segment too short; increase mix ratio or supply more new data")
+            start = int(np.random.default_rng(42).integers(len(old_df) - old_sample_n + 1))
+            segments.append(old_df.iloc[start:start + old_sample_n].copy())
+        segments.append(new_df.copy())
     else:
-        frames = [old_df]
-        if new_df is not None:
-            frames.append(new_df)
-        train_df = pd.concat(frames, ignore_index=True)
-        if "timestamp" in train_df.columns:
-            train_df = train_df.sort_values("timestamp").reset_index(drop=True)
-        print("\n[mode] REPLAY - full old/new buffer")
-        print(f"  total: {len(train_df):,} rows")
-
-    if len(train_df) <= contract["window"] + 2:
-        raise SystemExit("ERROR: not enough rows for the resolved window size.")
+        segments = [old_df.copy()] + ([new_df.copy()] if new_df is not None else [])
+    if any(len(frame) < contract["window"] + 3 for frame in segments):
+        raise ValueError("Each replay segment needs at least window + 3 rows")
+    segment_lengths = [len(frame) for frame in segments]
+    train_df = pd.concat(segments, ignore_index=True)
+    print(f"[segments] contiguous rows per segment: {segment_lengths}; episodes never cross boundaries")
 
     base_norm = find_norm_path(args.base_model)
     out_norm = artifact_norm_path(out_name)
@@ -304,30 +319,20 @@ def main():
     if base_norm and base_norm.exists():
         print(f"\n[norm] using base stats -> {base_norm}")
         norm = pd.read_csv(base_norm, index_col=0)
-        for c in feature_cols:
-            if c in norm.index:
-                # divide by the saved std exactly — same convention as every
-                # other consumer (backtest/analyze/EA); saved stds are never 0
-                train_df[c] = (train_df[c] - norm.at[c, "mean"]) / norm.at[c, "std"]
+        train_df = apply_normalization(train_df, feature_cols, norm)
         out_norm.parent.mkdir(parents=True, exist_ok=True)
         norm.to_csv(out_norm)
     else:
-        print("\n[norm] base stats not found; recomputing from fine-tune data")
-        feat_mean = train_df[feature_cols].mean()
-        # floor degenerate stds like rl_train does — a saved std of ~0 would
-        # blow up every exact-divide consumer at inference
-        feat_std = train_df[feature_cols].std()
-        feat_std = feat_std.mask(feat_std < 1e-6, 1.0)
-        train_df[feature_cols] = (train_df[feature_cols] - feat_mean) / feat_std
-        norm = pd.DataFrame({"mean": feat_mean, "std": feat_std})
-        out_norm.parent.mkdir(parents=True, exist_ok=True)
-        norm.to_csv(out_norm)
+        raise ValueError("Base normalization is required for fine-tune; restore the original artifact set")
     print(f"  saved -> {out_norm}")
 
     params_out = _copy_params_sidecar(args.base_model, out_name, args.old_csv, args.new_csv)
     train_df = train_df.fillna(0).reset_index(drop=True)
 
     meta = {
+        "environment_version": "2.0-episode-liquidation",
+        "segment_lengths": segment_lengths,
+        "evaluation_role": "in-sample diagnostic on new training data",
         "model": out_name,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "fine_tune": True,
@@ -382,13 +387,17 @@ def main():
     from stable_baselines3.common.vec_env import DummyVecEnv
 
     def make_env():
-        return Monitor(TradingEnv(
-            train_df,
+        boundaries = np.cumsum([0] + segment_lengths)
+        normalized_segments = [train_df.iloc[a:b].reset_index(drop=True)
+                               for a, b in zip(boundaries[:-1], boundaries[1:])]
+        return Monitor(SegmentedTradingEnv(
+            normalized_segments,
             feature_cols,
             window_size=contract["window"],
             max_steps=contract["ep_len"],
             reward_mode=contract["reward_mode"],
             reward_profile=contract["reward_profile"],
+            reward_overrides=contract["reward_overrides"],
             reward_formula=contract["reward_formula"],
             action_profile=contract["action_profile"],
             max_hold_bars=contract["max_hold"],
@@ -398,9 +407,12 @@ def main():
 
     print(f"\n[load] base model: {contract['base_path']}")
     model = PPO.load(str(contract["base_path"]), env=train_env)
+    base_timesteps = model.num_timesteps
+    model.tensorboard_log = str(logs_dir(out_name))
 
     print(f"[adjust] learning_rate -> {args.lr}")
     model.learning_rate = args.lr
+    model._setup_lr_schedule()
     for group in model.policy.optimizer.param_groups:
         group["lr"] = args.lr
 
@@ -418,7 +430,7 @@ def main():
 
     stats = None
     if new_df is not None:
-        print("\n[eval] quick run on new data ...")
+        print("\n[eval] IN-SAMPLE diagnostic on new training data (not unseen Test) ...")
         eval_df = new_df.copy()
         for c in feature_cols:
             if c in norm.index:
@@ -431,6 +443,7 @@ def main():
             max_steps=max(1, len(eval_df) - contract["window"] - 2),
             reward_mode=contract["reward_mode"],
             reward_profile=contract["reward_profile"],
+            reward_overrides=contract["reward_overrides"],
             reward_formula=contract["reward_formula"],
             action_profile=contract["action_profile"],
             max_hold_bars=contract["max_hold"],
@@ -454,7 +467,11 @@ def main():
 
     meta["updated_at"] = datetime.now().isoformat(timespec="seconds")
     meta["quick_eval_stats"] = stats
+    meta["actual_timesteps"] = model.num_timesteps - base_timesteps
+    meta["segment_training_steps"] = train_env.envs[0].unwrapped.segment_steps
     _write_json(meta_path, meta)
+    run.publish(model)
+    train_env.close()
     print(f"[meta] updated -> {meta_path}")
     print("\nFine-tuning complete. Try:")
     print(f"  python backtest_live.py {out_name} <csv> --conf 0 --mode pure_agent")

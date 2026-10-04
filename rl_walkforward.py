@@ -51,6 +51,8 @@ from reward_profiles import (
 )
 from reward_formula import validate_reward_formula
 from trading_env import TradingEnv
+from training_data import (walkforward_source, feature_columns, fit_preprocessing,
+                           apply_normalization, validate_hyperparameters)
 
 
 def _fallback_output_path(path):
@@ -94,6 +96,8 @@ def _save_fig_with_fallback(fig, path, **kwargs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv")
+    ap.add_argument("--corr_threshold", type=float, default=None,
+                    help="train-only feature pruning in each window (default 1, or Clean recipe)")
     ap.add_argument("--windows", type=int, default=5,
                     help="จำนวน walk-forward windows")
     ap.add_argument("--steps", type=int, default=50000,
@@ -140,6 +144,7 @@ def main():
     ap.add_argument("--net_arch", default="auto",
                     help='"auto" (scale by window) or comma list e.g. "256,128,64"')
     args = ap.parse_args()
+    validate_hyperparameters(args)
     raw_name = str(args.name or "wf").strip()
     args.name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", raw_name).rstrip(". ")
     if not args.name:
@@ -189,18 +194,11 @@ def main():
     print("  Walk-Forward Validation")
     print("=" * 60)
 
-    df = pd.read_csv(args.csv)
-    leaky = [c for c in df.columns if any(k in c.lower()
-             for k in ("future_", "forward_", "next_", "target"))]
-    if leaky:
-        df = df.drop(columns=leaky)
-    skip = {"timestamp", "symbol", "ticker", "open", "high", "low",
-            "close", "volume"}
-    feature_cols = [c for c in df.columns
-                    if c not in skip and pd.api.types.is_numeric_dtype(df[c])]
-    if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-        df = df.sort_values("timestamp").reset_index(drop=True)
+    df, source_threshold = walkforward_source(args.csv)
+    candidate_features = feature_columns(df)
+    feature_cols = candidate_features
+    if args.corr_threshold is None:
+        args.corr_threshold = source_threshold
 
     print(f"\n[data] {args.csv}")
     print(f"  rows: {len(df):,}")
@@ -334,6 +332,7 @@ def main():
     # Run each window
     # =================================================================
     results = []
+    preprocessing_records = []
     all_curves = []
 
     total_start = time.time()
@@ -350,13 +349,12 @@ def main():
         test_df = df.iloc[vs:ve].reset_index(drop=True).copy()
 
         # Normalize on train, apply to test
-        feat_mean = train_df[feature_cols].mean()
-        feat_std = train_df[feature_cols].std()
-        feat_std = feat_std.mask(feat_std < 1e-6, 1.0)
-        train_df[feature_cols] = (train_df[feature_cols] - feat_mean) / feat_std
-        test_df[feature_cols] = (test_df[feature_cols] - feat_mean) / feat_std
-        train_df = train_df.fillna(0)
-        test_df = test_df.fillna(0)
+        feature_cols, norm, preprocessing = fit_preprocessing(
+            train_df, candidate_features, args.corr_threshold)
+        preprocessing_records.append(dict(window=w_idx, **preprocessing,
+                                          norm=norm.to_dict()))
+        train_df = apply_normalization(train_df, feature_cols, norm)
+        test_df = apply_normalization(test_df, feature_cols, norm)
 
         # Train env
         def make_env(df_in, ep):
@@ -452,6 +450,7 @@ def main():
             "elapsed_s": round(elapsed, 1),
         }
         results.append(stats_clean)
+        train_env.close()
         all_curves.append(test_env_raw._curve)
 
         print(f"\n  Window {w_idx} result:")
@@ -477,6 +476,11 @@ def main():
     print(f"{'=' * 60}")
 
     res_df = pd.DataFrame(results)
+    Path(f"{args.name}_preprocessing.json").write_text(
+        json.dumps({"source_csv": str(Path(args.csv).resolve()),
+                    "environment_version": "2.0-episode-liquidation",
+                    "recipe": vars(args), "windows": preprocessing_records}, indent=2),
+        encoding="utf-8")
     print()
     cols_to_show = ["window", "trades", "win_rate", "profit_factor", "return", "max_dd"]
     print(res_df[cols_to_show].to_string(index=False,

@@ -317,7 +317,7 @@
       </div>
     </section>
 
-    <section id="workflow">
+<section id="workflow">
       <h2>ขั้นตอนใช้งานใน Dashboard</h2>
       <p>
         เวลาใช้สอน user ให้เริ่มจาก flow สั้น ๆ ตรงนี้ก่อน เพื่อให้เห็นว่าหน้า Quality Check
@@ -388,6 +388,18 @@
           </div>
         </article>
       </div>
+    </section>
+
+    <section id="training-update-20260905">
+      <h2>เลือกฟีเจอร์จาก Train เท่านั้น</h2>
+      <ol>
+        <li>เลือก CSV ต้นฉบับ และตั้ง <strong>Fit features on first Train %</strong> ให้ตรงกับช่วง Train ที่จะใช้ เช่น 85</li>
+        <li>กด Show Correlation Matrix เพื่อดูความสัมพันธ์ของฟีเจอร์เฉพาะช่วง Train ตรวจวันที่และจำนวนแถวใน log ก่อนตัดสินใจ</li>
+        <li>กด Clean Redundant Features ระบบเลือกคอลัมน์จาก Train แล้วใช้รายการเดียวกันกับทุกแถว โดยบันทึก <code>_clean.csv</code>, <code>.params.json</code> เมื่อมีต้นทาง และ <code>.features.json</code> ที่เก็บที่มาของการเลือกฟีเจอร์</li>
+        <li>เก็บ CSV ต้นฉบับไว้ด้วย Walk-Forward ต้องใช้ต้นฉบับเพื่อเลือกฟีเจอร์ใหม่ในแต่ละรอบ ไม่ใช้รายการที่เลือกจากข้อมูลอนาคต</li>
+      </ol>
+      <p>ไฟล์ Clean รุ่นเก่าที่ไม่มี <code>.features.json</code> ต้องทำ Clean ใหม่จากต้นฉบับ หากปรับ Train cutoff ให้เร็วขึ้นกว่าวันที่เคยเลือกฟีเจอร์ ระบบจะขอให้เลือกจากต้นฉบับใหม่</p>
+      <p>คอลัมน์ที่มีค่าเดิมตลอดไม่มีข้อมูลให้โมเดลเรียนรู้ ใน CSV ปี 2025 ที่ตรวจพบ กลุ่ม Divergence เป็นศูนย์ตลอดทั้งที่คำนวณใหม่ได้สัญญาณ จึงควรอัปเดตและ compile PriceDivergence ใน MT5 แล้วเก็บข้อมูลใหม่ก่อนใช้ฟีเจอร์กลุ่มนี้ ไม่ควรตีความว่าเป็นตลาดที่ไม่มี divergence</p>
     </section>
 
     <section id="checks">
@@ -556,7 +568,7 @@
           </tr>
           <tr>
             <td>2. คำนวณ absolute correlation</td>
-            <td>คำนวณค่า correlation แบบค่าสัมบูรณ์ระหว่าง feature ทุกคู่</td>
+            <td>ตัดคอลัมน์ค่าคงที่ แล้วคำนวณ absolute correlation เฉพาะแถวในช่วง Train ที่กำหนด ไม่ใช้ Validation/Test เลือกฟีเจอร์</td>
             <td>ทั้งสัมพันธ์ทางเดียวกันและสวนทางกันแรง ๆ ถือว่าอาจซ้ำกันได้</td>
           </tr>
           <tr>
@@ -577,7 +589,7 @@
           <tr>
             <td>6. บันทึกไฟล์ใหม่</td>
             <td>เก็บ non-feature columns ไว้ แล้วต่อด้วย feature ที่ระบบเลือกเก็บ จากนั้น save เป็น <code>_clean.csv</code></td>
-            <td>ไฟล์เดิมยังอยู่ ให้ใช้ไฟล์ clean ไป train เปรียบเทียบได้</td>
+            <td>ไฟล์เดิมยังอยู่ พร้อมสร้าง <code>.features.json</code> บันทึก source CSV, ช่วง Train และรายการฟีเจอร์ ให้เก็บคู่กับไฟล์ clean</td>
           </tr>
         </tbody>
       </table>
@@ -599,7 +611,7 @@
         <tbody>
           <tr>
             <td><code>Correlation threshold</code></td>
-            <td>ค่าที่ใช้บอกว่า feature สองตัวซ้ำกันมากแค่ไหน ค่า default คือ <code>0.85</code></td>
+            <td>ค่าที่ใช้บอกว่า feature สองตัวซ้ำกันมากแค่ไหน ค่าเริ่มต้นปัจจุบันคือ <code>0.99</code>; รูปตัวอย่างเดิมใช้ <code>0.85</code> จึงตัดได้มากกว่า</td>
             <td>เริ่มที่ <code>0.85</code> ก่อน ถ้าลบเยอะเกินให้เพิ่มเป็น <code>0.90</code></td>
           </tr>
           <tr>

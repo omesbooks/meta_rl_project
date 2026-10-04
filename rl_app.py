@@ -10,6 +10,8 @@ GUI app ที่รวมทุกอย่าง: Train, Backtest, Walk-Forwar
     python rl_app.py
 """
 import os, sys, io, subprocess, threading, queue, time, json, glob, re
+import math
+from ui_values import number as input_number, fraction as input_fraction, percent_units
 from pathlib import Path
 from datetime import datetime
 
@@ -27,12 +29,19 @@ from artifact_paths import (
     legacy_final_model_path,
     model_names_from_artifacts,
     train_meta_path,
+    model_dir,
+    backtests_dir,
+    best_model_path,
+    mark_process_runs,
+    recover_interrupted_runs,
 )
+from training_data import validate_frame, prune_features, feature_columns
 from reward_profiles import (
     DEFAULT_REWARD_PROFILE_CONFIG_DIR,
     REWARD_PARAM_SPECS,
     REWARD_PROFILES,
     REWARD_PROFILE_LABELS,
+    coerce_reward_overrides,
     load_reward_profile_json,
     reward_profile_json_payload,
     reward_profile_key_from_label,
@@ -475,6 +484,8 @@ class ProcessRunner:
             except Exception as exc:
                 self.q.put(('line', f"Process start/run failed: {exc}"))
             finally:
+                if proc is not None and getattr(proc, "pid", None):
+                    mark_process_runs(proc.pid, "cancelled" if self._cancel_requested else "failed")
                 with self._lock:
                     self._starting = False
                     if self.proc is proc:
@@ -488,6 +499,7 @@ class ProcessRunner:
 
     def stop(self):
         with self._lock:
+            self._cancel_requested = True
             if self._starting:
                 self._cancel_requested = True
             proc = self.proc
@@ -501,6 +513,8 @@ class ProcessRunner:
                         proc.kill()
             except Exception:
                 pass
+            if getattr(proc, "pid", None):
+                mark_process_runs(proc.pid, "cancelled")
 
     def is_running(self):
         with self._lock:
@@ -829,6 +843,8 @@ class RLTradingStudio(ctk.CTk):
         # State
         self.current_page = "train"
         self.runner = ProcessRunner()
+        for interrupted in recover_interrupted_runs():
+            print(f"[recovery] interrupted training run: {interrupted}")
         self.nav_buttons = {}
         self.pages = {}
         self._file_cache = {"csvs": None, "models": None, "mtimes": {}}
@@ -975,7 +991,7 @@ class RLTradingStudio(ctk.CTk):
                     sig.append((path.name, stat.st_mtime_ns, stat.st_size))
                 except OSError:
                     continue
-            for best in MODELS_DIR.glob("*/best/best_model.zip"):
+            for best in (best_model_path(name) for name in model_names_from_artifacts()):
                 try:
                     stat = best.stat()
                     sig.append((str(best.relative_to(WORK_DIR)), stat.st_mtime_ns, stat.st_size))
@@ -996,7 +1012,7 @@ class RLTradingStudio(ctk.CTk):
         zip_sig = self._path_signature("*.zip")
         artifact_zip_sig = self._path_signature("artifacts/models/*/*.zip")
         best_sig = self._best_model_signature()
-        sig = (zip_sig, artifact_zip_sig, best_sig)
+        sig = (zip_sig, artifact_zip_sig, best_sig, self._path_signature("artifacts/models/*/current.json"))
         if self._file_cache.get("model_sig") != sig:
             models = set(model_names_from_artifacts())
             self._file_cache["model_sig"] = sig
@@ -1095,11 +1111,11 @@ class RLTradingStudio(ctk.CTk):
     def _pipeline_effective_rows(self, rows):
         if rows is None:
             return None
-        train_pct = self._parse_train_pct(self.pipe_train_pct.get(), 0.85)
         try:
-            window = int(float(self.pipe_window.get().strip() or "0"))
-        except Exception:
-            window = 0
+            train_pct = input_fraction(self.pipe_train_pct.get(), "Train %", allow_zero=False)
+            window = input_number(self.pipe_window.get(), "Window", 1, integer=True)
+        except ValueError:
+            return None
         return max(int(rows * train_pct) - max(window, 0), 1)
 
     def _round_steps(self, value):
@@ -1129,6 +1145,8 @@ class RLTradingStudio(ctk.CTk):
 
     def _model_results_signature(self):
         return (
+            self._path_signature("artifacts/models/*/current.json"),
+            self._path_signature("artifacts/models/*/runs/*/backtests/*_live_bt.meta.json"),
             self._path_signature("*_live_bt_trades.csv"),
             self._path_signature("*_trades.csv"),
             self._path_signature("*.zip"),
@@ -1385,29 +1403,21 @@ class RLTradingStudio(ctk.CTk):
         open_widget._close_popup()
 
     def _parse_train_pct(self, raw, default=0.85):
-        """Accept either percentage (e.g. 85, "85") or decimal (e.g. 0.85, "0.85").
-        Heuristic: value > 1 -> percentage, value <= 1 -> already-decimal.
-        Returns float clamped to [0, 1]. 0 is allowed (e.g. backtest --start 0)."""
+        return input_fraction(raw)
+
+    def _fraction_field(self, raw, label, allow_zero=True, allow_one=True):
         try:
-            v = float(str(raw).strip())
-        except (ValueError, TypeError):
-            v = default
-        if v > 1.0:
-            v = v / 100.0
-        return min(max(v, 0.0), 1.0)
+            return input_fraction(raw, label, allow_zero, allow_one)
+        except ValueError as exc:
+            messagebox.showerror("Invalid settings", str(exc))
+            return None
 
     def _parse_int_field(self, entry, default, label, minimum=1):
         """Parse whole-number GUI fields before any run-state widgets change."""
         raw = entry.get().strip() if hasattr(entry, "get") else str(entry).strip()
-        raw = raw or str(default)
+
         try:
-            number = float(raw.replace(",", "").replace("_", ""))
-            if not number.is_integer():
-                raise ValueError
-            value = int(number)
-            if value < int(minimum):
-                raise ValueError
-            return value
+            return input_number(raw, label, minimum, integer=True)
         except (TypeError, ValueError, OverflowError):
             messagebox.showwarning(
                 "Invalid number",
@@ -1417,7 +1427,7 @@ class RLTradingStudio(ctk.CTk):
 
     def _normalize_output_name(self, entry, default, label="Output name"):
         """Sanitize Windows-invalid filename characters and reflect the result."""
-        raw = (entry.get() or default or "").strip()
+        raw = entry.get().strip()
         cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", raw).rstrip(". ")
         if not cleaned:
             messagebox.showerror("Invalid name", f"{label} is empty after cleanup.")
@@ -1428,7 +1438,8 @@ class RLTradingStudio(ctk.CTk):
         return cleaned
 
     def _is_process_busy(self):
-        return self.runner.is_running() or getattr(self, "pipeline_running", False)
+        return (self.runner.is_running() or getattr(self, "pipeline_running", False)
+                or getattr(self, "_preview_pending", False))
 
     def _on_close(self):
         running = self.runner.is_running() or getattr(self, "pipeline_running", False)
@@ -1449,6 +1460,8 @@ class RLTradingStudio(ctk.CTk):
                             proc.kill()
             except Exception:
                 pass
+            if getattr(proc, "pid", None):
+                mark_process_runs(proc.pid, "cancelled")
         self.destroy()
 
     def _start_runner(self, cmd, page=None):
@@ -1919,11 +1932,19 @@ class RLTradingStudio(ctk.CTk):
                 text_color=COLOR_YELLOW)
             return
 
-        requested_pct = self._parse_train_pct(self.pipe_train_pct.get(), 0.85)
-        train_pct = min(max(requested_pct, 0.01), 1.0)
+        try:
+            requested_pct = input_fraction(self.pipe_train_pct.get(), "pipe_train_pct", allow_zero=False, allow_one=True)
+        except ValueError as exc:
+            self.pipe_split_hint.configure(text=str(exc), text_color=COLOR_YELLOW)
+            return
+        train_pct = requested_pct
         split = max(0, min(int(len(ts) * train_pct), len(ts)))
         train_line = self._format_timestamp_range_line("Train", ts, 0, split - 1)
-        tail_line = self._format_timestamp_range_line("Tail", ts, split, len(ts) - 1)
+        middle = split + (len(ts) - split) // 2
+        tail_line = (self._format_timestamp_range_line("Validation", ts, split, middle - 1) + "\n" +
+                     self._format_timestamp_range_line("Test", ts, middle, len(ts) - 1))
+        if split == len(ts):
+            tail_line = "No unseen Test: in-sample diagnostic only"
         pct_note = ""
         if abs(train_pct - requested_pct) > 1e-9:
             pct_note = f"\nTrain pct adjusted to {train_pct * 100:.1f}%"
@@ -2113,7 +2134,7 @@ class RLTradingStudio(ctk.CTk):
             "gamma": "0.99", "gae": "0.95", "vf": "0.5",
             "max_hold": "30", "ep_len": "2000", "net_arch": "auto",
         }
-        values = {k: (raw.get(k) or defaults[k]) for k in defaults}
+        values = {k: raw.get(k, "") for k in defaults}
 
         try:
             floats = {
@@ -2125,14 +2146,17 @@ class RLTradingStudio(ctk.CTk):
                 "vf_coef": float(values["vf"]),
             }
             ints = {
-                "n_steps": int(float(values["nsteps"])),
-                "n_epochs": int(float(values["nepochs"])),
-                "batch_size": int(float(values["batch"])),
-                "max_hold": int(float(values["max_hold"])),
-                "ep_len": int(float(values["ep_len"])),
+                "n_steps": input_number(values["nsteps"], "nsteps", 1, integer=True),
+                "n_epochs": input_number(values["nepochs"], "nepochs", 1, integer=True),
+                "batch_size": input_number(values["batch"], "batch", 1, integer=True),
+                "max_hold": input_number(values["max_hold"], "max_hold", 1, integer=True),
+                "ep_len": input_number(values["ep_len"], "ep_len", 1, integer=True),
             }
-        except ValueError:
+        except (ValueError, OverflowError):
             messagebox.showerror("Invalid hyperparameters", "Hyperparameters must be numeric, except net_arch.")
+            return None
+
+        if not self._validate_ppo_fields({**floats, **ints}):
             return None
 
         if floats["learning_rate"] <= 0:
@@ -2144,11 +2168,11 @@ class RLTradingStudio(ctk.CTk):
         if floats["ent_coef"] < 0 or floats["vf_coef"] < 0:
             messagebox.showerror("Invalid hyperparameters", "ent_coef and vf_coef must be 0 or greater.")
             return None
-        if not (0 < floats["gamma"] <= 1):
-            messagebox.showerror("Invalid hyperparameters", "gamma must be > 0 and <= 1.")
+        if not (0 <= floats["gamma"] <= 1):
+            messagebox.showerror("Invalid hyperparameters", "gamma must be >= 0 and <= 1.")
             return None
-        if not (0 < floats["gae_lambda"] <= 1):
-            messagebox.showerror("Invalid hyperparameters", "gae_lambda must be > 0 and <= 1.")
+        if not (0 <= floats["gae_lambda"] <= 1):
+            messagebox.showerror("Invalid hyperparameters", "gae_lambda must be >= 0 and <= 1.")
             return None
         if any(v <= 0 for v in ints.values()):
             messagebox.showerror("Invalid hyperparameters", "n_steps, n_epochs, batch_size, max_hold, and ep_len must be greater than 0.")
@@ -2157,10 +2181,10 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showerror("Invalid hyperparameters", "batch_size must be <= n_steps.")
             return None
 
-        net_arch = values["net_arch"].strip() or "auto"
+        net_arch = values["net_arch"].strip()
         if net_arch != "auto":
             try:
-                layers = [int(x.strip()) for x in net_arch.split(",") if x.strip()]
+                layers = [int(x.strip()) for x in net_arch.split(",")]
             except ValueError:
                 messagebox.showerror("Invalid hyperparameters", "net_arch must be 'auto' or comma-separated integers, e.g. 256,128,64.")
                 return None
@@ -2231,7 +2255,7 @@ class RLTradingStudio(ctk.CTk):
         }
 
     def _run_full_pipeline(self):
-        if self.runner.is_running() or getattr(self, "pipeline_running", False):
+        if self._is_process_busy():
             messagebox.showwarning("Busy", "Another process is already running.")
             return
 
@@ -2252,7 +2276,7 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showerror("Backtest CSV not found", str(bt_csv_path))
             return
 
-        model_name = self.pipe_model_name.get().strip() or "rl_pipeline_v1"
+        model_name = self.pipe_model_name.get().strip()
         model_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", model_name).strip("._-")
         if not model_name:
             messagebox.showerror("Invalid name", "Model name is empty after cleanup.")
@@ -2261,34 +2285,20 @@ class RLTradingStudio(ctk.CTk):
         self.pipe_model_name.insert(0, model_name)
 
         try:
-            steps = int(float(self.pipe_steps.get().strip() or "200000"))
-            window = int(float(self.pipe_window.get().strip() or "10"))
-            conf = float(self.pipe_conf.get().strip() or "0")
-            train_pct = self._parse_train_pct(self.pipe_train_pct.get(), 0.85)
-            risk = float(self.pipe_risk.get().strip() or "0.01")
-            max_positions = int(float(self.pipe_max_pos.get().strip() or "1"))
-            atr_sl = float(self.pipe_sl.get().strip() or "2.0")
-            atr_tp = float(self.pipe_tp.get().strip() or "4.0")
-        except ValueError:
-            messagebox.showerror("Invalid settings", "Steps/window/confidence/train_pct/risk/backtest settings must be numeric.")
+            steps = input_number(self.pipe_steps.get(), "Steps", 1, integer=True)
+            window = input_number(self.pipe_window.get(), "Window", 1, integer=True)
+            conf = input_number(self.pipe_conf.get(), "Confidence", 0, 1)
+            train_pct = input_fraction(self.pipe_train_pct.get(), "Train %", allow_zero=False)
+            risk = input_number(self.pipe_risk.get(), "Risk", 0, 1)
+            max_positions = input_number(self.pipe_max_pos.get(), "Max positions", 1, integer=True)
+            atr_sl = input_number(self.pipe_sl.get(), "ATR SL", 0)
+            atr_tp = input_number(self.pipe_tp.get(), "ATR TP", 0)
+            bt_start_raw = self.pipe_bt_start.get().strip().lower()
+            bt_start = (0.0 if bt_start_raw == "auto" else
+                        input_fraction(bt_start_raw, "Backtest start", allow_one=False))
+        except ValueError as exc:
+            messagebox.showerror("Invalid settings", str(exc))
             return
-
-        if steps <= 0 or window <= 0:
-            messagebox.showerror("Invalid settings", "Steps and window must be greater than 0.")
-            return
-        if not (0 < train_pct <= 1.0):
-            messagebox.showerror("Invalid settings", "Train pct must be > 0 and <= 1.0.")
-            return
-        if risk < 0 or max_positions <= 0 or atr_sl < 0 or atr_tp < 0:
-            messagebox.showerror("Invalid settings", "Risk must be >= 0, max positions > 0, and ATR settings >= 0.")
-            return
-
-        bt_start_raw = self.pipe_bt_start.get().strip().lower() if hasattr(self, "pipe_bt_start") else "auto"
-        if bt_start_raw in ("", "auto"):
-            bt_start = train_pct if Path(bt_csv).name == Path(csv_name).name else 0.0
-        else:
-            bt_start = self._parse_train_pct(bt_start_raw, 0.0)
-            bt_start = min(max(bt_start, 0.0), 0.99)
 
         hparams = self._get_pipeline_hparams()
         if hparams is None:
@@ -2300,6 +2310,7 @@ class RLTradingStudio(ctk.CTk):
             hparams["use_m1"] = True
         hparams.update({
             "bt_start": str(bt_start),
+            "bt_start_auto": bt_start_raw == "auto",
             "risk": str(risk),
             "max_positions": str(max_positions),
             "atr_sl": str(atr_sl),
@@ -2319,6 +2330,21 @@ class RLTradingStudio(ctk.CTk):
         use_build = False
         mode = "pure_agent" if "Pure" in self.pipe_bt_mode.get() else "agent_sltp"
 
+        import copy
+        frozen = copy.deepcopy(hparams)
+        train_cmd = self._pipeline_train_command(
+            csv_name, bt_csv, model_name, steps, window, train_pct, frozen)
+        context = {"backtest_csv": bt_csv, "confidence": conf, "mode": mode, **frozen}
+        def launch(confirmed):
+            frozen["confirmed_train_cmd"] = confirmed
+            if "resolved_backtest" in context:
+                frozen["resolved_backtest"] = copy.deepcopy(context["resolved_backtest"])
+            self._launch_pipeline(csv_name, bt_csv, use_relabel, use_build, model_name,
+                                  steps, window, conf, mode, train_pct, frozen)
+        self._review_training_command(train_cmd, launch, context=context)
+
+    def _launch_pipeline(self, csv_name, bt_csv, use_relabel, use_build, model_name,
+                         steps, window, conf, mode, train_pct, hparams):
         self.pipeline_running = True
         self.pipeline_stop_requested = False
         self.pipe_run_btn.configure(state="disabled")
@@ -2349,6 +2375,38 @@ class RLTradingStudio(ctk.CTk):
             except Exception:
                 pass
 
+    def _pipeline_train_command(self, train_csv, bt_csv, model_name, steps, window, train_pct, hparams):
+        train_cmd = [
+            sys.executable, "rl_train.py", train_csv,
+            "--steps", str(steps),
+            "--window", str(window),
+            "--name", model_name,
+            "--train_pct", str(train_pct),
+            "--algo", "ppo",
+            "--reward_mode", hparams["reward_mode"],
+            "--reward_profile", hparams["reward_profile"],
+            "--reward_overrides", hparams.get("reward_overrides", ""),
+            "--action_profile", hparams["action_profile"],
+            "--action_params", hparams.get("action_params", ""),
+            "--max_hold", hparams["max_hold"],
+            "--ep_len", hparams["ep_len"],
+            "--net_arch", hparams["net_arch"],
+            "--learning_rate", hparams["learning_rate"],
+            "--clip_range", hparams["clip_range"],
+            "--ent_coef", hparams["ent_coef"],
+            "--n_steps", hparams["n_steps"],
+            "--n_epochs", hparams["n_epochs"],
+            "--batch_size", hparams["batch_size"],
+            "--gamma", hparams["gamma"],
+            "--gae_lambda", hparams["gae_lambda"],
+            "--vf_coef", hparams["vf_coef"],
+        ]
+        if Path(bt_csv).resolve() != Path(train_csv).resolve():
+            train_cmd.extend(["--eval_csv", bt_csv])
+        if hparams.get("reward_formula"):
+            train_cmd.extend(["--reward_formula", hparams["reward_formula"]])
+        return train_cmd
+
     def _pipeline_worker(self, csv_name, bt_csv, use_relabel, use_build,
                          model_name, steps, window, conf, mode, train_pct, hparams):
         train_csv = csv_name
@@ -2378,37 +2436,26 @@ class RLTradingStudio(ctk.CTk):
                     train_csv = self._expected_relabeled_path(train_csv).name
                     stage += 1
 
-            train_cmd = [
-                sys.executable, "rl_train.py", train_csv,
-                "--steps", str(steps),
-                "--window", str(window),
-                "--name", model_name,
-                "--train_pct", str(train_pct),
-                "--algo", "ppo",
-                "--reward_mode", hparams["reward_mode"],
-                "--reward_profile", hparams["reward_profile"],
-                "--reward_overrides", hparams.get("reward_overrides", ""),
-                "--action_profile", hparams["action_profile"],
-                "--action_params", hparams.get("action_params", ""),
-                "--max_hold", hparams["max_hold"],
-                "--ep_len", hparams["ep_len"],
-                "--net_arch", hparams["net_arch"],
-                "--learning_rate", hparams["learning_rate"],
-                "--clip_range", hparams["clip_range"],
-                "--ent_coef", hparams["ent_coef"],
-                "--n_steps", hparams["n_steps"],
-                "--n_epochs", hparams["n_epochs"],
-                "--batch_size", hparams["batch_size"],
-                "--gamma", hparams["gamma"],
-                "--gae_lambda", hparams["gae_lambda"],
-                "--vf_coef", hparams["vf_coef"],
-            ]
-            if Path(bt_csv).name != Path(train_csv).name:
-                train_cmd.extend(["--eval_csv", bt_csv])
-            if hparams.get("reward_formula"):
-                train_cmd.extend(["--reward_formula", hparams["reward_formula"]])
+            train_cmd = hparams.get("confirmed_train_cmd") or self._pipeline_train_command(
+                train_csv, bt_csv, model_name, steps, window, train_pct, hparams)
             self._pipeline_run_cmd(train_cmd, stage, "Train PPO", stages_total)
             stage += 1
+
+            if "resolved_backtest" in hparams:
+                hparams["bt_start"] = str(hparams["resolved_backtest"]["start"])
+                self._pipeline_log(f"Confirmed Backtest: {hparams['resolved_backtest']}", "info")
+            elif hparams.get("bt_start_auto"):
+                trained = json.loads(train_meta_path(model_name).read_text(encoding="utf-8"))
+                if trained.get("test_is_unseen"):
+                    import pandas as pd
+                    bt_frame = validate_frame(self._smart_read_csv(WORK_DIR / bt_csv), bt_csv)
+                    cutoff = pd.Timestamp(trained["eval_period"]["start"])
+                    skip_rows = int((bt_frame.timestamp < cutoff).sum())
+                    hparams["bt_start"] = str(skip_rows / len(bt_frame))
+                    self._pipeline_log(f"Backtest uses final Test from {cutoff}; Validation is excluded.", "info")
+                else:
+                    hparams["bt_start"] = "0"
+                    self._pipeline_log("IN-SAMPLE backtest: Train 100% has no unseen Test.", "warn")
 
             backtest_cmd = [
                 sys.executable, "backtest_live.py", model_name, bt_csv,
@@ -2423,8 +2470,8 @@ class RLTradingStudio(ctk.CTk):
                 "--mode", mode,
                 "--stop_slippage", "0.0001",
             ]
-            m1_file = (self._find_matching_m1(bt_csv)
-                       if hparams.get("use_m1", True) else None)
+            m1_file = (hparams["resolved_backtest"]["m1_csv"] if "resolved_backtest" in hparams
+                       else self._find_matching_m1(bt_csv) if hparams.get("use_m1", True) else None)
             if m1_file:
                 backtest_cmd += ["--m1_csv", m1_file]
             # Statistical validation — same defaults as the Backtest page
@@ -2503,6 +2550,8 @@ class RLTradingStudio(ctk.CTk):
             self.pipeline_proc = None
 
         if self.pipeline_stop_requested:
+            if getattr(proc, "pid", None):
+                mark_process_runs(proc.pid, "cancelled")
             raise RuntimeError("Pipeline stopped.")
         if rc != 0:
             raise RuntimeError(f"{stage_name} failed with exit code {rc}.")
@@ -2885,6 +2934,8 @@ class RLTradingStudio(ctk.CTk):
             + list(WORK_DIR.glob("*_trades.csv"))
             + list(MODELS_DIR.glob("*/backtests/*_live_bt_trades.csv"))
             + list(MODELS_DIR.glob("*/backtests/*_trades.csv"))
+            + [p for name in model_names_from_artifacts()
+               for p in backtests_dir(name).glob("*_trades.csv")]
         )
 
         for trades_path in sorted(trade_files, key=lambda p: p.stat().st_mtime, reverse=True):
@@ -2902,6 +2953,8 @@ class RLTradingStudio(ctk.CTk):
                 continue
 
             meta = {}
+            if (MODELS_DIR / model / "current.json").exists() and trades_path.parent != backtests_dir(model):
+                continue
             if source == "live backtest":
                 try:
                     from artifact_paths import backtest_meta_path
@@ -3517,6 +3570,11 @@ class RLTradingStudio(ctk.CTk):
             font=ctk.CTkFont(family="Consolas", size=12))
         self.tool_feat_threshold.insert(0, "0.99")
         self.tool_feat_threshold.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+        ctk.CTkLabel(feat_grid, text="Fit features on first Train %", text_color=COLOR_DIM
+                    ).grid(row=2, column=0, sticky="w", pady=(8, 0))
+        self.tool_feat_train_pct = ctk.CTkEntry(feat_grid)
+        self.tool_feat_train_pct.insert(0, "85")
+        self.tool_feat_train_pct.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
 
         # 2-button row
         btn_row = ctk.CTkFrame(c4, fg_color="transparent")
@@ -4593,58 +4651,7 @@ class RLTradingStudio(ctk.CTk):
                 and pd.api.types.is_numeric_dtype(df[c])]
 
     def _greedy_correlation_prune(self, df, features, threshold):
-        """Greedy: drop feature with highest avg correlation in each high-corr pair.
-        Returns: (kept_features, dropped_features, drop_reasons)"""
-        import numpy as np
-        kept_source = []
-        dropped = []
-        reasons = {}  # dropped_col -> (kept_col, corr_value)
-
-        for col in features:
-            # Constant features create NaN correlations; drop them explicitly
-            # before pairwise pruning so NaN never becomes the "largest" pair.
-            if df[col].nunique(dropna=True) <= 1:
-                dropped.append(col)
-                reasons[col] = (None, None)
-            else:
-                kept_source.append(col)
-
-        if len(kept_source) <= 1:
-            return kept_source, dropped, reasons
-
-        # Compute correlations once. Pairwise correlations do not change when
-        # columns are dropped; only the active set and active-column averages do.
-        corr = df[kept_source].corr().abs().replace([np.inf, -np.inf], np.nan).fillna(0.0)
-        names = list(corr.columns)
-        corr_values = corr.to_numpy(copy=True)
-        np.fill_diagonal(corr_values, 0.0)
-        active = np.ones(len(names), dtype=bool)
-
-        while int(active.sum()) > 1:
-            active_idx = np.flatnonzero(active)
-            active_corr = corr_values[np.ix_(active_idx, active_idx)]
-            max_val = float(active_corr.max())
-            if not np.isfinite(max_val) or max_val <= threshold:
-                break
-
-            # find highest pair
-            sub_i, sub_j = np.unravel_index(np.argmax(active_corr), active_corr.shape)
-            i, j = int(active_idx[sub_i]), int(active_idx[sub_j])
-            c1, c2 = names[i], names[j]
-
-            # pick which to drop = higher avg correlation to others
-            avg_c1 = float(corr_values[i, active_idx].mean())
-            avg_c2 = float(corr_values[j, active_idx].mean())
-            drop_idx = i if avg_c1 > avg_c2 else j
-            keep_idx = j if drop_idx == i else i
-            drop_col = names[drop_idx]
-            keep_col = names[keep_idx]
-            active[drop_idx] = False
-            dropped.append(drop_col)
-            reasons[drop_col] = (keep_col, max_val)
-
-        kept = [name for idx, name in enumerate(names) if active[idx]]
-        return kept, dropped, reasons
+        return prune_features(df, features, threshold)
 
     def _is_prune_too_aggressive(self, total_features, kept_features):
         """Safety guard for broad period-feature datasets.
@@ -4661,28 +4668,42 @@ class RLTradingStudio(ctk.CTk):
 
     def _show_correlation(self):
         csv = self.tool_feat_csv.get()
-        threshold_raw = self.tool_feat_threshold.get() or "0.99"
+        try:
+            threshold_raw = input_number(self.tool_feat_threshold.get(), "Correlation threshold", 0, 1)
+            if threshold_raw == 0:
+                raise ValueError("Correlation threshold must be > 0")
+        except ValueError as exc:
+            messagebox.showerror("Invalid settings", str(exc))
+            return
+        train_pct = self._fraction_field(self.tool_feat_train_pct.get(), "Feature Train %", allow_zero=False)
+        if train_pct is None:
+            return
         threading.Thread(
             target=self._show_correlation_worker,
-            args=(csv, threshold_raw), daemon=True).start()
+            args=(csv, threshold_raw, train_pct), daemon=True).start()
 
-    def _show_correlation_worker(self, csv, threshold_raw):
+    def _show_correlation_worker(self, csv, threshold_raw, train_pct=0.85):
         try:
             if csv in ("(none)", ""):
                 self._log(self.tools_log, "Please select a CSV", "error")
                 return
 
-            try:
-                threshold = float(threshold_raw)
-            except ValueError:
-                threshold = 0.99
+            threshold = input_number(threshold_raw, "Correlation threshold", 0, 1)
+            if threshold == 0:
+                raise ValueError("Correlation threshold must be > 0")
 
             self._log(self.tools_log, f"Loading {csv}...", "info")
             import pandas as pd
             import numpy as np
 
-            df = self._smart_read_csv(WORK_DIR / csv)
-            features = self._get_feature_columns(df)
+            df = validate_frame(self._smart_read_csv(WORK_DIR / csv), csv)
+            if not 0 < train_pct <= 1:
+                raise ValueError("Train fraction must be > 0 and <= 1")
+            df = df.iloc[:int(len(df) * train_pct)]
+            if len(df) < 3:
+                raise ValueError("Not enough Train rows for correlation")
+            features = feature_columns(df)
+            self._log(self.tools_log, f"TRAIN ONLY: {df.timestamp.iloc[0]} -> {df.timestamp.iloc[-1]} ({len(df):,} rows)", "info")
             self._log(self.tools_log,
                 f"Found {len(features)} numeric features (after dropping OHLCV + leaky)",
                 "info")
@@ -4791,17 +4812,20 @@ class RLTradingStudio(ctk.CTk):
             return
 
         try:
-            threshold = float(self.tool_feat_threshold.get() or "0.99")
-        except ValueError:
-            threshold = 0.99
-
+            threshold = input_number(self.tool_feat_threshold.get(), "Correlation threshold", 0, 1)
+            if threshold == 0:
+                raise ValueError("Correlation threshold must be > 0")
+            train_pct = input_fraction(self.tool_feat_train_pct.get(), "Feature Train %", allow_zero=False)
+        except ValueError as exc:
+            messagebox.showerror("Invalid settings", str(exc))
+            return
         threading.Thread(
             target=self._clean_features_worker,
-            args=(csv, threshold),
+            args=(csv, threshold, train_pct),
             daemon=True,
         ).start()
 
-    def _clean_features_worker(self, csv, threshold):
+    def _clean_features_worker(self, csv, threshold, train_pct=0.85):
         def log(text, tag="info"):
             self.after(0, lambda text=text, tag=tag:
                        self._log(self.tools_log, text, tag))
@@ -4810,12 +4834,17 @@ class RLTradingStudio(ctk.CTk):
             log(f"\n=== Cleaning redundant features (corr > {threshold}) ===", "info")
             log(f"Loading {csv}...", "info")
             import pandas as pd
-            df = self._smart_read_csv(WORK_DIR / csv)
-            features = self._get_feature_columns(df)
-            log(f"Original: {len(features)} features", "info")
+            df = validate_frame(self._smart_read_csv(WORK_DIR / csv), csv)
+            if not 0 < train_pct <= 1:
+                raise ValueError("Train fraction must be > 0 and <= 1")
+            fit_df = df.iloc[:int(len(df) * train_pct)]
+            if len(fit_df) < 3:
+                raise ValueError("Not enough Train rows for feature selection")
+            features = feature_columns(df)
+            log(f"Original: {len(features)} features; fit TRAIN ONLY through {fit_df.timestamp.iloc[-1]}", "info")
 
             kept, dropped, reasons = self._greedy_correlation_prune(
-                df, features, threshold)
+                fit_df, features, threshold)
 
             if dropped:
                 blocked, min_keep, keep_ratio = self._is_prune_too_aggressive(
@@ -4868,6 +4897,13 @@ class RLTradingStudio(ctk.CTk):
             out_path = WORK_DIR / out_name
             out_existed = out_path.exists()
             cleaned_df.to_csv(out_path, index=False)
+            out_path.with_suffix(".features.json").write_text(json.dumps({
+                "source_csv": str((WORK_DIR / csv).resolve()),
+                "fit_start": fit_df.timestamp.iloc[0].isoformat(),
+                "fit_end": fit_df.timestamp.iloc[-1].isoformat(),
+                "fit_rows": len(fit_df), "threshold": threshold,
+                "features": kept, "dropped": dropped,
+            }, indent=2), encoding="utf-8")
             notice_paths = [out_path]
             params_path, params_error = self._copy_csv_params_sidecar(WORK_DIR / csv, out_path)
             if params_path:
@@ -4956,7 +4992,7 @@ class RLTradingStudio(ctk.CTk):
                       font=ctk.CTkFont(size=12)
                       ).grid(row=1, column=0, sticky="w", padx=18, pady=(8, 4))
         self.train_algo = ctk.CTkOptionMenu(c2,
-            values=["PPO (recommended)", "DQN", "A2C"],
+            values=["PPO (recommended)"],
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT,
             button_hover_color="#2d333b")
         self.train_algo.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
@@ -5848,13 +5884,11 @@ class RLTradingStudio(ctk.CTk):
         raw = entry.get().strip()
         try:
             # entry text is in display units — convert back to raw
-            value = float(raw) / self._reward_display_scale(spec)
-        except ValueError:
-            messagebox.showerror("Invalid reward value", f"{spec['label']} must be numeric.")
-            self._set_reward_entry_text(
-                entry, self._reward_value_text(spec, control["slider"].get()))
+            value = input_number(raw, spec["label"]) / self._reward_display_scale(spec)
+            coerce_reward_overrides({key: value})
+        except ValueError as exc:
+            messagebox.showerror("Invalid reward value", str(exc))
             return False
-        value = max(float(spec["min"]), min(float(spec["max"]), value))
         control["slider"].set(value)
         self._set_reward_entry_text(entry, self._reward_value_text(spec, value))
         return True
@@ -5914,7 +5948,7 @@ class RLTradingStudio(ctk.CTk):
             except ValueError:
                 messagebox.showerror("Invalid reward value", f"{spec['label']} must be numeric.")
                 return None
-            if value < float(spec["min"]) or value > float(spec["max"]):
+            if not math.isfinite(value) or value < float(spec["min"]) or value > float(spec["max"]):
                 messagebox.showerror(
                     "Invalid reward value",
                     f"{spec['label']} must be between {self._reward_range_text(spec)}.",
@@ -6081,13 +6115,11 @@ class RLTradingStudio(ctk.CTk):
         spec = control["spec"]
         entry = control["entry"]
         try:
-            value = float(entry.get().strip())
-        except ValueError:
-            messagebox.showerror("Invalid action value", f"{spec['label']} must be numeric.")
-            self._set_reward_entry_text(
-                entry, self._action_value_text(spec, control["slider"].get()))
+            value = input_number(entry.get(), spec["label"], spec["min"], spec["max"],
+                                 integer=spec.get("decimals", 3) == 0)
+        except ValueError as exc:
+            messagebox.showerror("Invalid action value", str(exc))
             return False
-        value = max(float(spec["min"]), min(float(spec["max"]), value))
         control["slider"].set(value)
         self._set_reward_entry_text(entry, self._action_value_text(spec, value))
         return True
@@ -6140,14 +6172,17 @@ class RLTradingStudio(ctk.CTk):
             except ValueError:
                 messagebox.showerror("Invalid action value", f"{spec['label']} must be numeric.")
                 return None
-            if value < float(spec["min"]) or value > float(spec["max"]):
+            if not math.isfinite(value) or value < float(spec["min"]) or value > float(spec["max"]):
                 messagebox.showerror(
                     "Invalid action value",
                     f"{spec['label']} must be between {spec['min']} and {spec['max']}.",
                 )
                 return None
             if int(spec.get("decimals", 3)) == 0:
-                value = int(round(value))
+                if not value.is_integer():
+                    messagebox.showerror("Invalid action value", f"{spec['label']} must be a whole number.")
+                    return None
+                value = int(value)
             baseline = float(defaults[key])
             if abs(float(value) - baseline) > 10 ** (-(int(spec.get("decimals", 3)) + 1)):
                 overrides[key] = value
@@ -6673,13 +6708,21 @@ class RLTradingStudio(ctk.CTk):
                 text_color=COLOR_YELLOW)
             return
 
-        requested_pct = self._parse_train_pct(self.train_pct.get(), 0.85)
-        train_pct = min(max(requested_pct, 0.01), 1.0)
+        try:
+            requested_pct = input_fraction(self.train_pct.get(), "train_pct", allow_zero=False, allow_one=True)
+        except ValueError as exc:
+            self.train_split_hint.configure(text=str(exc), text_color=COLOR_YELLOW)
+            return
+        train_pct = requested_pct
         split = int(len(ts) * train_pct)
         split = max(0, min(split, len(ts)))
 
         train_line = self._format_timestamp_range_line("Train", ts, 0, split - 1)
-        eval_line = self._format_timestamp_range_line("Eval", ts, split, len(ts) - 1)
+        middle = split + (len(ts) - split) // 2
+        eval_line = (self._format_timestamp_range_line("Validation", ts, split, middle - 1) + "\n" +
+                     self._format_timestamp_range_line("Test", ts, middle, len(ts) - 1))
+        if split == len(ts):
+            eval_line = "No unseen Test: in-sample diagnostic only"
 
         pct_note = ""
         if abs(train_pct - requested_pct) > 1e-9:
@@ -6692,13 +6735,11 @@ class RLTradingStudio(ctk.CTk):
         rows = getattr(self, "train_selected_rows", None)
         if rows is None:
             return None
-        train_pct = self._parse_train_pct(
-            self.train_pct.get() if hasattr(self, "train_pct") else "85", 0.85)
-        train_pct = min(max(train_pct, 0.01), 1.0)
         try:
-            window = int(float(self.train_window.get().strip() or "0"))
-        except Exception:
-            window = 0
+            train_pct = input_fraction(self.train_pct.get(), "Train %", allow_zero=False)
+            window = input_number(self.train_window.get(), "Window", 1, integer=True)
+        except ValueError:
+            return None
         return max(int(rows * train_pct) - max(window, 0), 1)
 
     def _update_train_recommendation_hints(self):
@@ -6832,6 +6873,121 @@ class RLTradingStudio(ctk.CTk):
         messagebox.showinfo("Attached",
             f"Attached params sidecar:\n{dst.name}\n\nParity guaranteed for this training run.")
 
+    def _validate_ppo_fields(self, values):
+        from types import SimpleNamespace
+        from training_data import validate_hyperparameters
+        try:
+            validate_hyperparameters(SimpleNamespace(**{k: float(v) for k, v in values.items()}))
+        except (ValueError, TypeError, OverflowError) as exc:
+            messagebox.showerror("Invalid training settings", str(exc))
+            return False
+        return True
+
+    def _resolve_pipeline_preview(self, recipe, context):
+        import pandas as pd
+        frame = validate_frame(self._smart_read_csv(WORK_DIR / context["backtest_csv"]),
+                               context["backtest_csv"])
+        if context["bt_start_auto"]:
+            period = recipe["test_period"]
+            skip = int((frame.timestamp < pd.Timestamp(period["start"])).sum()) if period else 0
+            start = skip / len(frame)
+            if int(start * len(frame)) < skip:
+                start = math.nextafter(start, 1.0)
+        else:
+            start = float(context["bt_start"])
+            skip = int(len(frame) * start)
+        if len(frame) - skip <= recipe["settings"]["window"] + 2:
+            raise ValueError("Backtest range is too short for the selected Window")
+        context["resolved_backtest"] = {
+            "start": start, "rows": len(frame) - skip,
+            "period": {"start": str(frame.timestamp.iloc[skip]), "end": str(frame.timestamp.iloc[-1])},
+            "m1_csv": self._find_matching_m1(context["backtest_csv"]) if context["use_m1"] else None,
+            "stop_slippage": 0.0001, "intrabar": "pessimistic", "random_baseline": 20,
+            "mc": 1000, "swap_long": 0, "swap_short": 0,
+        }
+
+    def _review_training_command(self, cmd, launch, context=None):
+        """Prepare in a worker, then confirm an immutable command on the Tk thread."""
+        if getattr(self, "_preview_pending", False):
+            return
+        self._preview_pending = True
+        frozen_cmd = tuple(cmd)
+        self.status_label.configure(text="Checking training data...")
+        def prepare():
+            try:
+                from rl_train import build_parser, prepare_training
+                prepared = prepare_training(build_parser().parse_args(list(frozen_cmd[2:])))
+                preview = {k: prepared[k] for k in ("recipe", "recipe_sha256")}
+                del prepared
+                if context is not None:
+                    self._resolve_pipeline_preview(preview["recipe"], context)
+                self.after(0, lambda: self._show_training_confirmation(
+                    frozen_cmd, preview, launch, context))
+            except (Exception, SystemExit) as exc:
+                try:
+                    self.after(0, lambda error=str(exc): self._training_preview_failed(error))
+                except RuntimeError:
+                    pass
+        threading.Thread(target=prepare, daemon=True).start()
+
+    def _training_preview_failed(self, error):
+        self._preview_pending = False
+        self.status_label.configure(text="Review failed", text_color=COLOR_RED)
+        messagebox.showerror("Cannot start training", error)
+
+    def _show_training_confirmation(self, cmd, prepared, launch, context=None):
+        recipe = prepared["recipe"]
+        dialog = ctk.CTkToplevel(self)
+        self._training_confirmation = dialog
+        dialog.title("Confirm training")
+        dialog.geometry("880x720")
+        dialog.minsize(600, 440)
+        dialog.transient(self)
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.grid_rowconfigure(1, weight=1)
+        ctk.CTkLabel(dialog, text="Confirm training", font=ctk.CTkFont(size=22, weight="bold")).grid(
+            row=0, column=0, sticky="w", padx=20, pady=16)
+        text = ctk.CTkTextbox(dialog, wrap="word")
+        text.grid(row=1, column=0, sticky="nsew", padx=20)
+        details = (
+            f"Model: {recipe['settings']['name']} | {recipe['settings']['algo'].upper()}\n"
+            f"Features after selection: {len(recipe['features'])}\n"
+            f"Train / Validation / Test rows: {recipe['train_rows']} / "
+            f"{recipe['validation_rows']} / {recipe['test_rows']}\n"
+            f"Train dates: {recipe['train_period']}\n"
+            f"Validation dates: {recipe['validation_period'] or 'none'}\n"
+            f"Test dates: {recipe['test_period'] or 'none'}\n"
+            f"Window: {recipe['settings']['window']} | Steps: {recipe['settings']['steps']} | "
+            f"Episode steps: {recipe['effective_episode_steps']} | Network: {recipe['net_arch']}\n"
+            f"Reward mode: {recipe['settings']['reward_mode']} | "
+            f"Profile/formula active: {recipe['settings']['reward_mode'] != 'mtm'}\n"
+            f"Collector params: {'available' if Path(recipe['settings']['csv']).with_suffix('.params.json').is_file() else 'MISSING'}\n"
+            f"Evaluation: {recipe['evaluation_role']}\n"
+            f"Output: {recipe['output_root']}/<run_id>/\n"
+            f"Existing active model: {find_model_path(recipe['settings']['name'], 'auto') or 'none'}\n\n"
+            + json.dumps({"training": recipe, "pipeline": context}, ensure_ascii=False, indent=2)
+        )
+        text.insert("1.0", details)
+        text.configure(state="disabled")
+        buttons = ctk.CTkFrame(dialog, fg_color="transparent")
+        buttons.grid(row=2, column=0, sticky="e", padx=20, pady=16)
+        def close():
+            self._preview_pending = False
+            dialog.tk.call("after", "cancel", grab_timer)
+            dialog.grab_release()
+            dialog.destroy()
+            self.status_label.configure(text="Idle", text_color=COLOR_DIM)
+        def confirm():
+            confirmed = list(cmd) + ["--expected_recipe_sha256", prepared["recipe_sha256"]]
+            close()
+            launch(confirmed)
+        ctk.CTkButton(buttons, text="Cancel", command=close).pack(side="left", padx=8)
+        ctk.CTkButton(buttons, text="Start training" if context is None else "Start pipeline",
+                      command=confirm).pack(side="left")
+        dialog.protocol("WM_DELETE_WINDOW", close)
+        self.status_label.configure(text="Awaiting confirmation", text_color=COLOR_DIM)
+        grab_timer = dialog.after(100, dialog.grab_set)
+
     def _start_training(self):
         if self._is_process_busy():
             messagebox.showwarning("Busy", "Already training")
@@ -6865,6 +7021,11 @@ class RLTradingStudio(ctk.CTk):
         if action_params is None:
             return
 
+        train_pct = self._fraction_field(self.train_pct.get(), "Train %", allow_zero=False)
+        mc_skip = self._fraction_field(self.train_mc_skip.get(), "MC Skip %", allow_one=False)
+        if train_pct is None or mc_skip is None:
+            return
+
         # Guard against silent overwrite: organized artifacts and legacy root
         # artifacts are both considered the same model name.
         existing_model = find_model_path(name, "auto")
@@ -6872,8 +7033,8 @@ class RLTradingStudio(ctk.CTk):
             ok = messagebox.askyesno(
                 "Overwrite model?",
                 f"{name} already exists at:\n{existing_model}\n\n"
-                f"Training will overwrite generated artifacts for this model.\n\n"
-                f"Continue and overwrite?")
+                f"A new run will replace the active version only after it succeeds.\n"
+                f"Previous files will be retained.\n\nContinue?")
             if not ok:
                 return
 
@@ -6887,9 +7048,9 @@ class RLTradingStudio(ctk.CTk):
         algo = algo_map.get(algo_label, "ppo")
 
         # Advanced PPO params
-        lr = self.train_lr.get() or "3e-4"
-        clip = self.train_clip.get() or "0.2"
-        ent = self.train_ent.get() or "0.01"
+        lr = self.train_lr.get()
+        clip = self.train_clip.get()
+        ent = self.train_ent.get()
         nsteps_int = self._parse_int_field(self.train_nsteps, 2048, "N Steps")
         nepochs_int = self._parse_int_field(self.train_nepochs, 10, "N Epochs")
         batch_int = self._parse_int_field(self.train_batch, 64, "Batch Size")
@@ -6898,18 +7059,24 @@ class RLTradingStudio(ctk.CTk):
         nsteps = str(nsteps_int)
         nepochs = str(nepochs_int)
         batch = str(batch_int)
-        gamma = self.train_gamma.get() or "0.99"
-        gae = self.train_gae.get() or "0.95"
-        vf = self.train_vf.get() or "0.5"
+        gamma = self.train_gamma.get()
+        gae = self.train_gae.get()
+        vf = self.train_vf.get()
+
+        if not self._validate_ppo_fields(dict(
+                learning_rate=lr, clip_range=clip, ent_coef=ent,
+                n_steps=nsteps_int, n_epochs=nepochs_int, batch_size=batch_int,
+                gamma=gamma, gae_lambda=gae, vf_coef=vf)):
+            return
 
         cmd = [
             sys.executable, "rl_train.py", self.train_csv_path,
             "--steps", steps,
             "--window", window,
             "--max_hold", max_hold,
-            "--train_pct", str(self._parse_train_pct(self.train_pct.get(), 0.85)),
+            "--train_pct", str(train_pct),
             "--mc_eval", str(mc_eval_int),
-            "--mc_skip_frac", str(self._parse_train_pct(self.train_mc_skip.get(), 0.10)),
+            "--mc_skip_frac", str(mc_skip),
             "--reward_mode", reward,
             "--reward_profile", reward_profile,
             "--reward_overrides", reward_overrides,
@@ -6957,6 +7124,10 @@ class RLTradingStudio(ctk.CTk):
         if action_profile_json_path:
             cmd.extend(["--action_profile_json", action_profile_json_path])
 
+        self._review_training_command(cmd, lambda confirmed: self._launch_training(
+            confirmed, steps_int, name))
+
+    def _launch_training(self, cmd, steps_int, name):
         self._log(self.train_log, f"$ {' '.join(cmd)}", "info")
         self.train_btn.configure(state="disabled")
         self.train_stop_btn.configure(state="normal")
@@ -7163,11 +7334,12 @@ class RLTradingStudio(ctk.CTk):
             wraplength=380, justify="left"
             ).grid(row=13, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 12))
 
-        # Window size — auto-detected from the model; leave blank
-        ctk.CTkLabel(risk, text="Window Size (auto-detected — leave blank)",
+        # The explicit auto value delegates the window to the saved model.
+        ctk.CTkLabel(risk, text="Window Size (auto = from model)",
                       text_color=COLOR_DIM, font=ctk.CTkFont(size=12)
                       ).grid(row=14, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 4))
         self.bt_window = ctk.CTkEntry(risk, placeholder_text="auto (from model)")
+        self.bt_window.insert(0, "auto")
         self.bt_window.grid(row=15, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 16))
 
         # Run button + stats
@@ -7479,7 +7651,11 @@ class RLTradingStudio(ctk.CTk):
                 text_color=COLOR_YELLOW)
             return
 
-        skip_pct = self._parse_train_pct(self.bt_start.get(), 0.0)
+        try:
+            skip_pct = input_fraction(self.bt_start.get(), "bt_start", allow_zero=True, allow_one=False)
+        except ValueError as exc:
+            self.bt_start_hint.configure(text=str(exc), text_color=COLOR_YELLOW)
+            return
         skip_pct = min(max(skip_pct, 0.0), 1.0)
         start_idx = max(0, min(int(len(ts) * skip_pct), len(ts)))
         skipped_line = self._format_timestamp_range_line("Skipped", ts, 0, start_idx - 1)
@@ -7553,8 +7729,8 @@ class RLTradingStudio(ctk.CTk):
 
         max_positions = self._parse_int_field(
             self.bt_max_pos, 1, "Max Positions")
-        window_override = self._parse_int_field(
-            self.bt_window, 0, "Window", minimum=0)
+        window_override = (0 if self.bt_window.get().strip().lower() == "auto" else
+                           self._parse_int_field(self.bt_window, 0, "Window", minimum=1))
         random_baseline = self._parse_int_field(
             self.bt_random_baseline, 20, "Random Baseline", minimum=0)
         mc_runs = self._parse_int_field(self.bt_mc, 1000, "Monte Carlo Runs", minimum=0)
@@ -7583,9 +7759,17 @@ class RLTradingStudio(ctk.CTk):
         intrabar = "optimistic" if "optimistic" in self.bt_intrabar.get() else "pessimistic"
         # UI takes percent (0.01 = 0.01%); CLI takes price fraction
         try:
-            stop_slip = float(self.bt_stop_slip.get().strip() or "0") / 100.0
-        except ValueError:
-            stop_slip = 0.0
+            stop_slip = percent_units(self.bt_stop_slip.get(), "Stop slippage", 0)
+            skip = input_fraction(self.bt_start.get(), "Backtest start", allow_one=False)
+            conf = input_number(self.bt_conf.get(), "Confidence", 0, 1)
+            risk = input_number(self.bt_risk.get(), "Risk", 0, 1)
+            atr_sl = input_number(self.bt_sl.get(), "ATR SL", 0)
+            atr_tp = input_number(self.bt_tp.get(), "ATR TP", 0)
+            swap_long = percent_units(self.bt_swap_long.get(), "Swap long")
+            swap_short = percent_units(self.bt_swap_short.get(), "Swap short")
+        except ValueError as exc:
+            messagebox.showerror("Invalid settings", str(exc))
+            return
 
         # Use backtest_live.py for realistic results
         model_source = "final"
@@ -7594,14 +7778,14 @@ class RLTradingStudio(ctk.CTk):
         cmd = [
             sys.executable, "backtest_live.py", model, csv,
             "--source", model_source,
-            "--conf", self.bt_conf.get() or "0",
-            "--risk", self.bt_risk.get() or "0.01",
+            "--conf", str(conf),
+            "--risk", str(risk),
             "--max_positions", str(max_positions),
             "--max_hold", str(max_hold),
-            "--atr_sl", self.bt_sl.get() or "2.0",
-            "--atr_tp", self.bt_tp.get() or "4.0",
+            "--atr_sl", str(atr_sl),
+            "--atr_tp", str(atr_tp),
             "--window", str(window_override),  # 0 = auto-detect from model
-            "--start", str(self._parse_train_pct(self.bt_start.get(), 0.0)),  # skip frac
+            "--start", str(skip),  # skip frac
             "--mode", mode,
             "--intrabar", intrabar,
             "--stop_slippage", str(stop_slip),
@@ -7614,13 +7798,7 @@ class RLTradingStudio(ctk.CTk):
             cmd += ["--m1_csv", m1_choice]
 
         # Overnight swap (UI takes percent/night -> CLI takes price fraction)
-        def _pct_field(entry, default="0"):
-            try:
-                return float(entry.get().strip() or default) / 100.0
-            except ValueError:
-                return 0.0
-        cmd += ["--swap_long", str(_pct_field(self.bt_swap_long)),
-                "--swap_short", str(_pct_field(self.bt_swap_short))]
+        cmd += ["--swap_long", str(swap_long), "--swap_short", str(swap_short)]
 
         # Statistical validation
         cmd += ["--random_baseline", str(random_baseline)]
@@ -7758,6 +7936,7 @@ class RLTradingStudio(ctk.CTk):
         # Train" and this hint shows what got picked up.
         self.wf_reward_overrides_value = ""
         self.wf_action_params_value = ""
+        self.wf_action_profile_json_value = ""
         self.wf_reward_formula_value = ""
         self.wf_recipe_hint = ctk.CTkLabel(reward_sub,
             text="Reward overrides / action params / formula: (none) — "
@@ -7897,9 +8076,10 @@ class RLTradingStudio(ctk.CTk):
         e.g. manage_6 keys crash basic_4 ("unknown action parameter") — and
         reward overrides copied for one profile are stale on another."""
         changed = []
-        if kind == "action" and self.wf_action_params_value:
+        if kind == "action" and (self.wf_action_params_value or self.wf_action_profile_json_value):
             self.wf_action_params_value = ""
-            changed.append("action params")
+            self.wf_action_profile_json_value = ""
+            changed.append("action params/JSON")
         if kind == "reward" and (self.wf_reward_overrides_value
                                  or self.wf_reward_formula_value):
             self.wf_reward_overrides_value = ""
@@ -7927,9 +8107,8 @@ class RLTradingStudio(ctk.CTk):
             entry.delete(0, "end")
             entry.insert(0, str(value))
 
-        # WF never receives the loaded reward/action JSON files themselves, so
-        # diff against the BASE profile — otherwise JSON-sourced values would
-        # collapse to {} here while the Train sliders still display them
+        # Flatten reward JSON values against the base preset; carry action JSON
+        # too because its action list can differ from the preset's list.
         validated_overrides = self._get_train_reward_overrides(
             compare_loaded_json=False)
         validated_formula = self._get_train_reward_formula()
@@ -7939,8 +8118,8 @@ class RLTradingStudio(ctk.CTk):
                 validated_action_params is None):
             return
 
-        put(self.wf_window, self.train_window.get() or "10")
-        put(self.wf_maxhold, self.train_maxhold.get() or "30")
+        put(self.wf_window, self.train_window.get())
+        put(self.wf_maxhold, self.train_maxhold.get())
         self.wf_reward_mode.set(self.train_reward.get())
         self.wf_reward_profile.set(self.train_reward_profile.get())
 
@@ -7959,6 +8138,7 @@ class RLTradingStudio(ctk.CTk):
         if action_params is None:
             return
         self.wf_action_params_value = "" if action_params in ("{}", "") else action_params
+        self.wf_action_profile_json_value = getattr(self, "train_action_profile_json_path", "")
 
         def summarize(raw, none_text="(none)"):
             if not raw:
@@ -7971,6 +8151,7 @@ class RLTradingStudio(ctk.CTk):
         self.wf_recipe_hint.configure(
             text=f"จาก Train — reward overrides: {summarize(self.wf_reward_overrides_value)} · "
                  f"action params: {summarize(self.wf_action_params_value)} · "
+                 f"action JSON: {self.wf_action_profile_json_value or '(none)'} · "
                  f"formula: {'ใช้' if self.wf_reward_formula_value else '(none)'}")
 
         pairs = [
@@ -7981,7 +8162,7 @@ class RLTradingStudio(ctk.CTk):
             (self.wf_vf, self.train_vf),
         ]
         for wf_entry, train_entry in pairs:
-            put(wf_entry, train_entry.get() or train_entry.cget("placeholder_text"))
+            put(wf_entry, train_entry.get())
 
         self._log(self.wf_log,
                   "Copied recipe from Train page: window/max hold/reward/action/PPO "
@@ -8027,23 +8208,35 @@ class RLTradingStudio(ctk.CTk):
             "--action_profile", action_profile,
             "--reward_mode", self.wf_reward_mode.get().split()[0],
             "--reward_profile", reward_profile_key_from_label(self.wf_reward_profile.get()),
-            "--learning_rate", self.wf_lr.get() or "3e-4",
-            "--clip_range", self.wf_clip.get() or "0.2",
-            "--ent_coef", self.wf_ent.get() or "0.01",
+            "--learning_rate", self.wf_lr.get(),
+            "--clip_range", self.wf_clip.get(),
+            "--ent_coef", self.wf_ent.get(),
             "--n_steps", str(nsteps),
             "--n_epochs", str(nepochs),
             "--batch_size", str(batch),
-            "--gamma", self.wf_gamma.get() or "0.99",
-            "--gae_lambda", self.wf_gae.get() or "0.95",
-            "--vf_coef", self.wf_vf.get() or "0.5",
+            "--gamma", self.wf_gamma.get(),
+            "--gae_lambda", self.wf_gae.get(),
+            "--vf_coef", self.wf_vf.get(),
         ]
         if action_params:
             cmd.extend(["--action_params", action_params])
+        if self.wf_action_profile_json_value:
+            try:
+                load_action_profile_json(self.wf_action_profile_json_value)
+            except (ValueError, OSError) as exc:
+                messagebox.showerror("Invalid action JSON", str(exc))
+                return
+            cmd.extend(["--action_profile_json", self.wf_action_profile_json_value])
         if reward_overrides:
             cmd.extend(["--reward_overrides", reward_overrides])
         if reward_formula:
             cmd.extend(["--reward_formula", reward_formula])
 
+        numeric_flags = ("learning_rate", "clip_range", "ent_coef", "n_steps",
+                         "n_epochs", "batch_size", "gamma", "gae_lambda", "vf_coef")
+        if not self._validate_ppo_fields({key: cmd[cmd.index("--" + key) + 1]
+                                          for key in numeric_flags}):
+            return
         self._log(self.wf_log, f"$ {' '.join(cmd)}", "info")
         if hasattr(self, "wf_progress"):
             self.wf_progress.set(0)
@@ -8221,15 +8414,12 @@ class RLTradingStudio(ctk.CTk):
         if steps is None:
             return
         try:
-            mix_ratio = float(self.ft_mix.get().strip() or "0.3")
-        except ValueError:
-            messagebox.showwarning("Invalid mix ratio", "Mix Ratio must be numeric.")
-            return
-        if 1 <= mix_ratio <= 100:
-            mix_ratio /= 100.0
-        if not 0 <= mix_ratio < 1:
-            messagebox.showwarning(
-                "Invalid mix ratio", "Mix Ratio must be 0-1, or a percent from 1-100.")
+            mix_ratio = input_fraction(self.ft_mix.get(), "Mix ratio", allow_one=False)
+            lr = input_number(self.ft_lr.get(), "Learning rate", 0)
+            if lr == 0:
+                raise ValueError("Learning rate must be > 0")
+        except ValueError as exc:
+            messagebox.showwarning("Invalid fine-tune settings", str(exc))
             return
 
         output_name = self._normalize_output_name(
@@ -8249,7 +8439,7 @@ class RLTradingStudio(ctk.CTk):
             "--new_csv", new,
             "--mode", self.ft_mode.get().split()[0],
             "--mix_ratio", str(mix_ratio),
-            "--lr", self.ft_lr.get() or "1e-4",
+            "--lr", str(lr),
             "--steps", str(steps),
             "--name", output_name,
         ]
@@ -8646,17 +8836,19 @@ class RLTradingStudio(ctk.CTk):
 
         try:
             if method == "hmm":
-                states = int(self.regime_hmm_states.get().strip() or "3")
+                states = input_number(self.regime_hmm_states.get(), "HMM states", 2, integer=True)
                 cmd += ["--n-states", str(states)]
             elif method == "kmeans":
-                k = int(self.regime_km_k.get().strip() or "3")
-                win = int(self.regime_km_win.get().strip() or "60")
+                k = input_number(self.regime_km_k.get(), "K-means states", 2, integer=True)
+                win = input_number(self.regime_km_win.get(), "Regime window", 2, integer=True)
                 cmd += ["--k", str(k), "--win", str(win)]
             elif method == "pelt":
-                pen = float(self.regime_pelt_pen.get().strip() or "50")
+                pen = input_number(self.regime_pelt_pen.get(), "PELT penalty", 0)
+                if pen == 0:
+                    raise ValueError("PELT penalty must be > 0")
                 cmd += ["--penalty", str(pen)]
-        except ValueError:
-            messagebox.showerror("Invalid params", "Numeric params required.")
+        except ValueError as exc:
+            messagebox.showerror("Invalid params", str(exc))
             return
 
         self._log(self.regime_log, f"$ {' '.join(cmd)}", "info")
@@ -8713,10 +8905,12 @@ class RLTradingStudio(ctk.CTk):
                 return
 
         try:
-            symbol = self.regime_ev_symbol.get().strip() or "GBPUSD"
-            top_k = int(self.regime_ev_topk.get().strip() or "15")
-        except ValueError:
-            messagebox.showerror("Invalid params", "Top-K must be a number.")
+            symbol = self.regime_ev_symbol.get().strip()
+            if not symbol:
+                raise ValueError("Symbol is required")
+            top_k = input_number(self.regime_ev_topk.get(), "Top-K", 1, integer=True)
+        except ValueError as exc:
+            messagebox.showerror("Invalid params", str(exc))
             return
 
         cmd = [sys.executable, "gemini_labeler.py", self.regime_csv_path,

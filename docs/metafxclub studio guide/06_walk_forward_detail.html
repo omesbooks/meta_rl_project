@@ -561,14 +561,16 @@
         <strong>ปุ่ม ⧉ Copy settings from Train:</strong>
         กดครั้งเดียวเพื่อดึง recipe ปัจจุบันจากหน้า Train มาใส่ให้ครบทุกช่อง
         (window size, max hold, reward mode/profile/overrides/formula,
-        action profile/params และ PPO hyperparameters ทั้ง 9 ตัว) —
+          action profile/params พร้อม custom action JSON และ PPO hyperparameters ทั้ง 9 ตัว) —
         ค่าที่ <em>ไม่</em> ถูก copy คือ Steps/window, จำนวน Windows และ Output Name
         เพราะเป็นค่าเฉพาะของ Walk-Forward เอง
-        แนะนำให้กดปุ่มนี้ทุกครั้งก่อนรัน เพื่อการันตีว่ากำลัง validate สูตรเดียวกับที่จะ train จริง
+          แนะนำให้กดปุ่มนี้ทุกครั้งก่อนรัน เพื่อการันตีว่ากำลัง validate สูตรเดียวกับที่จะ train จริง
+          หากช่องตัวเลขว่างหรือผิดขอบเขตต้องแก้ก่อนรัน ปุ่ม Copy จะไม่เติม default แทนค่าที่หายไป
+          เมื่อเปลี่ยน action profile เอง ระบบจะล้าง custom action JSON ที่คัดลอกมาเพื่อไม่ให้ใช้ชุด action เก่าทับตัวเลือกใหม่
       </div>
     </section>
 
-    <section id="workflow">
+<section id="workflow">
       <h2>ขั้นตอนใช้งานใน Dashboard</h2>
       <div class="flow">
         <article class="step">
@@ -627,6 +629,13 @@
           </div>
         </article>
       </div>
+    </section>
+
+    <section id="training-update-20260905">
+      <h2>ข้อมูลที่ Walk-Forward ใช้ในแต่ละรอบ</h2>
+      <p>เลือก CSV ต้นฉบับที่ยังมีฟีเจอร์ครบ หรือ Clean รุ่นใหม่ที่มี <code>.features.json</code> และยังหาไฟล์ต้นฉบับได้ ระบบจะเลือกฟีเจอร์และคำนวณ normalization จาก Train ของรอบนั้นใหม่ แล้วใช้กับ Test ที่อยู่ถัดไปตามเวลา</p>
+      <p>ไฟล์ <code>&lt;name&gt;_preprocessing.json</code> เก็บรายชื่อฟีเจอร์ ค่า normalization และช่วงวันที่ที่ใช้เตรียม Train แยกแต่ละรอบ ทำให้ตรวจได้ว่าไม่ได้ใช้ข้อมูล Test มาเลือกฟีเจอร์</p>
+      <p>Walk-Forward ยังคงฝึกโมเดลใหม่ในแต่ละรอบ จึงใช้ตรวจวิธีฝึกและข้อมูล ไม่ได้โหลดโมเดลที่สร้างจากหน้า Train มาใช้แทนการฝึก</p>
     </section>
 
     <section id="metrics">
@@ -808,4 +817,3 @@
   </main>
 </body>
 </html>
-

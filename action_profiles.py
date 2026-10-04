@@ -182,7 +182,9 @@ def _coerce_action_param(key: str, value):
             f"{spec['min']}..{spec['max']}"
         )
     if spec.get("decimals", 0) == 0:
-        return int(round(number))
+        if not number.is_integer():
+            raise ValueError(f"action parameter {key} must be a whole number")
+        return int(number)
     return number
 
 

@@ -1,0 +1,73 @@
+{
+  "checks": [
+    {
+      "check": "train_basic_4",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 19.94
+    },
+    {
+      "check": "train_manage_6",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 24.7
+    },
+    {
+      "check": "invalid_retrain_preserves_model",
+      "passed": true,
+      "returncode": 1,
+      "seconds": 2.7
+    },
+    {
+      "check": "train_100_percent",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 19.5
+    },
+    {
+      "check": "backtest",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 21.12
+    },
+    {
+      "check": "backtest_chart",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 4.25
+    },
+    {
+      "check": "analyze_saved_feature_order",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 17.67
+    },
+    {
+      "check": "fine_tune",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 18.98
+    },
+    {
+      "check": "walk_forward",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 20.44
+    },
+    {
+      "check": "export_onnx",
+      "passed": true,
+      "returncode": 0,
+      "seconds": 18.31
+    },
+    {
+      "check": "onnx_parity_50_observations",
+      "passed": true,
+      "max_abs_error": 2.9802322387695312e-8
+    }
+  ],
+  "mt5_verified": false,
+  "full_length_training": false,
+  "passed": true,
+  "artifact_note": "Isolated comparison/smoke outputs were temporary; this report preserves results. The full training model remains in artifacts/models/codex_training_check_20260905."
+}

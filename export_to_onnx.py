@@ -48,8 +48,7 @@ from artifact_paths import (
     final_model_path,
     find_norm_path,
     find_params_path,
-    legacy_best_model_path,
-    legacy_final_model_path,
+    find_model_path,
     train_meta_path,
 )
 from action_profiles import ACTION_PRIMITIVES, action_ids_by_name, get_action_profile, profile_for_action_count
@@ -92,6 +91,8 @@ TEMPLATE_NEARNESS = SCRIPT_DIR / "mt5_files" / "MQL5" / "Indicators" / "PriceNea
 
 def export_model(model_name: str, deploy_name: str = None, output_dir: str = None,
                  source: str = "final"):
+    from artifact_paths import pin_model_generation
+    pin_model_generation(model_name)
     print("=" * 70)
     print(f"  Exporting {model_name} → MT5 deployment package")
     print("=" * 70)
@@ -142,29 +143,13 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     # === Load PPO model ===
     from stable_baselines3 import PPO
     source = (source or "final").lower()
-    final_path = final_model_path(model_name)
-    legacy_final_path = legacy_final_model_path(model_name)
-    best_path = best_model_path(model_name)
-    legacy_best_path = legacy_best_model_path(model_name)
-    if source == "final":
-        candidates = [final_path, legacy_final_path]
-    elif source == "best":
-        candidates = [best_path, legacy_best_path]
-    elif source == "auto":
-        candidates = [final_path, legacy_final_path, best_path, legacy_best_path]
-    else:
+    if source not in ("final", "best", "auto"):
         print(f"❌ Unknown source: {source} (expected final, best, or auto)")
         return 1
 
-    model_path = None
-    for c in candidates:
-        if Path(c).exists():
-            model_path = c
-            break
-
+    model_path = find_model_path(model_name, source)
     if model_path is None:
-        tried = [str(p) for p in candidates]
-        print(f"❌ Model not found for --source {source}. Tried: {tried}")
+        print(f"❌ Model not found for --source {source} in the selected generation: {model_name}")
         return 1
 
     print(f"\n[load] {model_path}  (source={source})")

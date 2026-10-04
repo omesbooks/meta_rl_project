@@ -1,0 +1,374 @@
+{
+  "model": "codex_training_check_20260905",
+  "run_id": "b2ddbd224c784daa982b34d1b19cf8c7",
+  "actual_timesteps": 200704,
+  "train_period": {
+    "start": "2020-12-31T20:00:00",
+    "end": "2025-08-18T20:00:00"
+  },
+  "validation_period": {
+    "start": "2025-08-19T00:00:00",
+    "end": "2026-01-15T12:00:00"
+  },
+  "test_period": {
+    "start": "2026-01-15T16:00:00",
+    "end": "2026-06-12T16:00:00"
+  },
+  "quick_eval": {
+    "trades": 61,
+    "return": -0.002535028838352882,
+    "win_rate": 0.4098360655737705,
+    "avg_win": 0.003841662955952928,
+    "avg_loss": -0.002706305850921635,
+    "max_dd": -0.06341390322925158,
+    "profit_factor": 0.9857797470603721
+  },
+  "dataset_sha256": "00e561105507ebfee10a4b55a2d9fa284a0b3b30796d80c7532a293dc3da7877",
+  "checks": [
+    {
+      "source": "final",
+      "passed": true,
+      "result": {
+        "model": "codex_training_check_20260905",
+        "created_at": "2026-09-05T16:42:43",
+        "data_csv": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\uj_h4_extra_features.csv",
+        "data_rows_before_start": 8493,
+        "data_period_before_start": {
+          "start": "2020-12-31T20:00:00",
+          "end": "2026-06-12T16:00:00"
+        },
+        "start_fraction": 0.9249982338396326,
+        "start_index": 7856,
+        "backtest_rows": 637,
+        "backtest_period": {
+          "start": "2026-01-15T16:00:00",
+          "end": "2026-06-12T16:00:00"
+        },
+        "feature_count": 182,
+        "model_path": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\codex_training_check_20260905\\runs\\b2ddbd224c784daa982b34d1b19cf8c7\\codex_training_check_20260905.zip",
+        "norm_path": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\codex_training_check_20260905\\runs\\b2ddbd224c784daa982b34d1b19cf8c7\\codex_training_check_20260905_norm.csv",
+        "artifacts_dir": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\final",
+        "artifacts": {
+          "trades": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\final\\codex_training_check_20260905_live_bt_trades.csv",
+          "equity": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\final\\codex_training_check_20260905_live_bt_equity.png",
+          "backtest_meta": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\final\\codex_training_check_20260905_live_bt.meta.json",
+          "mc_chart": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\final\\codex_training_check_20260905_live_bt_mc.png"
+        },
+        "settings": {
+          "conf": 0,
+          "risk": 0.01,
+          "max_positions": 1,
+          "max_hold": 30,
+          "hard_dd": 0.15,
+          "atr_sl": 1.5,
+          "atr_tp": 3,
+          "mode": "pure_agent",
+          "balance": 10000,
+          "spread": 0.0002,
+          "commission": 0.0001,
+          "intrabar": "pessimistic",
+          "stop_slippage": 0,
+          "swap_long": 0,
+          "swap_short": 0,
+          "random_baseline": 0,
+          "mc": 100,
+          "window": 0,
+          "model_source": "final",
+          "action_profile": "custom",
+          "action_profile_label": "Basic 4 (Hold/Buy/Sell/Close)",
+          "action_profile_json": null,
+          "action_profile_params": {
+            "breakeven_min_profit": 0.001,
+            "trail_atr_period": 14,
+            "trail_atr_mult": 2,
+            "trail_min_profit": 0.001,
+            "management_action_penalty": 0.0002,
+            "invalid_action_penalty": 0.001
+          },
+          "action_profile_actions": [
+            {
+              "id": 0,
+              "label": "Hold",
+              "description": "Do nothing.",
+              "role": "hold",
+              "name": "hold"
+            },
+            {
+              "id": 1,
+              "label": "Buy",
+              "description": "Open a long position when flat.",
+              "role": "entry",
+              "name": "buy"
+            },
+            {
+              "id": 2,
+              "label": "Sell",
+              "description": "Open a short position when flat.",
+              "role": "entry",
+              "name": "sell"
+            },
+            {
+              "id": 3,
+              "label": "Close",
+              "description": "Close current position.",
+              "role": "exit",
+              "name": "close"
+            }
+          ]
+        },
+        "status": "complete",
+        "result": {
+          "total_trades": 61,
+          "long_trades": 23,
+          "short_trades": 38,
+          "win_rate": 0.4098360655737705,
+          "profit_factor": 0.9840689376040602,
+          "avg_win": 0.0038416468178021973,
+          "avg_loss": -0.0027109993905872153,
+          "total_pnl": -27.039696016977178,
+          "final_balance": 9972.960303983025,
+          "return_pct": -0.002703969601697498,
+          "max_drawdown": -0.06341449798470322,
+          "sharpe": -0.04929685079862203,
+          "sharpe_timeframe": "4h",
+          "bars_per_year": 1572.0557432432433,
+          "exit_reasons": {
+            "signal": 60,
+            "end": 1
+          },
+          "signals": {
+            "0": 179,
+            "1": 148,
+            "2": 203,
+            "3": 96
+          },
+          "executed": {
+            "1": 23,
+            "2": 38,
+            "3": 60
+          },
+          "skipped_low_confidence": 0,
+          "skipped_max_positions": 290,
+          "force_closed_max_hold": 0,
+          "hard_stops": 0,
+          "intrabar_mode": "pessimistic",
+          "ambiguous_bars": 0,
+          "m1_resolved": 0,
+          "m1_resolved_sl": 0,
+          "m1_resolved_tp": 0,
+          "m1_still_ambiguous": 0,
+          "m1_no_data": 0,
+          "ambiguous_fills": 0,
+          "ambiguous_share_of_sl_tp": 0,
+          "swap_rollovers": 0,
+          "swap_net_impact": 0,
+          "random_baseline": null,
+          "monte_carlo": {
+            "shuffles": 100,
+            "dd_median": -0.044071185949542645,
+            "dd_p95_worst_case": -0.061881307810059266,
+            "dd_worst": -0.08197336259838843,
+            "p_hit_hard_dd": 0
+          },
+          "significance": {
+            "n_trades": 61,
+            "mean_per_trade": -0.00002548864944401334,
+            "t_stat": -0.031979183725650076,
+            "p_value_one_sided": 0.512702602617392,
+            "sharpe_per_trade": -0.00409451490703308,
+            "sharpe_ci95": 0.25095333647331775,
+            "psr": 0.48740401927057553,
+            "verdict": "mean trade return is NOT statistically > 0"
+          },
+          "equity_analytics": {
+            "longest_underwater_bars": 508,
+            "winners_avg_mae": 0.0005800560875719327,
+            "losers_avg_mfe": -0.00018676655434843043,
+            "monthly_returns": {
+              "2026-01-31": 0.03815139803193479,
+              "2026-02-28": 0.01115013106002194,
+              "2026-03-31": -0.001180988104324654,
+              "2026-04-30": -0.024408038474032834,
+              "2026-05-31": -0.019853225232224436,
+              "2026-06-30": -0.004818268785074853
+            }
+          }
+        }
+      }
+    },
+    {
+      "source": "best",
+      "passed": true,
+      "result": {
+        "model": "codex_training_check_20260905",
+        "created_at": "2026-09-05T16:43:23",
+        "data_csv": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\uj_h4_extra_features.csv",
+        "data_rows_before_start": 8493,
+        "data_period_before_start": {
+          "start": "2020-12-31T20:00:00",
+          "end": "2026-06-12T16:00:00"
+        },
+        "start_fraction": 0.9249982338396326,
+        "start_index": 7856,
+        "backtest_rows": 637,
+        "backtest_period": {
+          "start": "2026-01-15T16:00:00",
+          "end": "2026-06-12T16:00:00"
+        },
+        "feature_count": 182,
+        "model_path": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\codex_training_check_20260905\\runs\\b2ddbd224c784daa982b34d1b19cf8c7\\best\\best_model.zip",
+        "norm_path": "C:\\Users\\omesb\\Documents\\claude code\\pycaret_trainer\\artifacts\\models\\codex_training_check_20260905\\runs\\b2ddbd224c784daa982b34d1b19cf8c7\\codex_training_check_20260905_norm.csv",
+        "artifacts_dir": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\best",
+        "artifacts": {
+          "trades": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\best\\codex_training_check_20260905_live_bt_trades.csv",
+          "equity": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\best\\codex_training_check_20260905_live_bt_equity.png",
+          "backtest_meta": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\best\\codex_training_check_20260905_live_bt.meta.json",
+          "mc_chart": "C:\\Users\\omesb\\AppData\\Local\\Temp\\rl_compare_6z3cgi_y\\best\\codex_training_check_20260905_live_bt_mc.png"
+        },
+        "settings": {
+          "conf": 0,
+          "risk": 0.01,
+          "max_positions": 1,
+          "max_hold": 30,
+          "hard_dd": 0.15,
+          "atr_sl": 1.5,
+          "atr_tp": 3,
+          "mode": "pure_agent",
+          "balance": 10000,
+          "spread": 0.0002,
+          "commission": 0.0001,
+          "intrabar": "pessimistic",
+          "stop_slippage": 0,
+          "swap_long": 0,
+          "swap_short": 0,
+          "random_baseline": 0,
+          "mc": 100,
+          "window": 0,
+          "model_source": "best",
+          "action_profile": "custom",
+          "action_profile_label": "Basic 4 (Hold/Buy/Sell/Close)",
+          "action_profile_json": null,
+          "action_profile_params": {
+            "breakeven_min_profit": 0.001,
+            "trail_atr_period": 14,
+            "trail_atr_mult": 2,
+            "trail_min_profit": 0.001,
+            "management_action_penalty": 0.0002,
+            "invalid_action_penalty": 0.001
+          },
+          "action_profile_actions": [
+            {
+              "id": 0,
+              "label": "Hold",
+              "description": "Do nothing.",
+              "role": "hold",
+              "name": "hold"
+            },
+            {
+              "id": 1,
+              "label": "Buy",
+              "description": "Open a long position when flat.",
+              "role": "entry",
+              "name": "buy"
+            },
+            {
+              "id": 2,
+              "label": "Sell",
+              "description": "Open a short position when flat.",
+              "role": "entry",
+              "name": "sell"
+            },
+            {
+              "id": 3,
+              "label": "Close",
+              "description": "Close current position.",
+              "role": "exit",
+              "name": "close"
+            }
+          ]
+        },
+        "status": "complete",
+        "result": {
+          "total_trades": 39,
+          "long_trades": 21,
+          "short_trades": 18,
+          "win_rate": 0.4358974358974359,
+          "profit_factor": 0.4284973293958685,
+          "avg_win": 0.0029250076981871924,
+          "avg_loss": -0.005274789517388903,
+          "total_pnl": -649.1349476283941,
+          "final_balance": 9350.865052371602,
+          "return_pct": -0.06491349476283981,
+          "max_drawdown": -0.08040019210006269,
+          "sharpe": -2.4709440754551664,
+          "sharpe_timeframe": "4h",
+          "bars_per_year": 1572.0557432432433,
+          "exit_reasons": {
+            "signal": 30,
+            "max_hold": 8,
+            "end": 1
+          },
+          "signals": {
+            "0": 242,
+            "1": 186,
+            "2": 159,
+            "3": 39
+          },
+          "executed": {
+            "1": 21,
+            "2": 18,
+            "3": 30
+          },
+          "skipped_low_confidence": 0,
+          "skipped_max_positions": 306,
+          "force_closed_max_hold": 8,
+          "hard_stops": 0,
+          "intrabar_mode": "pessimistic",
+          "ambiguous_bars": 0,
+          "m1_resolved": 0,
+          "m1_resolved_sl": 0,
+          "m1_resolved_tp": 0,
+          "m1_still_ambiguous": 0,
+          "m1_no_data": 0,
+          "ambiguous_fills": 0,
+          "ambiguous_share_of_sl_tp": 0,
+          "swap_rollovers": 0,
+          "swap_net_impact": 0,
+          "random_baseline": null,
+          "monte_carlo": {
+            "shuffles": 100,
+            "dd_median": -0.07287654720569353,
+            "dd_p95_worst_case": -0.08437409754249454,
+            "dd_worst": -0.09457878825721894,
+            "p_hit_hard_dd": 0
+          },
+          "significance": {
+            "n_trades": 39,
+            "mean_per_trade": -0.0017005189362403483,
+            "t_stat": -1.7107468394263712,
+            "p_value_one_sided": 0.9523593855032045,
+            "sharpe_per_trade": -0.2739387330252327,
+            "sharpe_ci95": 0.31968500115158965,
+            "psr": 0.02008621997662183,
+            "verdict": "mean trade return is NOT statistically > 0"
+          },
+          "equity_analytics": {
+            "longest_underwater_bars": 608,
+            "winners_avg_mae": -0.0020778029078118406,
+            "losers_avg_mfe": 0.00012803099542380434,
+            "monthly_returns": {
+              "2026-01-31": -0.03340692910586973,
+              "2026-02-28": -0.03228647666945439,
+              "2026-03-31": 0.0091908737884554,
+              "2026-04-30": -0.005813593761456293,
+              "2026-05-31": -0.005794055567840961,
+              "2026-06-30": 0.002313818201731488
+            }
+          }
+        }
+      }
+    }
+  ],
+  "mt5_verified": false,
+  "artifact_note": "Isolated comparison/smoke outputs were temporary; this report preserves results. The full training model remains in artifacts/models/codex_training_check_20260905."
+}

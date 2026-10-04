@@ -26,9 +26,10 @@ Usage:
     # แสดงรายละเอียดทุก trade
     python backtest_live.py rl_prod_v1 test.csv --verbose
 """
-import sys, io, argparse, sqlite3, json
+import sys, io, argparse, sqlite3, json, math
 from pathlib import Path
 from datetime import datetime
+from statistics import NormalDist
 import numpy as np
 import pandas as pd
 
@@ -101,6 +102,143 @@ def _write_failed_meta(path, payload):
             pass
     _write_json(target, payload)
     return target
+
+
+# ------------------------------------------------------------------ bootstrap
+# BCa (bias-corrected & accelerated) bootstrap — the method PyBroker uses for
+# its Profit Factor / Sharpe confidence intervals. It answers a sharper question
+# than a single p-value: resample the trades thousands of times and see how wide
+# the metric really is. If the 95% lower bound of PF stays above 1.0, the edge
+# survives resampling.
+#
+# NB this is NOT the same test as the Monte-Carlo block in run_backtest_live():
+#   MC shuffle = same trades, new ORDER        -> sizing / survival risk
+#   bootstrap  = new trade MIX (with repeats)  -> uncertainty of the metric
+def _norm_ppf(p):
+    return NormalDist().inv_cdf(min(max(float(p), 1e-12), 1.0 - 1e-12))
+
+
+def _norm_cdf(z):
+    return NormalDist().cdf(float(z))
+
+
+def _boot_log_pf(r):
+    """log(gross profit / gross loss). Log space keeps the bootstrap
+    distribution roughly symmetric, which is what BCa assumes."""
+    gp = float(r[r > 0].sum())
+    gl = float(-r[r < 0].sum())
+    if gp <= 0.0 or gl <= 0.0:
+        return float("nan")          # degenerate resample (all wins / all losses)
+    return math.log(gp / gl)
+
+
+def _boot_sharpe(r):
+    """Sharpe per trade — same definition as the significance block."""
+    if r.size < 2:
+        return float("nan")
+    sd = float(r.std(ddof=1))
+    if sd <= 0.0:
+        return float("nan")
+    return float(r.mean()) / sd
+
+
+def _boot_max_dd(r):
+    """Max drawdown of the compounded equity path built from trade returns."""
+    eq = np.concatenate(([1.0], np.cumprod(1.0 + r)))
+    peak = np.maximum.accumulate(eq)
+    return float(((eq - peak) / peak).min())
+
+
+def _bca_bootstrap(x, stat_fn, n_boot=1000, levels=(0.90, 0.95), seed=11):
+    """BCa confidence intervals for stat_fn over the sample x.
+
+    Returns {"point", "ci": {level: (low, high)}, "n_valid"} or None when the
+    sample is too small / too many resamples are degenerate. Falls back to the
+    plain percentile method if the acceleration term cannot be computed.
+    """
+    x = np.asarray(x, dtype=float)
+    n = x.size
+    if n < 10:
+        return None
+    point = stat_fn(x)
+    if not np.isfinite(point):
+        return None
+
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(n_boot, n))
+    boot = np.array([stat_fn(x[row]) for row in idx], dtype=float)
+    boot = boot[np.isfinite(boot)]
+    if boot.size < max(50, n_boot * 0.5):
+        return None                  # metric undefined on too many resamples
+
+    # bias correction: where does the observed value sit in the boot distribution
+    frac_below = float((boot < point).mean())
+    z0 = _norm_ppf(frac_below) if 0.0 < frac_below < 1.0 else 0.0
+
+    # acceleration: skew of the jackknife (leave-one-out) distribution
+    jack = np.array([stat_fn(np.delete(x, i)) for i in range(n)], dtype=float)
+    jack = jack[np.isfinite(jack)]
+    a = 0.0
+    if jack.size > 2:
+        d = jack.mean() - jack
+        denom = 6.0 * (float((d ** 2).sum()) ** 1.5)
+        if denom > 0.0:
+            a = float((d ** 3).sum()) / denom
+
+    out = {}
+    for lv in levels:
+        tail = (1.0 - lv) / 2.0
+        bounds = []
+        for q in (tail, 1.0 - tail):
+            z = _norm_ppf(q)
+            shift = z0 + z
+            adj = z0 + shift / (1.0 - a * shift) if abs(1.0 - a * shift) > 1e-12 else shift
+            bounds.append(float(np.percentile(boot, 100.0 * _norm_cdf(adj))))
+        out[lv] = (min(bounds), max(bounds))
+    return {"point": float(point), "ci": out, "n_valid": int(boot.size)}
+
+
+def _block_bootstrap(x, stat_fn, block=5, n_boot=1000, levels=(0.95,), seed=13):
+    """Moving-block bootstrap: resamples contiguous runs of `block` trades so
+    local ordering (and therefore autocorrelation) is preserved. Used as a
+    sanity check — plain iid bootstrap gives an over-narrow interval when
+    wins and losses come in streaks."""
+    x = np.asarray(x, dtype=float)
+    n = x.size
+    if n < block * 3:
+        return None
+    rng = np.random.default_rng(seed)
+    n_blocks = int(np.ceil(n / block))
+    starts = rng.integers(0, n - block + 1, size=(n_boot, n_blocks))
+    offs = np.arange(block)
+    vals = np.empty(n_boot, dtype=float)
+    for k in range(n_boot):
+        idx = (starts[k][:, None] + offs).ravel()[:n]
+        vals[k] = stat_fn(x[idx])
+    vals = vals[np.isfinite(vals)]
+    if vals.size < max(50, n_boot * 0.5):
+        return None
+    out = {}
+    for lv in levels:
+        tail = 100.0 * (1.0 - lv) / 2.0
+        out[lv] = (float(np.percentile(vals, tail)),
+                   float(np.percentile(vals, 100.0 - tail)))
+    return {"ci": out, "n_valid": int(vals.size)}
+
+
+def _boot_dd_confs(x, n_boot=1000, levels=(0.90, 0.95, 0.99), seed=17):
+    """Drawdown confidence bounds (PyBroker's `drawdown_conf`): how bad does max
+    DD get across resampled trade sequences. Level 0.95 -> the 5th percentile,
+    i.e. "only 5% of resamples were worse than this"."""
+    x = np.asarray(x, dtype=float)
+    n = x.size
+    if n < 10:
+        return None
+    rng = np.random.default_rng(seed)
+    dds = np.empty(n_boot, dtype=float)
+    for k in range(n_boot):
+        dds[k] = _boot_max_dd(x[rng.integers(0, n, n)])
+    return {str(lv): float(np.percentile(dds, 100.0 * (1.0 - lv))) for lv in levels}
 
 
 def _resolve_action_profile(args, model):
@@ -942,6 +1080,58 @@ def run_backtest_live(args):
     else:
         sharpe = None  # not computable (no timestamps / flat curve)
 
+    # ---- Shape / risk-adjusted metrics (PyBroker EvalMetrics parity) ----
+    # Sortino: Sharpe that only punishes DOWNSIDE deviation. Sharpe penalises
+    # big winning bars too, which under-rates a spiky-but-profitable curve.
+    sortino = None
+    downside = bar_returns[bar_returns < 0] if len(bar_returns) else np.array([])
+    if downside.size > 1 and bars_per_year > 0:
+        dsd = float(np.sqrt(np.mean(downside ** 2)))
+        if dsd > 0:
+            sortino = float(np.mean(bar_returns) / dsd * np.sqrt(bars_per_year))
+
+    # Calmar: annualised return per unit of max drawdown — one number for
+    # "is the pain worth the gain".
+    total_ret = account.balance / args.balance - 1.0
+    years_tested = (len(eq) / bars_per_year) if bars_per_year > 0 else 0.0
+    annual_ret = None
+    calmar = None
+    if years_tested > 0 and (1.0 + total_ret) > 0:
+        annual_ret = float((1.0 + total_ret) ** (1.0 / years_tested) - 1.0)
+        if max_dd < 0:
+            calmar = float(annual_ret / abs(max_dd))
+
+    # Ulcer index: RMS of the drawdown series (in % points). Catches "shallow
+    # but permanently underwater", which max_dd on its own cannot see.
+    ulcer = float(np.sqrt(np.mean((dd * 100.0) ** 2))) if dd.size else None
+    upi = (float(annual_ret * 100.0 / ulcer)
+           if (ulcer and ulcer > 0 and annual_ret is not None) else None)
+
+    # Equity R2: how straight the equity line is (1.0 = perfectly linear growth)
+    equity_r2 = None
+    if eq.size > 2:
+        ss_tot = float(((eq - eq.mean()) ** 2).sum())
+        if ss_tot > 0:
+            xs = np.arange(eq.size, dtype=float)
+            slope, intercept = np.polyfit(xs, eq, 1)
+            resid = eq - (slope * xs + intercept)
+            equity_r2 = float(1.0 - float((resid ** 2).sum()) / ss_tot)
+
+    # Streaks: what a live trader actually has to sit through
+    max_wins = max_losses = _cur_w = _cur_l = 0
+    for t in trades:
+        if t['pnl_pct'] > 0:
+            _cur_w += 1
+            _cur_l = 0
+        else:
+            _cur_l += 1
+            _cur_w = 0
+        max_wins = max(max_wins, _cur_w)
+        max_losses = max(max_losses, _cur_l)
+
+    avg_trade_bars = (float(np.mean([t['bars_held'] for t in trades]))
+                      if trades else 0.0)
+
     print(f"  Total trades       : {len(trades):,}")
     print(f"    Long  trades     : {sum(1 for t in trades if t['side']=='long'):,}")
     print(f"    Short trades     : {sum(1 for t in trades if t['side']=='short'):,}")
@@ -957,6 +1147,19 @@ def run_backtest_live(args):
         print(f"  Sharpe (annualized): {sharpe:.2f} ({sharpe_timeframe} bars)")
     else:
         print(f"  Sharpe (annualized): n/a (no usable timestamps)")
+    if sortino is not None:
+        print(f"  Sortino (annual)   : {sortino:.2f}  (downside risk only)")
+    if calmar is not None:
+        print(f"  Calmar             : {calmar:.2f}  "
+              f"(annual {annual_ret:+.2%} / max DD {abs(max_dd):.2%})")
+    if ulcer is not None:
+        upi_txt = f"  UPI {upi:.2f}" if upi is not None else ""
+        print(f"  Ulcer index        : {ulcer:.2f}{upi_txt}  "
+              f"(depth x duration of being underwater)")
+    if equity_r2 is not None:
+        print(f"  Equity R2          : {equity_r2:.3f}  (1.0 = perfectly straight curve)")
+    print(f"  Max consecutive    : {max_wins} wins / {max_losses} losses")
+    print(f"  Avg bars held      : {avg_trade_bars:.1f} of max {args.max_hold}")
 
     # Exit reason breakdown
     print(f"\n  Exit reasons:")
@@ -1099,6 +1302,7 @@ def run_backtest_live(args):
 
     # ---- Statistical significance: is the mean trade return really > 0? ----
     sig_result = None
+    boot_result = None
     fracs_all = np.array([t['pnl_pct'] * t.get('lots', 1.0) for t in trades], dtype=float)
     n_tr = len(fracs_all)
     if n_tr >= 10:
@@ -1142,6 +1346,85 @@ def run_backtest_live(args):
             "p_value_one_sided": p_val, "sharpe_per_trade": float(sr),
             "sharpe_ci95": float(1.96 * se_sr), "psr": psr, "verdict": sig_verdict,
         }
+
+        # ---- Bootstrap confidence intervals (BCa, PyBroker-style) ----
+        # Resamples the trades themselves, so the interval answers "how much of
+        # this PF is sample luck?" — a bound the p-value above cannot give.
+        n_boot = int(getattr(args, "bootstrap", 1000) or 0)
+        if n_boot > 0:
+            pf_boot = _bca_bootstrap(fracs_all, _boot_log_pf, n_boot, seed=11)
+            sr_boot = _bca_bootstrap(fracs_all, _boot_sharpe, n_boot, seed=12)
+            dd_conf = _boot_dd_confs(fracs_all, n_boot, seed=17)
+            # autocorrelation check — streaky trades make the iid interval too narrow
+            blk = _block_bootstrap(fracs_all, _boot_log_pf, block=5,
+                                   n_boot=n_boot, levels=(0.95,), seed=13)
+
+            if pf_boot or sr_boot or dd_conf:
+                print(f"\n  Bootstrap confidence intervals "
+                      f"({n_boot:,} BCa resamples of the trade list):")
+            pf_lo95 = None
+            if pf_boot:
+                # computed in log space -> back to plain Profit Factor
+                pf_ci = {lv: (math.exp(lo), math.exp(hi))
+                         for lv, (lo, hi) in pf_boot["ci"].items()}
+                pf_lo95 = pf_ci[0.95][0]
+                print(f"    Profit Factor : {math.exp(pf_boot['point']):.2f}  "
+                      f"90% CI [{pf_ci[0.90][0]:.2f}, {pf_ci[0.90][1]:.2f}]  "
+                      f"95% CI [{pf_ci[0.95][0]:.2f}, {pf_ci[0.95][1]:.2f}]")
+            if sr_boot:
+                print(f"    Sharpe/trade  : {sr_boot['point']:.3f}  "
+                      f"90% CI [{sr_boot['ci'][0.90][0]:.3f}, {sr_boot['ci'][0.90][1]:.3f}]  "
+                      f"95% CI [{sr_boot['ci'][0.95][0]:.3f}, {sr_boot['ci'][0.95][1]:.3f}]")
+            if dd_conf:
+                print(f"    Max DD        : 90% worst {dd_conf['0.9']:.2%} | "
+                      f"95% worst {dd_conf['0.95']:.2%} | "
+                      f"99% worst {dd_conf['0.99']:.2%}")
+                print(f"                    (resampled trade MIX — different question "
+                      f"from the shuffled-order MC above)")
+
+            blk_lo95 = None
+            if blk and pf_lo95 is not None:
+                blk_lo95 = math.exp(blk["ci"][0.95][0])
+                gap = pf_lo95 - blk_lo95
+                note = ("trades look streaky — trust the block bound"
+                        if gap > 0.05 else "consistent with iid — no streak penalty")
+                print(f"    block-5 check : PF 95% low {blk_lo95:.2f} "
+                      f"(iid {pf_lo95:.2f}) — {note}")
+
+            # Verdict uses the MORE CONSERVATIVE of the two lower bounds
+            eff_lo = pf_lo95
+            if blk_lo95 is not None and pf_lo95 is not None:
+                eff_lo = min(pf_lo95, blk_lo95)
+            boot_verdict = None
+            if eff_lo is not None:
+                pf_hi95 = math.exp(pf_boot["ci"][0.95][1])
+                if eff_lo > 1.0:
+                    boot_verdict = (f"PF 95% lower bound {eff_lo:.2f} > 1.0 — "
+                                    f"edge survives resampling")
+                elif pf_hi95 < 1.0:
+                    boot_verdict = (f"PF 95% upper bound {pf_hi95:.2f} < 1.0 — "
+                                    f"this is a losing edge, not noise")
+                else:
+                    boot_verdict = (f"PF 95% CI [{eff_lo:.2f}, {pf_hi95:.2f}] straddles "
+                                    f"1.0 — cannot rule out zero edge yet")
+                print(f"    verdict       : {boot_verdict}")
+
+            if pf_boot or sr_boot or dd_conf:
+                boot_result = {
+                    "resamples": n_boot,
+                    "method": "BCa",
+                    "profit_factor": ({"point": math.exp(pf_boot["point"]),
+                                       "ci90": list(pf_ci[0.90]),
+                                       "ci95": list(pf_ci[0.95])} if pf_boot else None),
+                    "sharpe_per_trade": ({"point": sr_boot["point"],
+                                          "ci90": list(sr_boot["ci"][0.90]),
+                                          "ci95": list(sr_boot["ci"][0.95])}
+                                         if sr_boot else None),
+                    "max_dd_conf": dd_conf,
+                    "profit_factor_block5_lo95": blk_lo95,
+                    "profit_factor_lo95_effective": eff_lo,
+                    "verdict": boot_verdict,
+                }
 
     # ---- Equity analytics: DD duration, monthly returns, MAE/MFE ----
     eq_analytics = {}
@@ -1225,6 +1508,15 @@ def run_backtest_live(args):
         "sharpe": sharpe,
         "sharpe_timeframe": sharpe_timeframe,
         "bars_per_year": bars_per_year,
+        "sortino": sortino,
+        "calmar": calmar,
+        "annual_return": annual_ret,
+        "ulcer_index": ulcer,
+        "upi": upi,
+        "equity_r2": equity_r2,
+        "max_consecutive_wins": max_wins,
+        "max_consecutive_losses": max_losses,
+        "avg_trade_bars": avg_trade_bars,
         "exit_reasons": dict(reasons),
         "signals": n_signals,
         "executed": n_executed,
@@ -1246,6 +1538,7 @@ def run_backtest_live(args):
         "random_baseline": baseline_result,
         "monte_carlo": mc_result,
         "significance": sig_result,
+        "bootstrap": boot_result,
         "equity_analytics": eq_analytics,
     }
     if args.save:
@@ -1462,6 +1755,11 @@ def main():
     ap.add_argument("--mc", type=int, default=1000,
                     help="Monte Carlo shuffles of trade order for DD/final-"
                          "balance distributions (0 = off; needs >=10 trades)")
+    ap.add_argument("--bootstrap", type=int, default=1000,
+                    help="BCa bootstrap resamples for Profit Factor / Sharpe "
+                         "confidence intervals and drawdown bounds (0 = off; "
+                         "needs >=10 trades). Unlike --mc this resamples the "
+                         "trade MIX, so it measures metric uncertainty")
 
     # Data split
     ap.add_argument("--start", type=float, default=0.0,

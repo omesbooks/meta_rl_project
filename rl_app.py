@@ -7567,6 +7567,18 @@ class RLTradingStudio(ctk.CTk):
                  f"final ${res.get('final_balance',0):,.0f}  ·  "
                  f"max DD {pc(res.get('max_drawdown'))}  ·  "
                  f"sharpe(ann) {sharpe_txt}")
+        def num(v, d=2):
+            return f"{v:.{d}f}" if isinstance(v, (int, float)) else "—"
+        if any(res.get(k) is not None for k in
+               ("sortino", "calmar", "ulcer_index", "equity_r2")):
+            L.append(f"Risk-adj   sortino {num(res.get('sortino'))}  ·  "
+                     f"calmar {num(res.get('calmar'))}  ·  "
+                     f"ulcer {num(res.get('ulcer_index'))}  ·  "
+                     f"UPI {num(res.get('upi'))}  ·  "
+                     f"equity R2 {num(res.get('equity_r2'), 3)}")
+        L.append(f"Streaks    max {res.get('max_consecutive_wins',0)} wins / "
+                 f"{res.get('max_consecutive_losses',0)} losses in a row  ·  "
+                 f"avg bars held {num(res.get('avg_trade_bars'), 1)}")
         amb = res.get('ambiguous_share_of_sl_tp')
         L.append(f"Execution  ambiguous(SL+TP same bar) {res.get('ambiguous_bars',0)}  ·  "
                  f"M1-resolved {res.get('m1_resolved',0)}  ·  "
@@ -7589,6 +7601,24 @@ class RLTradingStudio(ctk.CTk):
                      f"t {sig.get('t_stat',0):.2f}  ·  p {sig.get('p_value_one_sided',0):.3f}  ·  "
                      f"PSR {pc(sig.get('psr'),1)}")
             L.append(f"           -> {sig.get('verdict','')}")
+        bs = res.get("bootstrap")
+        if bs:
+            pf_b = bs.get("profit_factor") or {}
+            sh_b = bs.get("sharpe_per_trade") or {}
+            dd_b = bs.get("max_dd_conf") or {}
+            parts = []
+            if pf_b.get("ci95"):
+                parts.append(f"PF {pf_b.get('point', 0):.2f} "
+                             f"95% CI [{pf_b['ci95'][0]:.2f}, {pf_b['ci95'][1]:.2f}]")
+            if sh_b.get("ci95"):
+                parts.append(f"Sharpe/trade CI [{sh_b['ci95'][0]:.3f}, "
+                             f"{sh_b['ci95'][1]:.3f}]")
+            if dd_b.get("0.95") is not None:
+                parts.append(f"DD 95% worst {pc(dd_b.get('0.95'))}")
+            if parts:
+                L.append("Bootstrap  " + "  ·  ".join(parts))
+            if bs.get("verdict"):
+                L.append(f"           -> {bs['verdict']}")
         ea = res.get("equity_analytics") or {}
         if ea:
             neg = sum(1 for v in (ea.get('monthly_returns') or {}).values() if v < 0)

@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neural Trader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #02030a; --fg: #d9e7ff; --dim: #5d6b8a;
+    --cyan: #19e6ff; --mag: #ff2e88; --green: #00ffa3; --gold: #ffc53d; --orange: #ff8a1f;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+               font-family: Rajdhani, system-ui, sans-serif; }
+  canvas { display: block; }
+  .hud { position: fixed; pointer-events: none; text-shadow: 0 0 8px currentColor; }
+  #title { top: 18px; left: 24px; }
+  #title h1 { margin: 0; font: 900 22px/1 Orbitron, sans-serif; letter-spacing: .18em; color: var(--cyan); }
+  #title div { margin-top: 6px; font-size: 13px; letter-spacing: .12em; color: var(--dim); text-shadow: none; }
+  #stats { top: 16px; right: 24px; display: grid; grid-template-columns: repeat(3, auto); gap: 6px 22px; text-align: right; }
+  .stat .k { font: 500 10px/1 Orbitron, sans-serif; letter-spacing: .2em; color: var(--dim); text-shadow: none; }
+  .stat .v { font: 700 22px/1.15 Rajdhani, sans-serif; font-variant-numeric: tabular-nums; }
+  .lbl { position: fixed; pointer-events: none; font: 600 13px/1 Rajdhani, sans-serif; letter-spacing: .12em;
+         white-space: nowrap; transform: translate(-50%, -50%); text-shadow: 0 0 10px currentColor; }
+  .lbl.tag { font: 500 10px/1 Orbitron, sans-serif; letter-spacing: .3em; color: var(--dim); text-shadow: none; }
+  .lbl.out { transform: translate(14px, -50%); font-size: 15px; }
+  .lbl.out .bar { display: inline-block; height: 4px; margin-left: 8px; vertical-align: middle;
+                  background: currentColor; box-shadow: 0 0 8px currentColor; border-radius: 2px; }
+  #chartLbl { left: 24px; font: 500 10px/1 Orbitron, sans-serif; letter-spacing: .3em; color: var(--dim); text-shadow: none; }
+  #pxHi, #pxLo { right: 24px; font: 600 12px/1 Rajdhani, sans-serif; color: var(--dim); text-shadow: none; }
+  #ctrl { position: fixed; right: 18px; bottom: 14px; display: flex; gap: 10px; align-items: center;
+          background: rgba(6, 10, 24, .7); border: 1px solid rgba(25, 230, 255, .18); border-radius: 12px;
+          padding: 7px 12px; backdrop-filter: blur(6px); font-size: 13px; color: var(--dim); }
+  #ctrl button { background: transparent; color: var(--cyan); border: 1px solid rgba(25, 230, 255, .35);
+                 border-radius: 7px; padding: 3px 9px; font: 600 13px Rajdhani, sans-serif; cursor: pointer; }
+  #ctrl button.on { background: rgba(25, 230, 255, .14); }
+  #ctrl button.rec { color: var(--mag); border-color: rgba(255, 46, 136, .5); }
+  #ctrl input[type=range] { width: 80px; accent-color: var(--cyan); }
+  #ctrl select { background: #070b1a; color: var(--fg); border: 1px solid #1d2a4a; border-radius: 6px; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; color: var(--mag); font: 600 16px Rajdhani; }
+</style>
+</head>
+<body>
+<div id="title" class="hud"><h1>NEURAL&nbsp;TRADER</h1><div id="sub"></div></div>
+<div id="stats" class="hud">
+  <div class="stat"><div class="k">BAR</div><div class="v" id="sBar" style="color:var(--fg)">–</div></div>
+  <div class="stat"><div class="k">EQUITY</div><div class="v" id="sEq">–</div></div>
+  <div class="stat"><div class="k">POSITION</div><div class="v" id="sPos">–</div></div>
+  <div class="stat"><div class="k">TRADES</div><div class="v" id="sTr" style="color:var(--cyan)">–</div></div>
+  <div class="stat"><div class="k">WIN RATE</div><div class="v" id="sWr" style="color:var(--gold)">–</div></div>
+  <div class="stat"><div class="k">CRITIC V(s)</div><div class="v" id="sV">–</div></div>
+</div>
+<div id="labels"></div>
+<div id="chartLbl" class="hud"></div>
+<div id="pxHi" class="hud"></div><div id="pxLo" class="hud"></div>
+<div id="ctrl">
+  <button id="bPlay">❚❚</button>
+  <label>speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
+  <label>synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
+  <label>glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
+  <button id="bRot" class="on">orbit</button>
+  <button id="bRec" class="rec">● rec</button>
+  <button id="bFull">⛶</button>
+</div>
+<div id="err"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script>window.SNAPSHOT = /*__SNAPSHOT__*/null;</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+const D = window.SNAPSHOT;
+if (!D) { const e = document.getElementById("err"); e.style.display = "grid"; e.textContent = "no snapshot data — run tools/viz/capture_snapshot.py"; throw new Error("no data"); }
+
+// ------------------------------------------------------------------ data
+const dec = (s, T) => { const b = Uint8Array.from(atob(s), c => c.charCodeAt(0)); return new T(b.buffer); };
+const Q = dec(D.q, Int8Array), W = D.width, NF = D.frames, NIN = D.n_in, WIN = D.window, NFEAT = D.n_features;
+const L = D.layers;                                   // actor 256,128,64 | critic 256,128,64
+const OFF = [NIN]; for (let i = 0; i < L.length; i++) OFF.push(OFF[i] + L[i]);
+const OFF_PROB = OFF[L.length], OFF_VAL = OFF_PROB + 4;
+const MATS = {};
+for (const t of ["policy_net", "value_net"])
+  MATS[t] = D.edges[t].map(m => ({ rows: m.rows, cols: m.cols, k: m.k, idx: dec(m.idx, Int16Array), w: dec(m.w, Float32Array) }));
+const cur = new Float32Array(W);
+function sample(fp) {
+  const a = Math.min(NF - 1, Math.floor(fp)), b = Math.min(NF - 1, a + 1), t = fp - Math.floor(fp), s = t * t * (3 - 2 * t);
+  const oa = a * W, ob = b * W;
+  for (let i = 0; i < W; i++) cur[i] = (Q[oa + i] * (1 - s) + Q[ob + i] * s) / 127;
+}
+
+// ------------------------------------------------------------------ renderer
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+renderer.setSize(innerWidth, innerHeight);
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x02030a);
+scene.fog = new THREE.FogExp2(0x02030a, 0.0085);
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 600);
+camera.position.set(-44, 13, 31);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(-7, 0, 0); controls.enableDamping = true; controls.autoRotate = false;
+// gentle camera sway between oblique angles (discs are edge-on from the front); pauses after a drag
+let sway = true, swayHold = 0;
+controls.addEventListener("start", () => { swayHold = 1e9; });
+controls.addEventListener("end", () => { swayHold = performance.now() + 6000; });
+const sph = new THREE.Spherical(), off3 = new THREE.Vector3();
+controls.minDistance = 20; controls.maxDistance = 140;
+
+// chart overlay scene: pixel-space orthographic camera, glows through the same bloom
+const chartScene = new THREE.Scene();
+const chartCam = new THREE.OrthographicCamera(0, innerWidth, innerHeight, 0, -10, 10);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const chartPass = new RenderPass(chartScene, chartCam); chartPass.clear = false; chartPass.clearDepth = true;
+composer.addPass(chartPass);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.45, 0.22);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ------------------------------------------------------------------ shaders
+const glowPoints = (n, pixelSpace = false) => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  g.setAttribute("aColor", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  g.setAttribute("aSize", new THREE.BufferAttribute(new Float32Array(n), 1));
+  const m = new THREE.ShaderMaterial({
+    uniforms: { uScale: { value: 1 } },
+    vertexShader: `attribute vec3 aColor; attribute float aSize; uniform float uScale; varying vec3 vC;
+      void main() { vC = aColor; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = ${pixelSpace ? "aSize * uScale" : "aSize * uScale / -mv.z"}; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying vec3 vC;
+      void main() { float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a = a * a;
+        if (a < 0.003) discard; gl_FragColor = vec4(vC * (a + smoothstep(0.10, 0.0, d) * 0.6), a); }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const p = new THREE.Points(g, m); p.frustumCulled = false; return p;
+};
+const C_POS = new THREE.Color(1.0, 0.42, 0.06), C_NEG = new THREE.Color(0.05, 0.72, 1.0);
+const C_UP = new THREE.Color(0.0, 1.0, 0.55), C_DN = new THREE.Color(1.0, 0.1, 0.42), C_GOLD = new THREE.Color(1.0, 0.72, 0.12);
+
+// ------------------------------------------------------------------ network layout (x = depth of the net)
+const X_IN = -30, X_L = [-10, 4, 14], X_OUT = 24, Y_TOWER = [7.0, -7.0], R_L = [5.6, 4.1, 2.9];
+const nodePos = [];                         // per cur-index -> [x,y,z] (inputs + hidden + outputs)
+const posOf = new Float32Array((OFF_VAL + 1) * 3);
+// input wall: rows = bars (old at top), cols = features, + one row for position state
+for (let i = 0; i < NIN; i++) {
+  let r, c; if (i < WIN * NFEAT) { r = Math.floor(i / NFEAT); c = i % NFEAT; } else { r = WIN; c = Math.floor(NFEAT / 2) + (i - WIN * NFEAT - 1) * 6; }
+  posOf[i * 3] = X_IN; posOf[i * 3 + 1] = 9.5 - r * (19 / WIN); posOf[i * 3 + 2] = -17 + c * (34 / (NFEAT - 1));
+}
+// hidden layers: phyllotaxis discs in the y-z plane
+for (let l = 0; l < 6; l++) {
+  const n = L[l], tower = l < 3 ? 0 : 1, R = R_L[l % 3], x = X_L[l % 3];
+  for (let j = 0; j < n; j++) {
+    const r = R * Math.sqrt((j + 0.5) / n), th = j * 2.399963, k = (OFF[l] + j) * 3;
+    posOf[k] = x + Math.sin(j * 7.13) * 0.35; posOf[k + 1] = Y_TOWER[tower] + r * Math.cos(th); posOf[k + 2] = r * Math.sin(th);
+  }
+}
+for (let a = 0; a < 4; a++) { const k = (OFF_PROB + a) * 3; posOf[k] = X_OUT; posOf[k + 1] = Y_TOWER[0] + (1.5 - a) * 2.4; posOf[k + 2] = 0; }
+posOf[OFF_VAL * 3] = X_OUT; posOf[OFF_VAL * 3 + 1] = Y_TOWER[1]; posOf[OFF_VAL * 3 + 2] = 0;
+
+const NODES = OFF_VAL + 1;
+const nodes = glowPoints(NODES);
+nodes.geometry.attributes.position.array.set(posOf);
+scene.add(nodes);
+
+// synapses: every kept edge, ordered by rank so a draw range picks the K strongest per neuron
+const E = [];   // {src, dst, w, scale, rank}
+for (const [ti, tower] of [[0, "policy_net"], [1, "value_net"]]) {
+  MATS[tower].forEach((M, mi) => {
+    for (let r = 0; r < M.rows; r++) for (let q = 0; q < M.k; q++) {
+      const s = M.idx[r * M.k + q];
+      const src = mi === 0 ? s : OFF[ti * 3 + mi - 1] + s;
+      const dst = mi < 3 ? OFF[ti * 3 + mi] + r : (ti === 0 ? OFF_PROB + r : OFF_VAL);
+      E.push({ src, dst, w: M.w[r * M.k + q], scale: mi === 0 ? 5.0 : 2.6, rank: q });
+    }
+  });
+}
+E.sort((a, b) => a.rank - b.rank);
+const NE = E.length;
+const eSrc = new Int32Array(NE), eDst = new Int32Array(NE), eW = new Float32Array(NE), eRankEnd = [];
+E.forEach((e, i) => { eSrc[i] = e.src; eDst[i] = e.dst; eW[i] = e.w * e.scale; });
+for (let k = 1; k <= 16; k++) eRankEnd[k] = E.findIndex(e => e.rank >= k) === -1 ? NE : E.findIndex(e => e.rank >= k);
+const eGeo = new THREE.BufferGeometry();
+const ePos = new Float32Array(NE * 6), eCol = new Float32Array(NE * 6);
+for (let i = 0; i < NE; i++) for (let v = 0; v < 2; v++) { const n = v ? eDst[i] : eSrc[i]; ePos.set(posOf.subarray(n * 3, n * 3 + 3), i * 6 + v * 3); }
+eGeo.setAttribute("position", new THREE.BufferAttribute(ePos, 3));
+eGeo.setAttribute("color", new THREE.BufferAttribute(eCol, 3));
+const synapses = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+synapses.frustumCulled = false;
+scene.add(synapses);
+const eInt = new Float32Array(NE);         // per-edge signal strength this frame (signed)
+
+// pulses travelling along strong synapses
+const NP = 1400, pulses = glowPoints(NP);
+const pEdge = new Int32Array(NP).fill(-1), pT = new Float32Array(NP), pSp = new Float32Array(NP);
+scene.add(pulses);
+
+// dust + synthwave floor for depth
+{
+  const n = 2500, g = glowPoints(n), pa = g.geometry.attributes;
+  for (let i = 0; i < n; i++) {
+    const r = 70 + Math.random() * 160, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+    pa.position.array.set([r * Math.sin(ph) * Math.cos(th), r * Math.cos(ph) * 0.6, r * Math.sin(ph) * Math.sin(th)], i * 3);
+    const c = Math.random() < 0.5 ? C_NEG : C_POS, b = 0.08 + Math.random() * 0.18;
+    pa.aColor.array.set([c.r * b, c.g * b, c.b * b], i * 3); pa.aSize.array[i] = 20 + Math.random() * 60;
+  }
+  g.material.uniforms.uScale.value = 10; scene.add(g);
+  const grid = new THREE.GridHelper(260, 52, 0x0b3a66, 0x071a33); grid.position.y = -19;
+  grid.material.transparent = true; grid.material.opacity = 0.55; scene.add(grid);
+}
+
+// ------------------------------------------------------------------ chart (pixel space)
+const CW_BARS = 110;
+const candleGeo = new THREE.PlaneGeometry(1, 1);
+const bodies = new THREE.InstancedMesh(candleGeo, new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), CW_BARS + 2);
+bodies.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3);
+bodies.frustumCulled = false; chartScene.add(bodies);
+const wickGeo = new THREE.BufferGeometry();
+wickGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((CW_BARS + 2) * 6), 3));
+wickGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array((CW_BARS + 2) * 6), 3));
+const wicks = new THREE.LineSegments(wickGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+wicks.frustumCulled = false; chartScene.add(wicks);
+const triShape = new THREE.Shape(); triShape.moveTo(0, 0.6); triShape.lineTo(-0.55, -0.4); triShape.lineTo(0.55, -0.4); triShape.lineTo(0, 0.6);
+const markers = new THREE.InstancedMesh(new THREE.ShapeGeometry(triShape), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), CW_BARS + 2);
+markers.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3);
+markers.frustumCulled = false; chartScene.add(markers);
+const eqGeo = new THREE.BufferGeometry();
+eqGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3));
+const eqLine = new THREE.Line(eqGeo, new THREE.LineBasicMaterial({ color: C_GOLD, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }));
+eqLine.frustumCulled = false; chartScene.add(eqLine);
+const gridGeo = new THREE.BufferGeometry();
+gridGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(5 * 6 + 6), 3));
+const chartGrid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x0d2a4d, transparent: true, opacity: 0.8 }));
+chartScene.add(chartGrid);
+const head = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: C_GOLD, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending }));
+chartScene.add(head);
+const NB = 900, bursts = glowPoints(NB, true);
+const bVel = new Float32Array(NB * 2), bLife = new Float32Array(NB);
+bursts.material.uniforms.uScale.value = Math.min(2, devicePixelRatio || 1);
+chartScene.add(bursts);
+let burstNext = 0;
+
+let CH = {};
+function layoutChart() {
+  const w = innerWidth, h = innerHeight;
+  CH = { x0: 70, x1: w - 90, y0: 34, y1: Math.max(150, h * 0.27) };
+  chartCam.right = w; chartCam.top = h; chartCam.updateProjectionMatrix();
+  const g = gridGeo.attributes.position.array;
+  for (let i = 0; i < 5; i++) { const y = CH.y0 + (CH.y1 - CH.y0) * i / 4; g.set([CH.x0, y, 0, CH.x1, y, 0], i * 6); }
+  g.set([CH.x1, CH.y0, 0, CH.x1, CH.y1, 0], 30); gridGeo.attributes.position.needsUpdate = true;
+  document.getElementById("chartLbl").style.bottom = (CH.y1 + 10) + "px";
+  document.getElementById("pxHi").style.bottom = (CH.y1 - 12) + "px";
+  document.getElementById("pxLo").style.bottom = (CH.y0 - 4) + "px";
+}
+let pLo = null, pHi = null, eLo = null, eHi = null;
+const m4 = new THREE.Matrix4(), q0 = new THREE.Quaternion(), qDown = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI), v3 = new THREE.Vector3(), s3 = new THREE.Vector3();
+function updateChart(fp, dt) {
+  const fi = Math.floor(fp), frac = fp - fi, n = CW_BARS;
+  const first = Math.max(0, fi - n + 1);
+  let lo = Infinity, hi = -Infinity, elo = Infinity, ehi = -Infinity;
+  for (let i = first; i <= fi; i++) { lo = Math.min(lo, D.l[i]); hi = Math.max(hi, D.h[i]); elo = Math.min(elo, D.eq[i]); ehi = Math.max(ehi, D.eq[i]); }
+  const pad = (hi - lo) * 0.12 || 0.01; lo -= pad; hi += pad;
+  const ease = 1 - Math.exp(-dt * 4);
+  pLo = pLo === null ? lo : pLo + (lo - pLo) * ease; pHi = pHi === null ? hi : pHi + (hi - pHi) * ease;
+  const epad = Math.max(0.002, (ehi - elo) * 0.15);
+  eLo = eLo === null ? elo - epad : eLo + (elo - epad - eLo) * ease; eHi = eHi === null ? ehi + epad : eHi + (ehi + epad - eHi) * ease;
+  const sp = (CH.x1 - CH.x0) / n, bw = Math.max(2, sp * 0.56);
+  const py = p => CH.y0 + (p - pLo) / (pHi - pLo) * (CH.y1 - CH.y0);
+  const ey = e => CH.y0 + (e - eLo) / (eHi - eLo) * (CH.y1 - CH.y0);
+  const wp = wickGeo.attributes.position.array, wc = wickGeo.attributes.color.array, ep = eqGeo.attributes.position.array;
+  let k = 0, mk = 0;
+  for (let i = first; i <= fi; i++, k++) {
+    const age = fi - i, x = CH.x1 - sp * 0.5 - (age + frac) * sp;   // smooth scroll to the left
+    const up = D.c[i] >= D.o[i], col = up ? C_UP : C_DN;
+    const fade = i === fi ? 1.15 : Math.max(0.18, 0.72 - age / n * 0.6);
+    const yo = py(D.o[i]), yc = py(D.c[i]);
+    m4.compose(v3.set(x, (yo + yc) / 2, 0), q0, s3.set(bw, Math.max(1.6, Math.abs(yc - yo)), 1));
+    bodies.setMatrixAt(k, m4); bodies.instanceColor.setXYZ(k, col.r * fade, col.g * fade, col.b * fade);
+    wp.set([x, py(D.l[i]), 0, x, py(D.h[i]), 0], k * 6);
+    wc.set([col.r * fade * 0.8, col.g * fade * 0.8, col.b * fade * 0.8, col.r * fade * 0.8, col.g * fade * 0.8, col.b * fade * 0.8], k * 6);
+    ep.set([x, ey(D.eq[i]), 0], k * 3);
+    const a = D.act[i];
+    if (a === 1 || a === 2) {
+      const yy = a === 1 ? py(D.l[i]) - 14 : py(D.h[i]) + 14, s = Math.max(9, bw * 1.6);
+      m4.compose(v3.set(x, yy, 0), a === 1 ? q0 : qDown, s3.set(s, s, 1));
+      markers.setMatrixAt(mk, m4); const c = a === 1 ? C_UP : C_DN; markers.instanceColor.setXYZ(mk, c.r * 1.1, c.g * 1.1, c.b * 1.1); mk++;
+    } else if (a === 3 && D.tpnl[i] !== 0) {
+      m4.compose(v3.set(x, py(D.c[i]), 0), q0, s3.set(7, 7, 1));
+      markers.setMatrixAt(mk, m4); markers.instanceColor.setXYZ(mk, C_GOLD.r * 1.4, C_GOLD.g * 1.4, C_GOLD.b * 1.4); mk++;
+    }
+  }
+  bodies.count = k; bodies.instanceMatrix.needsUpdate = true; bodies.instanceColor.needsUpdate = true;
+  wickGeo.setDrawRange(0, k * 2); wickGeo.attributes.position.needsUpdate = true; wickGeo.attributes.color.needsUpdate = true;
+  eqGeo.setDrawRange(0, k); eqGeo.attributes.position.needsUpdate = true;
+  markers.count = mk; markers.instanceMatrix.needsUpdate = true; markers.instanceColor.needsUpdate = true;
+  const hx = CH.x1 - sp * 0.5 - frac * sp;
+  head.position.set(hx, (CH.y0 + CH.y1) / 2, 0); head.scale.set(1.5, CH.y1 - CH.y0 + 16, 1);
+  document.getElementById("pxHi").textContent = pHi.toFixed(D.c[fi] > 50 ? 2 : 5);
+  document.getElementById("pxLo").textContent = pLo.toFixed(D.c[fi] > 50 ? 2 : 5);
+  // burst physics
+  const bp = bursts.geometry.attributes.position.array, bc = bursts.geometry.attributes.aColor.array, bs = bursts.geometry.attributes.aSize.array;
+  for (let i = 0; i < NB; i++) {
+    if (bLife[i] <= 0) { bs[i] = 0; continue; }
+    bLife[i] -= dt; bp[i * 3] += bVel[i * 2] * dt; bp[i * 3 + 1] += bVel[i * 2 + 1] * dt; bVel[i * 2 + 1] -= 260 * dt;
+    bs[i] = Math.max(0, bLife[i]) * 16;
+  }
+  bursts.geometry.attributes.position.needsUpdate = true; bursts.geometry.attributes.aSize.needsUpdate = true; bursts.geometry.attributes.aColor.needsUpdate = true;
+  return { x: hx, py };
+}
+function burst(x, y, col, n = 70) {
+  const bp = bursts.geometry.attributes.position.array, bc = bursts.geometry.attributes.aColor.array;
+  for (let j = 0; j < n; j++) {
+    const i = burstNext; burstNext = (burstNext + 1) % NB;
+    const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 260;
+    bp.set([x, y, 0], i * 3); bVel[i * 2] = Math.cos(a) * v; bVel[i * 2 + 1] = Math.sin(a) * v + 80;
+    bLife[i] = 0.5 + Math.random() * 0.8; const b = 0.8 + Math.random() * 1.4;
+    bc.set([col.r * b, col.g * b, col.b * b], i * 3);
+  }
+}
+
+// ------------------------------------------------------------------ labels
+const labels = document.getElementById("labels");
+const mkLbl = (cls, html, color) => { const d = document.createElement("div"); d.className = "lbl " + cls; d.innerHTML = html; if (color) d.style.color = color; labels.appendChild(d); return d; };
+const outNames = ["HOLD", "BUY", "SELL", "CLOSE"], outColors = ["#9fb3d9", "#00ffa3", "#ff2e88", "#ffc53d"];
+const outLbl = outNames.map((n, a) => mkLbl("out", `${n} <span>0%</span><span class="bar"></span>`, outColors[a]));
+const valLbl = mkLbl("out", `V(s) <span>0</span>`, "#19e6ff");
+const tags = [
+  [mkLbl("tag", `INPUT · ${WIN} BARS × ${NFEAT} FEATURES`), [X_IN, 12.2, 0]],
+  [mkLbl("tag", "ACTOR · POLICY"), [X_L[0], Y_TOWER[0] + R_L[0] + 2.0, 0]],
+  [mkLbl("tag", "CRITIC · VALUE"), [X_L[0], Y_TOWER[1] - R_L[0] - 2.0, 0]],
+  [mkLbl("tag", "256"), [X_L[0], Y_TOWER[1] - R_L[0] - 4.2, 0]],
+  [mkLbl("tag", "128"), [X_L[1], Y_TOWER[1] - R_L[1] - 4.2, 0]],
+  [mkLbl("tag", "64"), [X_L[2], Y_TOWER[1] - R_L[2] - 4.2, 0]],
+];
+const pv = new THREE.Vector3();
+function placeLabel(el, x, y, z) {
+  pv.set(x, y, z).project(camera);
+  const sy = (1 - pv.y) / 2 * innerHeight, sx = (pv.x + 1) / 2 * innerWidth;
+  // keep labels out of the chart band and off-screen edges
+  const hidden = pv.z > 1 || sy > innerHeight - CH.y1 - 18 || sx < 40 || sx > innerWidth - 40;
+  el.style.display = hidden ? "none" : "block";
+  el.style.left = ((pv.x + 1) / 2 * innerWidth) + "px"; el.style.top = ((1 - pv.y) / 2 * innerHeight) + "px";
+}
+
+// ------------------------------------------------------------------ frame update
+let playing = true, speed = 6, K = 8, fpos = 0, lastFrame = -1, lastT = performance.now();
+const nPos = nodes.geometry.attributes.position.array, nCol = nodes.geometry.attributes.aColor.array, nSize = nodes.geometry.attributes.aSize.array;
+const impulse = new Float32Array(5);
+function setColor(arr, i, c, m) { arr[i * 3] = c.r * m; arr[i * 3 + 1] = c.g * m; arr[i * 3 + 2] = c.b * m; }
+
+function updateNetwork(dt, time) {
+  // nodes
+  for (let i = 0; i < NIN; i++) { const v = cur[i], m = Math.min(1, Math.abs(v) * 1.3); setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.07 + m * m * 0.85); nSize[i] = 1.5 + m * 1.7; }
+  for (let l = 0; l < 6; l++) for (let j = 0; j < L[l]; j++) {
+    const i = OFF[l] + j, v = cur[i], m = Math.abs(v);
+    setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.10 + m * m * m * 1.3); nSize[i] = (l % 3 === 0 ? 3.0 : l % 3 === 1 ? 3.6 : 4.2) * (0.6 + m * 0.9);
+  }
+  for (let a = 0; a < 4; a++) {
+    const p = Math.max(0, cur[OFF_PROB + a]), i = OFF_PROB + a, c = new THREE.Color(outColors[a]).convertSRGBToLinear();
+    impulse[a] = Math.max(0, impulse[a] - dt * 1.8);
+    setColor(nCol, i, c, 0.25 + p * 1.4 + impulse[a] * 2); nSize[i] = 6 + p * 16 + impulse[a] * 18;
+  }
+  { const v = cur[OFF_VAL], i = OFF_VAL; setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.35 + Math.abs(v) * 1.4); nSize[i] = 7 + Math.abs(v) * 14; }
+  nodes.geometry.attributes.aColor.needsUpdate = true; nodes.geometry.attributes.aSize.needsUpdate = true;
+  nodes.material.uniforms.uScale.value = innerHeight * 0.9 * renderer.getPixelRatio() / 10;
+
+  // synapses
+  const end = eRankEnd[K];
+  for (let e = 0; e < end; e++) {
+    const s = eW[e] * cur[eSrc[e]]; eInt[e] = s;
+    const m = Math.min(1, Math.abs(s)), c = s >= 0 ? C_POS : C_NEG, a = m * m * m * 0.32 + 0.0025, b = a * 0.25;
+    const o = e * 6;
+    eCol[o] = c.r * a; eCol[o + 1] = c.g * a; eCol[o + 2] = c.b * a; eCol[o + 3] = c.r * b; eCol[o + 4] = c.g * b; eCol[o + 5] = c.b * b;
+  }
+  eGeo.setDrawRange(0, end * 2); eGeo.attributes.color.needsUpdate = true;
+
+  // pulses
+  const pp = pulses.geometry.attributes.position.array, pc = pulses.geometry.attributes.aColor.array, ps = pulses.geometry.attributes.aSize.array;
+  for (let i = 0; i < NP; i++) {
+    if (pEdge[i] < 0 || pT[i] >= 1) {
+      pEdge[i] = -1; ps[i] = 0;
+      for (let tries = 0; tries < 4; tries++) { const e = (Math.random() * end) | 0; if (Math.abs(eInt[e]) > 0.25 + Math.random() * 0.5) { pEdge[i] = e; pT[i] = 0; pSp[i] = 0.5 + Math.random() * 0.9; break; } }
+      if (pEdge[i] < 0) continue;
+    }
+    const e = pEdge[i]; pT[i] += dt * pSp[i] * (0.35 + speed * 0.09);
+    const t = pT[i], s = eSrc[e] * 3, d = eDst[e] * 3;
+    pp[i * 3] = posOf[s] + (posOf[d] - posOf[s]) * t; pp[i * 3 + 1] = posOf[s + 1] + (posOf[d + 1] - posOf[s + 1]) * t; pp[i * 3 + 2] = posOf[s + 2] + (posOf[d + 2] - posOf[s + 2]) * t;
+    const m = Math.min(1, Math.abs(eInt[e])) * Math.sin(Math.PI * t), c = eInt[e] >= 0 ? C_POS : C_NEG;
+    setColor(pc, i, c, 0.25 + m * 1.3); ps[i] = 1.4 + m * 2.4;
+  }
+  pulses.geometry.attributes.position.needsUpdate = true; pulses.geometry.attributes.aColor.needsUpdate = true; pulses.geometry.attributes.aSize.needsUpdate = true;
+  pulses.material.uniforms.uScale.value = nodes.material.uniforms.uScale.value;
+}
+
+// stats panel
+let tradesClosed = 0, wins = 0;
+function onNewBar(i, chartHead) {
+  const a = D.act[i];
+  if (a >= 0) impulse[a] = 1;
+  if (a === 1) burst(chartHead.x, chartHead.py(D.l[i]) - 14, C_UP, 90);
+  if (a === 2) burst(chartHead.x, chartHead.py(D.h[i]) + 14, C_DN, 90);
+  if (D.tpnl[i] !== 0) { tradesClosed++; if (D.tpnl[i] > 0) wins++; burst(chartHead.x, chartHead.py(D.c[i]), D.tpnl[i] > 0 ? C_GOLD : C_DN, 50); }
+  const eq = (D.eq[i] - 1) * 100;
+  const sEq = document.getElementById("sEq"); sEq.textContent = (eq >= 0 ? "+" : "") + eq.toFixed(2) + "%"; sEq.style.color = eq >= 0 ? "var(--green)" : "var(--mag)";
+  const ps = D.pos[i], sPos = document.getElementById("sPos");
+  sPos.textContent = ps > 0 ? "LONG" : ps < 0 ? "SHORT" : "FLAT"; sPos.style.color = ps > 0 ? "var(--green)" : ps < 0 ? "var(--mag)" : "var(--dim)";
+  document.getElementById("sTr").textContent = tradesClosed;
+  document.getElementById("sWr").textContent = tradesClosed ? Math.round(wins / tradesClosed * 100) + "%" : "–";
+  document.getElementById("sBar").textContent = D.ts[i].slice(0, 16);
+}
+function resetRun() { tradesClosed = 0; wins = 0; lastFrame = -1; }
+function seek(i) {   // jump without replaying bursts; stats recomputed from the data
+  i = Math.max(0, Math.min(NF - 2, i | 0)); fpos = i; tradesClosed = 0; wins = 0;
+  for (let j = 0; j < i; j++) if (D.tpnl[j] !== 0) { tradesClosed++; if (D.tpnl[j] > 0) wins++; }
+  lastFrame = i - 1; pLo = pHi = eLo = eHi = null;
+}
+const START = Math.min(60, NF - 2);
+window.__viz = { seek: i => seek(i), get frame() { return fpos; } };
+
+// ------------------------------------------------------------------ loop
+let glow = 0.9;
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  if (playing) { fpos += dt * speed * 0.45; if (fpos >= NF - 1) seek(START); }
+  sample(fpos);
+  updateNetwork(dt, now / 1000);
+  const ch = updateChart(fpos, dt);
+  const fi = Math.floor(fpos);
+  if (fi !== lastFrame) { for (let i = lastFrame + 1; i <= fi; i++) onNewBar(i, ch); lastFrame = fi; }
+  for (let a = 0; a < 4; a++) {
+    const p = Math.max(0, cur[OFF_PROB + a]), k = (OFF_PROB + a) * 3;
+    outLbl[a].children[0].textContent = Math.round(p * 100) + "%"; outLbl[a].children[1].style.width = (p * 90) + "px";
+    placeLabel(outLbl[a], posOf[k], posOf[k + 1], posOf[k + 2]);
+  }
+  const v = cur[OFF_VAL] * D.value_max; valLbl.children[0].textContent = (v >= 0 ? "+" : "") + v.toFixed(3);
+  document.getElementById("sV").textContent = (v >= 0 ? "+" : "") + v.toFixed(3);
+  document.getElementById("sV").style.color = v >= 0 ? "var(--orange)" : "var(--cyan)";
+  placeLabel(valLbl, posOf[OFF_VAL * 3], posOf[OFF_VAL * 3 + 1], 0);
+  for (const [el, p] of tags) placeLabel(el, p[0], p[1], p[2]);
+  bloom.strength = glow;
+  if (sway && now > swayHold) {
+    off3.copy(camera.position).sub(controls.target); sph.setFromVector3(off3);
+    const az = -0.95 + 0.42 * Math.sin(now * 0.00011), pol = 1.25 + 0.12 * Math.sin(now * 0.00007);
+    sph.theta += (az - sph.theta) * 0.02; sph.phi += (pol - sph.phi) * 0.02;
+    off3.setFromSpherical(sph); camera.position.copy(controls.target).add(off3);
+  }
+  controls.update();
+  composer.render();
+  requestAnimationFrame(frame);
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h); composer.setSize(w, h); bloom.setSize(w, h);
+  camera.aspect = w / h;
+  // lift the network into the area above the chart
+  camera.setViewOffset(w, h, 0, h * 0.14, w, h);
+  camera.updateProjectionMatrix();
+  layoutChart();
+}
+addEventListener("resize", resize);
+resize();
+
+document.getElementById("sub").textContent = `${D.symbol} H4 · ${D.slice.toUpperCase()} · ${D.model} (${D.source}) · ${D.ts[0].slice(0, 10)} → ${D.ts[NF - 1].slice(0, 10)}`;
+document.getElementById("chartLbl").textContent = `${D.symbol} · ${D.slice.toUpperCase()} · AGENT TRADES`;
+const bPlay = document.getElementById("bPlay");
+bPlay.onclick = () => { playing = !playing; bPlay.textContent = playing ? "❚❚" : "▶"; };
+document.getElementById("iSpeed").oninput = e => speed = +e.target.value;
+document.getElementById("iK").onchange = e => K = +e.target.value;
+document.getElementById("iGlow").oninput = e => glow = +e.target.value / 10;
+const bRot = document.getElementById("bRot");
+bRot.onclick = () => { sway = !sway; swayHold = 0; bRot.classList.toggle("on", sway); };
+document.getElementById("bFull").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+// record the WebGL canvas to a WebM file (HUD text is HTML and is not captured)
+let rec = null, chunks = [];
+const bRec = document.getElementById("bRec");
+bRec.onclick = () => {
+  if (rec) { rec.stop(); return; }
+  const stream = renderer.domElement.captureStream(60);
+  const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(m => MediaRecorder.isTypeSupported(m));
+  rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 16e6 }); chunks = [];
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  rec.onstop = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(chunks, { type: "video/webm" }));
+    a.download = `${D.model}_neural_trader.webm`; a.click(); rec = null; bRec.textContent = "● rec"; };
+  rec.start(); bRec.textContent = "■ stop";
+};
+Object.defineProperty(window.__viz, "fps", { get: () => fpsMeter });
+let fpsMeter = 0, fpsN = 0, fpsT = performance.now();
+const _frame = frame;
+requestAnimationFrame(function meter(now) { fpsN++; if (now - fpsT > 1000) { fpsMeter = fpsN * 1000 / (now - fpsT); fpsN = 0; fpsT = now; } requestAnimationFrame(meter); });
+seek(START);
+requestAnimationFrame(_frame);
+</script>
+</body>
+</html>

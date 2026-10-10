@@ -64,6 +64,7 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Regime detection (single method) | `python regime_compare.py <csv> --method {hmm,kmeans,pelt} [--n-states N] [--k K] [--penalty P]` |
 | Regime detection (compare 6 methods) | `python regime_compare.py <csv> --method all` |
 | Verify a freshly collected dataset | `python tools/data/verify_collected_features.py <csv>` — constant columns, divergence parity vs `tools/data/divergence_features.py`, nearness windows, candle mapping. Run before training on any new DataCollector_RL dump. |
+| Neon 3D network + candlestick replay of a trained model | `python tools/viz/capture_snapshot.py <model> [--frames 400] [--slice validation|test] [--source final|best]` → self-contained `artifacts/viz/<model>_network3d.html` (Three.js r160 from jsDelivr, needs internet on first open). Validation equity is a visual, not edge evidence. |
 | Multi-seed A/B (train + diagnose + Test backtest + bootstrap) | `python tools/analysis/obs_ablation.py --arms D --seeds 0,1,2 [--train_start 2019-01-01] --prefix <p> --tag <t>` → `docs/ablation_<t>.md` (per-seed rows + across-seed pooled PF). `--train_start` trims Train only; Validation/Test rows stay those of the untrimmed split. |
 | Auto-label price shocks with Gemini | `python gemini_labeler.py <csv> --symbol GBPUSD --top-k 15 --api-key $env:GEMINI_API_KEY` |
 

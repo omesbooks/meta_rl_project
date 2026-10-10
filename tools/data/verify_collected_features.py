@@ -29,6 +29,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+# reconfigure (not re-wrap): divergence_features re-wraps sys.stdout on import,
+# and a second wrapper of ours would close the shared buffer when collected
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -82,6 +85,9 @@ def main():
     div_cols = [c for c in feats if "_div_" in c]
     if div_cols:
         try:
+            # divergence_features re-wraps sys.stdout on import; flush first or
+            # everything printed so far is lost when output is redirected
+            sys.stdout.flush()
             from divergence_features import collect_divergences
             rsi_period = int(params.get("DIV_RSI_PERIOD", 14))
             oscs = [f"rsi_{rsi_period}", "macd_hist"]
@@ -125,19 +131,26 @@ def main():
     near_cols = [c for c in feats if c.startswith("near_high_")]
     if near_cols:
         print(f"\n[3] nearness: which rolling window does each column really match?")
+        # Compare only rows whose longest candidate window lies fully inside the
+        # CSV. Earlier rows legitimately differ: in the tester the indicator also
+        # sees bars from before the first collected row (pandas cannot), e.g.
+        # XAUUSD 2011-13 highs inside the 1500-bar window of early 2015 rows.
         wanted = [int(params.get(k, 0)) for k in ("NEAR_N1", "NEAR_N2", "NEAR_N3") if params.get(k)]
         candidates = sorted(set(wanted + [50, 100, 250, 500, 1000, 1500, 2000]))
         close, high = df["close"], df["high"]
+        full = np.arange(len(df)) >= max(candidates) - 1
+        print(f"      (comparing rows {int(np.argmax(full)):,}+ where every window is inside the file; "
+              f"{int(full.sum()):,} rows)")
         for c in near_cols:
             declared = int(c.split("_")[-1])
             col = num[c].to_numpy(dtype=float)
             best_n, best_m = None, -1.0
             for n in candidates:
                 ref = (close / high.rolling(n, min_periods=1).max()).to_numpy(dtype=float)
-                m = float(np.mean(np.isclose(col, ref, atol=1e-6)))
+                m = float(np.mean(np.isclose(col[full], ref[full], atol=1e-6)))
                 if m > best_m:
                     best_n, best_m = n, m
-            ok = best_n == declared and best_m > 0.95
+            ok = best_n == declared and best_m > 0.99
             print(f"      {c:16s} declared {declared:5d}  best match rolling({best_n}) {best_m:6.1%}  "
                   f"{'OK' if ok else 'MISMATCH'}")
             if not ok:

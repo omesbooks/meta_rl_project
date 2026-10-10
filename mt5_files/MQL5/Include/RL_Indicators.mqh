@@ -665,6 +665,15 @@ bool RL_BuildFeatureMap(string symbol, ENUM_TIMEFRAMES tf)
       // Use indicator's default settings — must match what was used at training time!
       // ⭐ Uses CP_* globals — runtime overridable via RL_ApplyDataCollectorConfig()
       //   so collector and EA stay in sync (parity).
+      // ⚠ KNOWN PARAMETER SHIFT (found 2026-10-10): CandlePatterns.mq5 declares
+      //   three `input group` lines and iCustom() counts each one as a parameter
+      //   slot, so every value below lands later than its name says. Effective
+      //   values since v1.10 (2026-05): Marubozu threshold = CP_HammerBodyMaxPct
+      //   (0.30, not 0.95), MatHold outer-body min = 1.0 (MatHold never fires),
+      //   Inside/Outside strict = false, … Collector and EA share this exact call,
+      //   so every trained model and live EA is self-consistent. Do NOT "fix" it
+      //   without re-collecting data and retraining every candle-feature model —
+      //   see docs/data_side_2026-10-10.md.
       g_h_candles = iCustom(symbol, tf, "CandlePatterns",
          CP_Hammer, CP_Engulfing, CP_Inside, CP_Outside,
          CP_Star, CP_Soldiers, CP_Marubozu, CP_Harami,
@@ -690,6 +699,8 @@ bool RL_BuildFeatureMap(string symbol, ENUM_TIMEFRAMES tf)
    if(g_uses_divergence) {
       // ⭐ Uses DIV_* globals — override before this call to keep parity
       //   with the collector/dataset (same contract as CandlePatterns).
+      //   PriceDivergence has NO `input group` (each group = one iCustom
+      //   slot) so these values map 1:1 since v1.10.
       g_h_divergence = iCustom(symbol, tf, "PriceDivergence",
          DIV_RSI_PERIOD, DIV_MACD_FAST, DIV_MACD_SLOW, DIV_MACD_SIGNAL,
          DIV_PIVOT_LEFT, DIV_PIVOT_RIGHT, DIV_MIN_SPAN, DIV_MAX_SPAN,

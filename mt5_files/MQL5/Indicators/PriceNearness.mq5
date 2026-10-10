@@ -27,7 +27,7 @@
 //|   (read via iCustom by RL_Indicators; buffers 0..8 fixed).       |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.10"
+#property version   "1.11"
 #property copyright "RL Trading Project"
 #property description "Nearness to N-bar high/low (3 horizons) — features + Donchian-style level lines"
 
@@ -64,7 +64,12 @@
 #property indicator_color15 clrMagenta
 #property indicator_width15 2
 
-input group "=== Horizons (bars) — must sync with collector/EA ==="
+// NO `input group` IN THIS FILE — on purpose. iCustom() counts every
+// `input group` line as one parameter slot, so a group before InpN1 shifts
+// every value the collector/EA passes by one. That is exactly what broke the
+// 2026-08 datasets: 100/250/1500 arrived as 250/1500/1500 (the near_*_250 and
+// near_*_1500 columns came out identical). Keep the inputs flat, in iCustom
+// order. DataCollector_RL self-checks the level buffers against iHighest().
 input int InpN1 = 100;    // short anchor  (H4: ~3 สัปดาห์)
 input int InpN2 = 250;    // medium anchor (H4: ~2 เดือน)
 input int InpN3 = 1500;   // long anchor   (H4: ~1 ปี ≈ 52-week high)

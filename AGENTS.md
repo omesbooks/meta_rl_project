@@ -1,7 +1,7 @@
 # AGENTS.md — Meta RL Trading Project
 
 > Guide for AI agents (Claude Code, Codex, Cursor) working on this codebase.
-> Last updated: 2026-07-06
+> Last updated: 2026-10-10
 > For a full dependency map see `graphify-out/GRAPH_REPORT.md`.
 >
 > **Repo was reorganized (2026-06/07):** supporting scripts moved under `tools/`,
@@ -50,7 +50,7 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Task | Command |
 |------|---------|
 | Launch GUI | `run_rl_app.bat` or `.venv/Scripts/python.exe rl_app.py` |
-| Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--reward_profile balanced] [--action_profile basic_4] [--mc_eval 1000 --mc_skip_frac 0.10] [--eval_csv <csv>]` |
+| Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--seed N] [--corr_threshold 0.95] [--reward_profile balanced] [--action_profile basic_4] [--mc_eval 1000 --mc_skip_frac 0.10] [--eval_csv <csv>]` |
 | Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent [--intrabar {pessimistic,optimistic}] [--stop_slippage 0.0001] [--m1_csv <m1.csv>] [--swap_long -0.00005 --swap_short -0.00003] [--random_baseline 20] [--mc 1000]` |
 | Backtest chart | `python backtest_chart.py <model> <csv> --limit 5000` |
 | Walk-forward | `python rl_walkforward.py <csv> --windows 5 --steps 50000` |
@@ -63,6 +63,8 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Live trading | `python tools/mt5/live_trader.py [--demo|--live|--paper]` |
 | Regime detection (single method) | `python regime_compare.py <csv> --method {hmm,kmeans,pelt} [--n-states N] [--k K] [--penalty P]` |
 | Regime detection (compare 6 methods) | `python regime_compare.py <csv> --method all` |
+| Verify a freshly collected dataset | `python tools/data/verify_collected_features.py <csv>` — constant columns, divergence parity vs `tools/data/divergence_features.py`, nearness windows, candle mapping. Run before training on any new DataCollector_RL dump. |
+| Multi-seed A/B (train + diagnose + Test backtest + bootstrap) | `python tools/analysis/obs_ablation.py --arms D --seeds 0,1,2 [--train_start 2019-01-01] --prefix <p> --tag <t>` → `docs/ablation_<t>.md` (per-seed rows + across-seed pooled PF). `--train_start` trims Train only; Validation/Test rows stay those of the untrimmed split. |
 | Auto-label price shocks with Gemini | `python gemini_labeler.py <csv> --symbol GBPUSD --top-k 15 --api-key $env:GEMINI_API_KEY` |
 
 > Scripts under `tools/` use `Path(__file__)`-relative or repo-root-relative imports;
@@ -386,6 +388,7 @@ the post-Brexit subset removes the distribution shift.
 | Regime HTML is blank from disk / stale cutoff targets another CSV | Charts inline their JSON payload for `file://`; result JSON records the resolved source CSV, and the cutoff action rejects stale provenance or an empty slice. |
 | Exported config says params are embedded when only a no-op exists | Generated configs define `RL_PARAMS_EMBEDDED` as 1 or 0; UI readers use that marker (with the old `// Embedded from` comment as legacy fallback). Deploy names are normalized to valid ASCII MQL identifiers. |
 | Constant features explode during normalization | New train/WF runs floor std values below `1e-6` to `1.0`; Python and MQL consumers divide by the saved std exactly. Existing model norms are left unchanged unless explicitly migrated/retrained. |
+| Collected indicator features use the wrong periods/thresholds (2026-08 datasets: nearness 100→250 and 250→1500, every divergence column 0, `candle_marubozu` on 67% of bars, `candle_mathold` always 0) | MQL5 `iCustom()` counts **every `input group` line as one parameter slot**, so values passed by the collector/EA land one slot later per group. Indicators read via iCustom must declare NO `input group` (PriceNearness v1.11, PriceDivergence v1.10). DataCollector_RL self-checks nearness against `iHighest()` and stops on mismatch. **CandlePatterns still has groups on purpose**: its shifted params (marubozu 0.30, MatHold never fires, …) are identical in collector and EA, so every trained model and live EA is consistent — do not "fix" it without a versioned indicator name + full re-collect/retrain. Details: `docs/data_side_2026-10-10.md`. |
 | MTM mode appears to accept reward sliders/formula | Reward controls are disabled and labeled ignored in MTM mode; train metadata records `reward_profile_active=false`. DQN/A2C meta nulls unsupported PPO-only fields and constructors use their supported GUI hyperparameters. |
 
 ---

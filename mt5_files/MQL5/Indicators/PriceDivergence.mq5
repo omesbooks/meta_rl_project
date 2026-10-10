@@ -29,7 +29,7 @@
 //|   CandlePatterns.mq5 / StochDivergence.mq5 (read via iCustom).   |
 //+------------------------------------------------------------------+
 #property strict
-#property version   "1.00"
+#property version   "1.10"
 #property copyright "RL Trading Project"
 #property description "Price-pivot divergence vs RSI + MACD histogram — non-repainting, iCustom-friendly"
 
@@ -57,22 +57,25 @@
 #property indicator_label10 "div_bear_age"
 #property indicator_type10  DRAW_NONE
 
-input group "=== Oscillators (must match collector dataset) ==="
+// NO `input group` IN THIS FILE — on purpose. iCustom() counts every
+// `input group` line as one parameter slot; with the four groups this file
+// used to have, the collector's (14,12,26,9,3,3,5,60,50,false) landed as
+// RSI 12, MACD 26/9/3, pivot left 5 / right 60, min span 50, max span 0 —
+// no pivot pair can satisfy 50 <= span <= 0, so the 2026-08 datasets had
+// every divergence column at zero.
+// Keep the inputs flat, in the exact order RL_Indicators/collector pass them.
 input int InpRsiPeriod   = 14;  // RSI period  (dataset column rsi_14)
 input int InpMacdFast    = 12;  // MACD fast EMA
 input int InpMacdSlow    = 26;  // MACD slow EMA
 input int InpMacdSignal  = 9;   // MACD signal period
 
-input group "=== Pivot detection (match divergence_features.py) ==="
 input int InpPivotLeft      = 3;   // bars left of pivot (must be strictly better)
 input int InpPivotRight     = 3;   // bars right of pivot (confirmation delay)
 input int InpMinBarsBetween = 5;   // min bars between the two pivots
 input int InpMaxBarsBetween = 60;  // max bars between the two pivots
 
-input group "=== Age buffers ==="
 input int InpAgeCap = 50;          // cap for div_*_age (0=fresh .. 1=none recently)
 
-input group "=== Visual (always off in collector/EA) ==="
 input bool InpDrawMarkers = true;  // draw arrows on chart
 
 double BufRsiBull[],  BufRsiBear[],  BufRsiHBull[],  BufRsiHBear[];

@@ -12,6 +12,9 @@ Usage (from project root, inside the venv):
     python tools/analysis/obs_ablation.py --arms A,B --steps 400000
     python tools/analysis/obs_ablation.py --dry_run             # print commands only
     python tools/analysis/obs_ablation.py --steps 3000 --arms A,D --prefix smoke --tag smoke
+    python tools/analysis/obs_ablation.py --arms D --seeds 0,1,2          # 3 seeds per arm
+    python tools/analysis/obs_ablation.py --arms D --seeds 0,1,2 --train_start 2019-01-01 \
+        --prefix reg2019 --tag regime_2019   # regime locality: train from 2019, SAME Val/Test rows
 
 Outputs:
     docs/ablation_<tag>.json / .md      results table
@@ -74,6 +77,106 @@ def read_json(path):
         return {}
 
 
+def _frac_for_row(n, k):
+    """Shortest fraction f with int(n * f) == k — the split formula used by
+    training_data.split_training_data and backtest_live --start."""
+    for d in range(2, 12):
+        f = round((k + 0.5) / n, d)
+        if int(n * f) == k:
+            return f
+    raise ValueError(f"no fraction reproduces row {k} of {n}")
+
+
+def trim_for_train_start(csv, train_start, train_pct):
+    """Drop rows before `train_start` for TRAINING while keeping exactly the
+    Validation/Test rows the untrimmed split would give.
+
+    rl_train splits at int(n * train_pct) and halves the holdout; backtest
+    --start cuts at int(n * start). After dropping the first `first` rows the
+    same absolute rows sit at (row - first), so both fractions are recomputed
+    to land there. Returns (trimmed_csv, train_pct, oos_start, info).
+    """
+    import shutil
+    import pandas as pd
+    src = Path(csv)
+    df = pd.read_csv(src)
+    n = len(df)
+    split = int(n * train_pct)
+    test0 = split + (n - split) // 2
+    ts = pd.to_datetime(df["timestamp"], errors="coerce")
+    mask = (ts >= pd.Timestamp(train_start)).to_numpy()
+    if not mask.any():
+        raise ValueError(f"no rows on/after {train_start} in {src.name}")
+    first = int(mask.argmax())
+    if first == 0:
+        raise ValueError(f"{train_start} is not after the first row — nothing to trim")
+    if first >= split:
+        raise ValueError(f"{train_start} (row {first}) is past the train split (row {split})")
+    out = df.iloc[first:].reset_index(drop=True)
+    m = len(out)
+    new_pct = _frac_for_row(m, split - first)
+    new_oos = _frac_for_row(m, test0 - first)
+    dst = src.with_name(f"{src.stem}_from_{train_start}.csv")
+    out.to_csv(dst, index=False)
+    sidecar = src.with_suffix(".params.json")
+    if sidecar.exists():
+        shutil.copy(sidecar, dst.with_suffix(".params.json"))
+    t = out["timestamp"]
+    info = {
+        "source_csv": str(src), "train_start": train_start, "rows_dropped": first,
+        "rows": m, "train_rows": split - first, "train_pct": new_pct, "oos_start": new_oos,
+        "train_span": f"{t.iloc[0]} -> {t.iloc[split - first - 1]}",
+        "validation_span": f"{t.iloc[split - first]} -> {t.iloc[test0 - first - 1]}",
+        "test_span": f"{t.iloc[test0 - first]} -> {t.iloc[-1]}",
+        "untrimmed_split_rows": [split, test0],
+    }
+    return str(dst), new_pct, new_oos, info
+
+
+def _trades_pnl(name):
+    """Per-trade net pnl from the stored backtest trades CSV, or None."""
+    import pandas as pd
+    meta = Path(backtest_meta_path(name))
+    candidates = [meta.with_name(f"{name}_live_bt_trades.csv"),
+                  *sorted(meta.parent.glob("*trades*.csv"))]
+    for p in candidates:
+        if p.is_file():
+            df = pd.read_csv(p)
+            for col in ("pnl_dollars", "net_pnl", "pnl", "pnl_pct", "profit"):
+                if col in df.columns:
+                    return df[col].to_numpy(dtype=float)
+    return None
+
+
+def summarize_seeds(rows):
+    """Per-arm aggregate over seeds: PF spread, pooled trades, pooled PF."""
+    import numpy as np
+    out = []
+    for arm in dict.fromkeys(r["arm"] for r in rows):
+        rs = [r for r in rows if r["arm"] == arm and r.get("oos_pf") is not None]
+        if len(rs) < 2:
+            continue
+        pfs = [r["oos_pf"] for r in rs]
+        los = [r["oos_pf_ci95_lo"] for r in rs if r.get("oos_pf_ci95_lo") is not None]
+        rets = [r["oos_return"] for r in rs if r.get("oos_return") is not None]
+        pnls = [p for p in (_trades_pnl(r["model"]) for r in rs) if p is not None]
+        pooled_pf = pooled_trades = None
+        if len(pnls) == len(rs):
+            allp = np.concatenate(pnls)
+            gp, gl = float(allp[allp > 0].sum()), float(-allp[allp < 0].sum())
+            pooled_pf = (gp / gl) if gl > 0 else None
+            pooled_trades = int(len(allp))
+        out.append({
+            "arm": arm, "n_seeds": len(rs), "seeds": [r.get("seed") for r in rs],
+            "pf_mean": float(np.mean(pfs)), "pf_min": float(min(pfs)), "pf_max": float(max(pfs)),
+            "pf_lo95_min": (min(los) if los else None),
+            "seeds_pf_lo95_gt1": sum(1 for v in los if v > 1.0),
+            "return_mean": (float(np.mean(rets)) if rets else None),
+            "pooled_trades": pooled_trades, "pooled_pf": pooled_pf,
+        })
+    return out
+
+
 def collect(name, train_secs, steps):
     meta = read_json(train_meta_path(name))
     bt = read_json(backtest_meta_path(name)).get("result", {}) or {}
@@ -119,19 +222,27 @@ def fmt(v, kind="num"):
     return f"{v:.2f}"
 
 
-def write_markdown(rows, path, args):
+def write_markdown(rows, path, args, trim_info=None):
     lines = [f"# Observation ablation — {args.tag}", "",
              f"- date: {datetime.now():%Y-%m-%d %H:%M}",
              f"- csv: `{args.csv}` · steps/arm: {args.steps:,} · train_pct: {args.train_pct} · "
-             f"OOS backtest: best checkpoint, `--start {args.oos_start}`, conf 0",
-             f"- recipe: " + ", ".join(f"{k}={v}" for k, v in RECIPE.items()), "",
-             "| arm | window | thr | feats | obs | train min | steps/s | eval peak @ | EV | KL | "
-             "OOS trades | PF | PF 95% CI | return | max DD | DD 95% worst | sortino |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|"]
+             f"OOS backtest: best checkpoint, `--start {args.oos_start}`, conf 0"
+             + (f" · seeds: {args.seeds}" if args.seeds else ""),
+             f"- recipe: " + ", ".join(f"{k}={v}" for k, v in RECIPE.items())]
+    if trim_info:
+        lines.append(f"- train_start {trim_info['train_start']}: dropped {trim_info['rows_dropped']:,} rows "
+                     f"of `{Path(trim_info['source_csv']).name}` · train {trim_info['train_rows']:,} rows "
+                     f"({trim_info['train_span']}) · validation {trim_info['validation_span']} · "
+                     f"test {trim_info['test_span']} (same Val/Test rows as the untrimmed split)")
+    lines += ["",
+              "| arm | seed | window | thr | feats | obs | train min | steps/s | eval peak @ | EV | KL | "
+              "OOS trades | PF | PF 95% CI | return | max DD | DD 95% worst | sortino |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|"]
     for r in rows:
+        seed = "—" if r.get("seed") is None else str(r["seed"])
         if r.get("features") is None:
             # training itself failed — nothing to show but the reason
-            lines.append(f"| {r['arm']} | — | — | — | — | — | — | — | — | — | — | — | "
+            lines.append(f"| {r['arm']} | {seed} | — | — | — | — | — | — | — | — | — | — | — | "
                          f"{r.get('error', 'no data')} | — | — | — | — |")
             continue
         peak = (f"{fmt(r['eval_peak'])} @ {fmt(r['eval_peak_step'], 'int')}"
@@ -143,7 +254,7 @@ def write_markdown(rows, path, args):
         elif r.get("model_source", "best") != "best":
             ci += f" ({r['model_source']})"
         lines.append(
-            f"| {r['arm']} | {r['window']} | {r['corr_threshold']} | {fmt(r['features'],'int')} | "
+            f"| {r['arm']} | {seed} | {r['window']} | {r['corr_threshold']} | {fmt(r['features'],'int')} | "
             f"{fmt(r['obs_dim'],'int')} | {r['train_minutes']} | {fmt(r['steps_per_sec'])} | {peak} | "
             f"{fmt(r['explained_variance'])} | {fmt(r['approx_kl'])} | {fmt(r['oos_trades'],'int')} | "
             f"{fmt(r['oos_pf'])} | {ci} | {fmt(r['oos_return'],'pct')} | {fmt(r['oos_max_dd'],'pct')} | "
@@ -152,6 +263,21 @@ def write_markdown(rows, path, args):
               "point estimate lies inside A's PF 95% CI, its PF 95% lower bound is not more than "
               "0.10 below A's, its max DD is not more than 2 pp worse, and it trains at least "
               "1.5x faster. Single runs — rerun the winner and A once before trusting a close call."]
+    summary = summarize_seeds(rows)
+    if summary:
+        lines += ["", "## Across seeds", "",
+                  "| arm | seeds | PF mean | PF min–max | min PF CI lo | seeds w/ CI lo > 1 | "
+                  "mean return | pooled trades | pooled PF |",
+                  "|---|---:|---:|---|---:|---:|---:|---:|---:|"]
+        for sm in summary:
+            lines.append(f"| {sm['arm']} | {sm['n_seeds']} | {fmt(sm['pf_mean'])} | "
+                         f"{fmt(sm['pf_min'])}–{fmt(sm['pf_max'])} | {fmt(sm['pf_lo95_min'])} | "
+                         f"{sm['seeds_pf_lo95_gt1']}/{sm['n_seeds']} | {fmt(sm['return_mean'], 'pct')} | "
+                         f"{fmt(sm['pooled_trades'], 'int')} | {fmt(sm['pooled_pf'])} |")
+        lines += ["", "Pooled PF = sum of winning pnl / sum of losing pnl over every seed's Test trades "
+                  "(seeds share the same Test rows, so this is one sample with more trades, not "
+                  "independent evidence). An edge claim needs the PF 95% CI lower bound > 1.0 on "
+                  "most seeds, not just a pooled point estimate above 1."]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -167,6 +293,13 @@ def main():
     ap.add_argument("--mc_eval", type=int, default=0, help="quick-eval MC runs in rl_train (0 = off)")
     ap.add_argument("--mc", type=int, default=1000, help="order-shuffle MC in the OOS backtest")
     ap.add_argument("--bootstrap", type=int, default=1000)
+    ap.add_argument("--seeds", default="",
+                    help="comma list, e.g. 0,1,2 -> one model per (arm, seed), named <name>_s<seed>; "
+                         "empty = one unseeded run per arm")
+    ap.add_argument("--train_start", default="",
+                    help="YYYY-MM-DD: drop rows before this date for TRAINING only; the Validation/Test "
+                         "rows stay exactly those of the untrimmed --train_pct split (writes "
+                         "<csv>_from_<date>.csv and recomputes the fractions)")
     ap.add_argument("--prefix", default="abl")
     ap.add_argument("--tag", default=datetime.now().strftime("%Y%m%d_%H%M"))
     ap.add_argument("--dry_run", action="store_true")
@@ -179,19 +312,37 @@ def main():
     if not Path(args.csv).is_file():
         ap.error(f"csv not found: {args.csv}")
 
+    seeds = [int(x) for x in args.seeds.split(",") if x.strip()] if args.seeds else [None]
+    trim_info = None
+    if args.train_start:
+        try:
+            args.csv, args.train_pct, args.oos_start, trim_info = trim_for_train_start(
+                args.csv, args.train_start, args.train_pct)
+        except ValueError as exc:
+            ap.error(str(exc))
+        print(f"[trim] {Path(trim_info['source_csv']).name} -> {args.csv}: dropped "
+              f"{trim_info['rows_dropped']:,} rows; train {trim_info['train_rows']:,} rows "
+              f"({trim_info['train_span']}); validation {trim_info['validation_span']}; "
+              f"test {trim_info['test_span']}; effective --train_pct {args.train_pct} "
+              f"--oos_start {args.oos_start}")
+
     py = sys.executable
     log_dir = WORK_DIR / "artifacts" / "ablation" / args.tag
     log_dir.mkdir(parents=True, exist_ok=True)
     rows = []
-    print(f"=== obs ablation [{args.tag}] arms={arms} steps={args.steps:,} csv={args.csv}")
+    print(f"=== obs ablation [{args.tag}] arms={arms} seeds={seeds} steps={args.steps:,} csv={args.csv}")
 
-    for arm in arms:
+    for arm, seed in [(a, sd) for a in arms for sd in seeds]:
         window, thr = ARMS[arm]
         name = f"{args.prefix}_{arm}_w{window}_t{int(round(thr * 100)):03d}"
+        if seed is not None:
+            name += f"_s{seed}"
         train_cmd = [py, "rl_train.py", args.csv, "--name", name,
                      "--steps", str(args.steps), "--window", str(window),
                      "--corr_threshold", str(thr), "--train_pct", str(args.train_pct),
                      "--max_hold", str(args.max_hold), "--mc_eval", str(args.mc_eval)]
+        if seed is not None:
+            train_cmd += ["--seed", str(seed)]
         for k, v in RECIPE.items():
             train_cmd += [f"--{k}", v]
         diag_cmd = [py, "train_diagnose.py", name]
@@ -201,7 +352,7 @@ def main():
                   "--mc", str(args.mc), "--bootstrap", str(args.bootstrap),
                   "--random_baseline", "0"]
 
-        print(f"\n--- arm {arm}: window={window} corr_threshold={thr} -> {name}")
+        print(f"\n--- arm {arm} seed {seed}: window={window} corr_threshold={thr} -> {name}")
         if args.dry_run:
             for c in (train_cmd, diag_cmd, bt_cmd):
                 print("   ", " ".join(c))
@@ -209,7 +360,7 @@ def main():
 
         rc, train_secs = run_step(train_cmd, log_dir / f"{name}.train.log", "train")
         if rc != 0:
-            rows.append({"arm": arm, "model": name, "error": f"train failed rc={rc}"})
+            rows.append({"arm": arm, "seed": seed, "model": name, "error": f"train failed rc={rc}"})
             continue
         run_step(diag_cmd, log_dir / f"{name}.diag.log", "diag")
         rc, _ = run_step(bt_cmd, log_dir / f"{name}.backtest.log", "backtest")
@@ -222,26 +373,34 @@ def main():
             bt_final = [("final" if c == "best" else c) for c in bt_cmd]
             rc, _ = run_step(bt_final, log_dir / f"{name}.backtest.log", "backtest(final)")
             source_used = "final (no best checkpoint)"
-        row = {"arm": arm, **collect(name, train_secs, args.steps), "model_source": source_used}
+        row = {"arm": arm, "seed": seed, **collect(name, train_secs, args.steps),
+               "model_source": source_used}
         if rc != 0:
             row["error"] = f"backtest failed rc={rc}"
         rows.append(row)
         # persist after every arm so a crash mid-way loses nothing
         (WORK_DIR / "docs" / f"ablation_{args.tag}.json").write_text(
-            json.dumps({"args": vars(args), "recipe": RECIPE, "rows": rows}, indent=2),
+            json.dumps({"args": vars(args), "recipe": RECIPE, "trim": trim_info, "rows": rows,
+                        "across_seeds": summarize_seeds(rows)}, indent=2),
             encoding="utf-8")
-        write_markdown(rows, WORK_DIR / "docs" / f"ablation_{args.tag}.md", args)
+        write_markdown(rows, WORK_DIR / "docs" / f"ablation_{args.tag}.md", args, trim_info)
 
     if args.dry_run:
         return 0
     print(f"\n=== done: docs/ablation_{args.tag}.md")
     for r in rows:
+        label = r['arm'] if r.get('seed') is None else f"{r['arm']} s{r['seed']}"
         if "error" in r:
-            print(f"  {r['arm']}: {r['error']}")
+            print(f"  {label}: {r['error']}")
         else:
-            print(f"  {r['arm']}: obs {r['obs_dim']}  {r['train_minutes']} min  "
+            print(f"  {label}: obs {r['obs_dim']}  {r['train_minutes']} min  "
                   f"PF {fmt(r['oos_pf'])} CI [{fmt(r['oos_pf_ci95_lo'])}, {fmt(r['oos_pf_ci95_hi'])}]  "
                   f"DD {fmt(r['oos_max_dd'], 'pct')}  EV {fmt(r['explained_variance'])}")
+    for sm in summarize_seeds(rows):
+        print(f"  {sm['arm']} across {sm['n_seeds']} seeds: PF mean {fmt(sm['pf_mean'])} "
+              f"[{fmt(sm['pf_min'])}, {fmt(sm['pf_max'])}]  pooled PF {fmt(sm['pooled_pf'])} "
+              f"on {fmt(sm['pooled_trades'], 'int')} trades  CI-lo>1: "
+              f"{sm['seeds_pf_lo95_gt1']}/{sm['n_seeds']}")
     return 0
 
 

@@ -142,6 +142,7 @@ datetime g_last = 0;
 long     g_rows = 0;
 datetime g_first_bar = 0;   // open time of first collected bar (M1 range start)
 datetime g_last_bar  = 0;   // open time of last collected bar  (M1 range end)
+bool     g_near_checked = false; // nearness self-check done (see NearnessSelfCheck)
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -251,6 +252,15 @@ int OnInit()
    g_uses_candles = true;
    // Uses CP_* globals (just set from inputs above) — identical to EA's
    // RL_BuildFeatureMap call, so collector and EA compute candles identically.
+   // ⚠ KNOWN PARAMETER SHIFT (found 2026-10-10): CandlePatterns.mq5 declares
+   //   three `input group` lines and iCustom() counts each one as a parameter
+   //   slot, so every value below lands later than its name says. Effective
+   //   values since v1.10 (2026-05): Marubozu threshold = CP_HammerBodyMaxPct
+   //   (0.30, not 0.95), MatHold outer-body min = 1.0 (MatHold never fires),
+   //   Inside/Outside strict = false, … Collector and EA share this exact call,
+   //   so every trained model and live EA is self-consistent. Do NOT "fix" it
+   //   without re-collecting data and retraining every candle-feature model —
+   //   see docs/data_side_2026-10-10.md.
    g_h_candles = iCustom(_Symbol, _Period, "CandlePatterns",
       CP_Hammer, CP_Engulfing, CP_Inside, CP_Outside,
       CP_Star, CP_Soldiers, CP_Marubozu, CP_Harami,
@@ -286,6 +296,8 @@ int OnInit()
    // Force-load PriceNearness so near_*/range_pos_N features compute in the
    // dynamic dump. Same parity contract as the EA's RL_BuildFeatureMap call.
    g_uses_nearness = true;
+   PrintFormat("[COL] PriceNearness horizons passed to iCustom: %d / %d / %d",
+               NEAR_N1, NEAR_N2, NEAR_N3);
    g_h_nearness = iCustom(_Symbol, _Period, "PriceNearness",
       NEAR_N1, NEAR_N2, NEAR_N3);
    if(g_h_nearness == INVALID_HANDLE) {
@@ -323,6 +335,16 @@ void OnTick()
    if(!RL_BuildAllFeatures(_Symbol, _Period, 1, feats)) return;
    if(ArraySize(feats) < RL_ALL_FEATURES_COUNT) return;
 
+   // One-time guard against iCustom parameter mapping bugs: once enough
+   // history exists, the indicator's level lines must equal the highest high
+   // computed here directly. A mismatch stops the run before hours of bad
+   // data get written (the 2026-08 collections ran with shifted horizons).
+   if(!g_near_checked && Bars(_Symbol, _Period) > NEAR_N3 + 2) {
+      int verdict = NearnessSelfCheck();
+      if(verdict < 0) { ExpertRemove(); return; }
+      g_near_checked = (verdict > 0);
+   }
+
    datetime bt = iTime(_Symbol, _Period, 1);
    string row = TimeToString(bt, TIME_DATE|TIME_MINUTES);
    row += "," + DoubleToString(iOpen(_Symbol, _Period, 1), 5);
@@ -337,6 +359,39 @@ void OnTick()
    g_rows++;
    if(g_first_bar == 0) g_first_bar = bt;
    g_last_bar = bt;
+}
+
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+//| Compare PriceNearness level buffers 9/11/13 (highest high over    |
+//| N1/N2/N3, ending at the last closed bar) with iHighest().         |
+//| Returns 1 = all match, 0 = data not ready (retry), -1 = mismatch. |
+//+------------------------------------------------------------------+
+int NearnessSelfCheck()
+{
+   if(g_h_nearness == INVALID_HANDLE) return 1;
+   int ns[3];
+   ns[0] = NEAR_N1; ns[1] = NEAR_N2; ns[2] = NEAR_N3;
+   bool ok = true;
+   for(int k = 0; k < 3; k++) {
+      double buf[];
+      if(CopyBuffer(g_h_nearness, 9 + 2 * k, 1, 1, buf) != 1) return 0;
+      int idx = iHighest(_Symbol, _Period, MODE_HIGH, ns[k], 1);
+      if(idx < 0) return 0;
+      double direct = iHigh(_Symbol, _Period, idx);
+      bool match = (MathAbs(buf[0] - direct) <= _Point * 0.5);
+      if(!match) ok = false;
+      PrintFormat("[COL] nearness self-check N=%d: indicator high=%s direct=%s -> %s",
+                  ns[k], DoubleToString(buf[0], _Digits), DoubleToString(direct, _Digits),
+                  match ? "OK" : "MISMATCH");
+   }
+   if(!ok) {
+      Print("[COL] ❌ PriceNearness is not using the horizons passed by iCustom. ",
+            "Recompile PriceNearness.mq5 v1.11+ (no `input group`) in MQL5/Indicators/ ",
+            "and collect again. Stopping.");
+      return -1;
+   }
+   return 1;
 }
 
 //+------------------------------------------------------------------+

@@ -2,7 +2,7 @@
 
 > วันที่: 2026-10-03
 > อ้างอิง: https://www.pybroker.com/en/latest/ (BCa bootstrap, EvalMetrics, walkforward)
-> สถานะ: เฟส 1-2 เสร็จแล้ว (2026-10-04) · เฟส 3-4 ยังไม่เริ่ม
+> สถานะ: เฟส 1-2 เสร็จแล้ว (2026-10-04) · เฟส 3.1 ปิดแล้ว 2026-10-10: ความเร็ว 1.8–2.0x ✓ · variance check 3 seed ชี้ว่า 1.42 เดิม selection-inflated, Test ล้วน PF<1 ทุก seed → หยุดจูน training ไปฝั่งข้อมูล → [phase3_1_obs_ablation_2026-10-09.md](phase3_1_obs_ablation_2026-10-09.md) · 3.2 / 4 ยังไม่เริ่ม
 
 ---
 
@@ -130,8 +130,9 @@ equity R2 0.710 · ชนะติดกันสูงสุด 6 / แพ้�
 | ตัด features ซ้ำ 122 → 60 | 1,803 | ~17 นาที + EV อาจดีขึ้น |
 | ทั้งสองอย่าง | 903 | ~9 นาที |
 
-**วิธีเลือกฟีเจอร์ที่จะตัด:** ใช้ correlation matrix — RSI/ATR/Stoch/CCI/WPR/ADX หลาย period ซ้อนกันเยอะ
-(เช่น rsi_6/10/14/18/22/26/30/34/36 → เก็บ 3 ตัวพอ) ทำเป็น tool `tools/data/prune_features.py`
+**วิธีเลือกฟีเจอร์ที่จะตัด:** ไม่ต้องสร้าง tool ใหม่ — `rl_train.py --corr_threshold` ตัด feature ที่ correlation สูง
+โดย fit จากช่วง Train เท่านั้น (งานเดือน ก.ย.) และ Data Tools ในแอปมีตัวเดียวกัน · ที่ 0.95 เหลือ 85 จาก 181 features
+(ตระกูล period ซ้อน stoch/wpr/cci/adx/rsi/atr โดนตัดมากสุด) · แผนทดลองฉบับเต็ม: `phase3_1_obs_ablation_2026-10-09.md`
 
 ### 3.2 ทดสอบ GPU (ต้องวัดจริง ไม่ฟันธงล่วงหน้า)
 
@@ -196,3 +197,16 @@ PyBroker รันหลาย instrument พร้อมกันพร้อ�
 - https://www.pybroker.com/en/latest/reference/pybroker.eval.html — EvalMetrics, BootstrapResult, DrawdownMetrics
 - https://www.pybroker.com/en/latest/notebooks/3.%20Evaluating%20with%20Bootstrap%20Metrics.html — BCa method
 - ผลวัดคอขวด: scratchpad `bench_bottleneck.py`, `bench_split.py` (2026-10-03)
+
+---
+
+## ของเล็กที่หยิบเพิ่ม (2026-10-10)
+
+- **เมตริกที่เหลือของ EvalMetrics** ใน `backtest_live.py` + หน้า Results: largest win / loss (% · $ · แท่งที่ถือ),
+  avg bars ของไม้ชนะ vs ไม้แพ้, annual volatility (std ของ bar returns × √bars/ปี) → key ใน `meta["result"]`:
+  `largest_win_pct/dollars/bars`, `largest_loss_*`, `avg_winning_trade_bars`, `avg_losing_trade_bars`, `annual_volatility`
+- **dataset cache** (`training_data.read_csv_cached`): pickle ของผล `pd.read_csv` ใน `artifacts/cache/datasets/`
+  key = path + size + mtime + เวอร์ชัน pandas · ใช้โดย `load_dataset` (train/fine-tune) และ `backtest_live`
+  · ตรวจแล้วได้ frame เท่ากันทุกค่า/dtype, ไฟล์เสียจะ rebuild เอง, โหลดซ้ำ 0.50s → 0.03s (16x; ประหยัดมากกว่านี้เมื่อ OS cache เย็น)
+  · validation ยังรันทุกครั้ง ไม่ cache ผลที่ validate แล้ว
+

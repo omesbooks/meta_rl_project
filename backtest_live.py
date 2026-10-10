@@ -30,6 +30,7 @@ import sys, io, argparse, sqlite3, json, math
 from pathlib import Path
 from datetime import datetime
 from statistics import NormalDist
+from training_data import read_csv_cached
 import numpy as np
 import pandas as pd
 
@@ -641,7 +642,7 @@ def run_backtest_live(args):
     print("=" * 60)
 
     # Load data
-    df = pd.read_csv(args.csv)
+    df = read_csv_cached(args.csv)   # same frame as pd.read_csv, cached after first load
     leaky = [c for c in df.columns
              if any(k in c.lower() for k in ("future_", "forward_", "next_", "target"))]
     if leaky:
@@ -1132,6 +1133,16 @@ def run_backtest_live(args):
     avg_trade_bars = (float(np.mean([t['bars_held'] for t in trades]))
                       if trades else 0.0)
 
+    # Extremes, hold time by outcome, volatility (rest of PyBroker's EvalMetrics)
+    win_bars = [t['bars_held'] for t in wins]
+    loss_bars = [t['bars_held'] for t in losses]
+    avg_win_bars = float(np.mean(win_bars)) if win_bars else None
+    avg_loss_bars = float(np.mean(loss_bars)) if loss_bars else None
+    biggest_win = max(trades, key=lambda t: t['pnl_pct']) if trades else None
+    biggest_loss = min(trades, key=lambda t: t['pnl_pct']) if trades else None
+    annual_vol = (float(np.std(bar_returns, ddof=1) * np.sqrt(bars_per_year))
+                  if len(bar_returns) > 1 and bars_per_year > 0 else None)
+
     print(f"  Total trades       : {len(trades):,}")
     print(f"    Long  trades     : {sum(1 for t in trades if t['side']=='long'):,}")
     print(f"    Short trades     : {sum(1 for t in trades if t['side']=='short'):,}")
@@ -1159,7 +1170,16 @@ def run_backtest_live(args):
     if equity_r2 is not None:
         print(f"  Equity R2          : {equity_r2:.3f}  (1.0 = perfectly straight curve)")
     print(f"  Max consecutive    : {max_wins} wins / {max_losses} losses")
-    print(f"  Avg bars held      : {avg_trade_bars:.1f} of max {args.max_hold}")
+    print(f"  Avg bars held      : {avg_trade_bars:.1f} of max {args.max_hold}"
+          + (f"  (winners {avg_win_bars:.1f} / losers {avg_loss_bars:.1f})"
+             if avg_win_bars is not None and avg_loss_bars is not None else ""))
+    if biggest_win is not None and biggest_loss is not None:
+        print(f"  Largest win / loss : {biggest_win['pnl_pct']:+.3%} "
+              f"(${biggest_win['pnl_dollars']:+,.2f}, {biggest_win['bars_held']} bars) / "
+              f"{biggest_loss['pnl_pct']:+.3%} "
+              f"(${biggest_loss['pnl_dollars']:+,.2f}, {biggest_loss['bars_held']} bars)")
+    if annual_vol is not None:
+        print(f"  Annual volatility  : {annual_vol:.2%}  (std of {sharpe_timeframe} bar returns, annualized)")
 
     # Exit reason breakdown
     print(f"\n  Exit reasons:")
@@ -1517,6 +1537,15 @@ def run_backtest_live(args):
         "max_consecutive_wins": max_wins,
         "max_consecutive_losses": max_losses,
         "avg_trade_bars": avg_trade_bars,
+        "avg_winning_trade_bars": avg_win_bars,
+        "avg_losing_trade_bars": avg_loss_bars,
+        "largest_win_pct": float(biggest_win['pnl_pct']) if biggest_win else None,
+        "largest_win_dollars": float(biggest_win['pnl_dollars']) if biggest_win else None,
+        "largest_win_bars": int(biggest_win['bars_held']) if biggest_win else None,
+        "largest_loss_pct": float(biggest_loss['pnl_pct']) if biggest_loss else None,
+        "largest_loss_dollars": float(biggest_loss['pnl_dollars']) if biggest_loss else None,
+        "largest_loss_bars": int(biggest_loss['bars_held']) if biggest_loss else None,
+        "annual_volatility": annual_vol,
         "exit_reasons": dict(reasons),
         "signals": n_signals,
         "executed": n_executed,

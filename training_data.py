@@ -1,9 +1,14 @@
 """Shared chronological data validation and train-only preprocessing."""
+import hashlib
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+# On-disk cache for parsed CSVs (artifacts/ and *.pkl are gitignored).
+CACHE_DIR = Path(__file__).resolve().parent / "artifacts" / "cache" / "datasets"
 
 NON_FEATURES = {"timestamp", "symbol", "ticker", "open", "high", "low", "close", "volume"}
 LEAKY = ("future_", "forward_", "next_", "target")
@@ -45,8 +50,45 @@ def validate_frame(df, label="dataset", features=None):
     return df.sort_values("timestamp").reset_index(drop=True)
 
 
+def _cache_key(path):
+    st = path.stat()
+    raw = f"{path}|{st.st_size}|{st.st_mtime_ns}|pandas={pd.__version__}|v1"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def read_csv_cached(path):
+    """pd.read_csv with a pickle cache keyed by path + size + mtime.
+
+    Returns exactly what pd.read_csv(path) would (same dtypes and values) —
+    the cache only skips the multi-second parse of a large CSV on repeat
+    loads. Validation still runs on every load. Any cache problem (unwritable
+    dir, corrupt file, pandas upgrade) silently falls back to a plain read.
+    """
+    path = Path(path).resolve()
+    cache_file = None
+    try:
+        cache_file = CACHE_DIR / f"{_cache_key(path)}.pkl"
+        if cache_file.is_file():
+            try:
+                return pd.read_pickle(cache_file)
+            except Exception:
+                cache_file.unlink(missing_ok=True)   # corrupt/partial -> rebuild
+    except Exception:
+        cache_file = None
+    df = pd.read_csv(path)
+    if cache_file is not None:
+        try:
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            tmp = cache_file.with_name(f"{cache_file.stem}.{os.getpid()}.tmp")
+            df.to_pickle(tmp, protocol=5)
+            os.replace(tmp, cache_file)              # atomic: readers never see a partial file
+        except Exception:
+            pass
+    return df
+
+
 def load_dataset(path, features=None):
-    return validate_frame(pd.read_csv(path), str(path), features)
+    return validate_frame(read_csv_cached(path), str(path), features)
 
 
 def prune_features(df, features, threshold):

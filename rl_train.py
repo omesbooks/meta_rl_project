@@ -148,6 +148,11 @@ def build_parser():
     ap.add_argument("--vf_coef", type=float, default=0.5,
                     help="value function loss coefficient (default 0.5)")
     ap.add_argument("--expected_recipe_sha256", default="", help="confirmed dashboard recipe fingerprint")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="random seed for the algorithm, torch/numpy and the env's random "
+                         "episode starts (default None = nondeterministic). Same data + "
+                         "recipe + seed reproduces a run; use different seeds to measure "
+                         "run-to-run variance")
     return ap
 
 
@@ -407,6 +412,7 @@ def train(args, run, prepared=None):
             "action_profile_config": action_profile_cfg,
             "max_hold": args.max_hold,
             "net_arch": net_arch,
+            "seed": args.seed,
             **algo_hparams,
         },
     }
@@ -458,6 +464,16 @@ def train(args, run, prepared=None):
         print("[reward] developer formula enabled")
     log_dir = str(logs_dir(args.name))
 
+    # Seed: SB3 seeds torch/numpy/random, the action space and the training
+    # VecEnv (-> TradingEnv.reset(seed) -> np_random episode starts). The eval
+    # env gets its own derived seed so validation episodes are repeatable too.
+    if args.seed is not None:
+        print(f"[seed] {args.seed} (eval env {args.seed + 1})")
+        if eval_env is not None:
+            eval_env.seed(args.seed + 1)
+    else:
+        print("[seed] none — run is not reproducible; pass --seed to compare runs")
+
     if args.algo == "ppo":
         model = PPO(
             "MlpPolicy", train_env,
@@ -473,6 +489,7 @@ def train(args, run, prepared=None):
             verbose=1,
             tensorboard_log=log_dir,
             policy_kwargs=dict(net_arch=net_arch),
+            seed=args.seed,
         )
         print(f"[hyper] lr={args.learning_rate}, clip={args.clip_range}, ent={args.ent_coef}")
         print(f"[hyper] n_steps={args.n_steps}, batch={args.batch_size}, epochs={args.n_epochs}")
@@ -490,6 +507,7 @@ def train(args, run, prepared=None):
             verbose=1,
             tensorboard_log=log_dir,
             policy_kwargs=dict(net_arch=net_arch),
+            seed=args.seed,
         )
         print(f"[hyper] lr={args.learning_rate}, batch={args.batch_size}, gamma={args.gamma}")
         print("[hyper] DQN ignores PPO-only clip/epochs/GAE/entropy/value settings")
@@ -505,6 +523,7 @@ def train(args, run, prepared=None):
             verbose=1,
             tensorboard_log=log_dir,
             policy_kwargs=dict(net_arch=net_arch),
+            seed=args.seed,
         )
         print(f"[hyper] lr={args.learning_rate}, n_steps={args.n_steps}, gamma={args.gamma}")
         print(f"[hyper] gae_lambda={args.gae_lambda}, ent={args.ent_coef}, vf={args.vf_coef}")

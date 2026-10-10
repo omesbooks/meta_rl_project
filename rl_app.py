@@ -7578,7 +7578,15 @@ class RLTradingStudio(ctk.CTk):
                      f"equity R2 {num(res.get('equity_r2'), 3)}")
         L.append(f"Streaks    max {res.get('max_consecutive_wins',0)} wins / "
                  f"{res.get('max_consecutive_losses',0)} losses in a row  ·  "
-                 f"avg bars held {num(res.get('avg_trade_bars'), 1)}")
+                 f"avg bars held {num(res.get('avg_trade_bars'), 1)} "
+                 f"(W {num(res.get('avg_winning_trade_bars'), 1)} / "
+                 f"L {num(res.get('avg_losing_trade_bars'), 1)})")
+        if res.get("largest_win_pct") is not None:
+            L.append(f"Extremes   largest win {pc(res.get('largest_win_pct'), 3)} "
+                     f"({num(res.get('largest_win_bars'), 0)} bars)  ·  "
+                     f"largest loss {pc(res.get('largest_loss_pct'), 3)} "
+                     f"({num(res.get('largest_loss_bars'), 0)} bars)  ·  "
+                     f"annual vol {pc(res.get('annual_volatility'), 1)}")
         amb = res.get('ambiguous_share_of_sl_tp')
         L.append(f"Execution  ambiguous(SL+TP same bar) {res.get('ambiguous_bars',0)}  ·  "
                  f"M1-resolved {res.get('m1_resolved',0)}  ·  "

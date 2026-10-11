@@ -7,7 +7,11 @@ tools/viz/live_viewer.py).
 A snapshot walks the policy deterministically over a slice of bars and records,
 per bar: OHLC + timestamp, the argmax action, position, equity, closed-trade
 pnl, every hidden activation of both towers (Actor + Critic), the action
-probabilities and V(s); plus the K strongest incoming weights of every neuron.
+probabilities and V(s); plus the K most influential incoming connections of
+every neuron, ranked by |weight| x std(source) over the captured bars — the
+typical size of what each connection actually adds. Ranking by |weight|
+alone over-draws inputs on a tiny scale: the env's unrealized pnl (std ~0.005)
+carries one of the largest Critic weights yet contributes almost nothing.
 Works for any net_arch depth/width, any activation function and any action
 profile. Only actor-critic policies (PPO / A2C) are supported — DQN has a
 single Q-network and no Actor/Critic split.
@@ -125,13 +129,19 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None):
     q = np.round(np.concatenate(blocks, axis=1) * 127).astype(np.int8)
 
     edges = {}
+    obs_std = np.stack(obs_rows).std(axis=0)
     for name, seq, head in (("actor", towers["actor"], policy.action_net),
                             ("critic", towers["critic"], policy.value_net)):
         mats = []
-        for W in [m.weight for m in seq if isinstance(m, torch.nn.Linear)] + [head.weight]:
+        weights = [m.weight for m in seq if isinstance(m, torch.nn.Linear)] + [head.weight]
+        # source spread of each matrix: the inputs, then the (unscaled) activations
+        # of the layer that feeds it — the record points are exactly those outputs
+        sources = [obs_std] + [np.stack(hid[(name, li)]).std(axis=0) for li in range(len(points[name]))]
+        for W, src_std in zip(weights, sources):
             Wn = W.detach().cpu().numpy()
             kk = int(min(k, Wn.shape[1]))
-            order = np.argsort(-np.abs(Wn), axis=1)[:, :kk]
+            influence = np.abs(Wn) * src_std[None, :]
+            order = np.argsort(-influence, axis=1, kind="stable")[:, :kk]
             mats.append({"rows": int(Wn.shape[0]), "cols": int(Wn.shape[1]), "k": kk,
                          "idx": b64(order.astype(np.int16)),
                          "w": b64(np.take_along_axis(Wn, order, 1).astype(np.float32))})
@@ -150,7 +160,7 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None):
         "ts": [ts.iloc[i] for i in bar_idx], "o": col("open"), "h": col("high"),
         "l": col("low"), "c": col("close"), "act": actions, "pos": position,
         "eq": [round(e, 6) for e in equity], "tpnl": [round(p, 6) for p in trade_pnl],
-        "edges": edges, "meta": dict(meta or {}, capture_s=round(time.perf_counter() - t_start, 3),
+        "edges": edges, "edge_rank": "abs_weight_x_source_std", "meta": dict(meta or {}, capture_s=round(time.perf_counter() - t_start, 3),
                                      created=time.strftime("%Y-%m-%d %H:%M:%S")),
     }
 

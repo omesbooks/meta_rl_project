@@ -90,6 +90,34 @@ def test_summary_matches_snapshot():
     json.dumps(s)
 
 
+def test_edges_ranked_by_influence_not_raw_weight():
+    """A tiny-scale input with a huge weight must lose to a normal-scale input
+    with a moderate weight — that is what the connection actually contributes."""
+    from stable_baselines3 import PPO
+    _, cfg = get_action_profile("basic_4")
+    df = _frame()
+    df["f0"] = df["f0"] * 1e-3                         # std ~0.001
+    make = lambda: TradingEnv(df, FEATS, window_size=WINDOW, random_start=False,
+                              max_steps=len(df) - WINDOW - 2, action_profile=cfg)
+    model = PPO("MlpPolicy", make(), n_steps=64, batch_size=32, seed=0, device="cpu",
+                policy_kwargs=dict(net_arch=[8]))
+    nf = len(FEATS)
+    tiny = [b * nf + 0 for b in range(WINDOW)]
+    normal = [b * nf + 1 for b in range(WINDOW)]
+    with torch.no_grad():
+        for seq in (model.policy.mlp_extractor.policy_net, model.policy.mlp_extractor.value_net):
+            W = next(m for m in seq if isinstance(m, torch.nn.Linear)).weight
+            W.fill_(0.01)
+            W[:, tiny] = 10.0
+            W[:, normal] = 0.5
+    snap = snap_mod.capture(model.policy, make(), WINDOW, 80, k=1)
+    assert snap["edge_rank"] == "abs_weight_x_source_std"
+    for tower in ("actor", "critic"):
+        m = snap["edges"][tower][0]
+        picked = np.frombuffer(base64.b64decode(m["idx"]), dtype=np.int16)
+        assert set(picked.tolist()) <= set(normal), (tower, picked)
+
+
 def test_rejects_non_actor_critic():
     class Q(torch.nn.Module):
         pass

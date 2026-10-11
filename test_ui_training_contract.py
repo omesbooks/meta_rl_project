@@ -428,6 +428,39 @@ class DashboardContractTests(unittest.TestCase):
         # snapshots are read-only: the confirmed recipe fingerprint must not change
         self.assertEqual(prepare(plain)["recipe_sha256"], prepare(viz)["recipe_sha256"])
 
+    def test_corr_threshold_field_reaches_recipe_and_walkforward(self):
+        default = self.capture_train()
+        self.assertEqual(float(default[default.index("--corr_threshold") + 1]), 1.0)
+        set_entry(self.app.train_corr, "0.95")
+        try:
+            cmd = self.capture_train()
+            self.assertEqual(cmd[cmd.index("--corr_threshold") + 1], "0.95")
+            self.assertEqual(prepare(cmd)["recipe"]["settings"]["corr_threshold"], 0.95)
+            self.app._wf_copy_from_train()
+            self.app.wf_csv.set(str(self.csv))
+            with patch.object(self.app, "_start_runner") as runner:
+                self.app._run_walkforward()
+            wf = runner.call_args.args[0]
+            self.assertEqual(wf[wf.index("--corr_threshold") + 1], "0.95")
+            set_entry(self.app.wf_corr, "")
+            with patch.object(self.app, "_start_runner") as runner:
+                self.app._run_walkforward()
+            self.assertNotIn("--corr_threshold", runner.call_args.args[0])
+        finally:
+            set_entry(self.app.train_corr, "1.0")
+
+    def test_corr_threshold_rejects_out_of_range(self):
+        with patch.object(rl_app.messagebox, "showerror") as err, \
+                patch.object(self.app, "_review_training_command") as review:
+            try:
+                for raw in ("", "0", "-0.1", "1.5", "nan", "bad"):
+                    set_entry(self.app.train_corr, raw)
+                    self.app._start_training()
+            finally:
+                set_entry(self.app.train_corr, "1.0")
+            review.assert_not_called()
+            self.assertEqual(err.call_count, 6)
+
     def test_viz_snapshot_lines_open_one_window_per_run(self):
         script = self.root / "tools" / "viz" / "live_viewer.py"
         script.parent.mkdir(parents=True)

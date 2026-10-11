@@ -252,7 +252,7 @@ flat for 10–50k steps→stop, train PF≫test PF→overfit.
 ### Train/test discipline
 - **Time-based split only** (no shuffle) — random split causes look-ahead bias.
 - **Normalize using TRAIN stats only**, saved to `<model>_norm.csv`.
-- Feature selection (correlation) must use TRAIN data only.
+- Feature selection (correlation) must use TRAIN data only. The Train page **Correlation threshold** field (→ `rl_train.py --corr_threshold`, default 1.0 = constants only, 0.95 ≈ 1.8x faster) prunes on Train rows inside the trainer; the Walk-forward page has the same field (blank = the CSV's own `.features.json` threshold) and "⧉ Copy settings from Train" copies it. A `_clean` CSV without `.features.json` (cleaned before 2026-09) is rejected — train the original CSV with this field instead.
 
 ---
 

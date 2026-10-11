@@ -1413,6 +1413,20 @@ class RLTradingStudio(ctk.CTk):
             messagebox.showerror("Invalid settings", str(exc))
             return None
 
+    def _corr_threshold_field(self, raw, label, allow_blank=False):
+        """Correlation threshold: 0 < r <= 1 (1 = drop constant features only).
+        Blank returns "" when allowed (= let the script decide)."""
+        if allow_blank and not str(raw).strip():
+            return ""
+        try:
+            value = input_number(raw, label, 0, 1)
+            if value <= 0:
+                raise ValueError(f"{label}: must be > 0 (use 1 to keep every non-constant feature)")
+            return value
+        except ValueError as exc:
+            messagebox.showerror("Invalid settings", str(exc))
+            return None
+
     def _parse_int_field(self, entry, default, label, minimum=1):
         """Parse whole-number GUI fields before any run-state widgets change."""
         raw = entry.get().strip() if hasattr(entry, "get") else str(entry).strip()
@@ -5232,8 +5246,21 @@ class RLTradingStudio(ctk.CTk):
         ctk.CTkLabel(wm,
             text="MC หลัง quick eval: shuffle DD + skip-trades retention (SQX-style)",
             text_color=COLOR_DIM, font=ctk.CTkFont(size=10), anchor="w",
-            justify="left", wraplength=560,
-            ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(4, 0))
+            justify="left", wraplength=380,
+            ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        # Correlation pruning -> rl_train --corr_threshold (fit on Train rows only,
+        # so it never sees Validation/Test — unlike an un-tracked _clean CSV)
+        ctk.CTkLabel(wm, text="Correlation threshold (1 = off)", text_color=COLOR_DIM,
+                      font=ctk.CTkFont(size=12)
+                      ).grid(row=3, column=2, sticky="w", padx=(8, 0), pady=(10, 0))
+        self.train_corr = ctk.CTkEntry(wm, placeholder_text="1.0")
+        self.train_corr.insert(0, "1.0")
+        self.train_corr.grid(row=4, column=2, sticky="ew", padx=(8, 0), pady=(2, 0))
+        ctk.CTkLabel(wm,
+            text="ตัด feature ที่ |r| เกินค่านี้ (คำนวณจากแถว Train เท่านั้น) · 0.95 เทรนเร็วขึ้น ~1.8x",
+            text_color=COLOR_DIM, font=ctk.CTkFont(size=10), anchor="w",
+            justify="left", wraplength=280,
+            ).grid(row=5, column=2, sticky="w", padx=(8, 0), pady=(4, 0))
         self.train_window_hint = ctk.CTkLabel(
             wm,
             text="Recommended: 10 (H4 default)",
@@ -7148,6 +7175,9 @@ class RLTradingStudio(ctk.CTk):
         mc_skip = self._fraction_field(self.train_mc_skip.get(), "MC Skip %", allow_one=False)
         if train_pct is None or mc_skip is None:
             return
+        corr_threshold = self._corr_threshold_field(self.train_corr.get(), "Correlation threshold")
+        if corr_threshold is None:
+            return
 
         # Guard against silent overwrite: organized artifacts and legacy root
         # artifacts are both considered the same model name.
@@ -7200,6 +7230,7 @@ class RLTradingStudio(ctk.CTk):
             "--train_pct", str(train_pct),
             "--mc_eval", str(mc_eval_int),
             "--mc_skip_frac", str(mc_skip),
+            "--corr_threshold", f"{corr_threshold:g}",
             "--reward_mode", reward,
             "--reward_profile", reward_profile,
             "--reward_overrides", reward_overrides,
@@ -8116,6 +8147,14 @@ class RLTradingStudio(ctk.CTk):
             wraplength=1100, justify="left")
         self.wf_recipe_hint.grid(row=2, column=0, columnspan=3,
                                  sticky="w", pady=(8, 0))
+        ctk.CTkLabel(reward_sub, text="Correlation threshold (blank = CSV's own)",
+                     text_color=COLOR_DIM).grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self.wf_corr = ctk.CTkEntry(reward_sub, placeholder_text="from CSV")
+        self.wf_corr.grid(row=4, column=0, sticky="ew", pady=(2, 0))
+        ctk.CTkLabel(reward_sub,
+            text="ต้องตรงกับหน้า Train · ปล่อยว่าง = ใช้ค่าจาก .features.json ของ CSV (หรือ 1 = ไม่ตัด)",
+            font=ctk.CTkFont(size=11), text_color=COLOR_DIM, wraplength=700, justify="left"
+            ).grid(row=4, column=1, columnspan=2, sticky="w", padx=(8, 0), pady=(2, 0))
 
         # PPO hyperparameters — mirror of the Train page's Advanced block
         ppo_head = ctk.CTkFrame(c1, fg_color="transparent")
@@ -8291,6 +8330,8 @@ class RLTradingStudio(ctk.CTk):
 
         put(self.wf_window, self.train_window.get())
         put(self.wf_maxhold, self.train_maxhold.get())
+        if hasattr(self, "train_corr"):
+            put(self.wf_corr, self.train_corr.get())
         self.wf_reward_mode.set(self.train_reward.get())
         self.wf_reward_profile.set(self.train_reward_profile.get())
 
@@ -8336,7 +8377,7 @@ class RLTradingStudio(ctk.CTk):
             put(wf_entry, train_entry.get())
 
         self._log(self.wf_log,
-                  "Copied recipe from Train page: window/max hold/reward/action/PPO "
+                  "Copied recipe from Train page: window/max hold/correlation threshold/reward/action/PPO "
                   "(steps + output name ไม่ถูก copy — เป็นค่าเฉพาะของ Walk-Forward)",
                   "info")
 
@@ -8356,6 +8397,11 @@ class RLTradingStudio(ctk.CTk):
         nepochs = self._parse_int_field(self.wf_nepochs, 10, "WF N Epochs")
         batch = self._parse_int_field(self.wf_batch, 64, "WF Batch Size")
         if None in (windows, steps, window, max_hold, nsteps, nepochs, batch):
+            return
+        wf_corr = self._corr_threshold_field(
+            self.wf_corr.get() if hasattr(self, "wf_corr") else "", "WF Correlation threshold",
+            allow_blank=True)
+        if wf_corr is None:
             return
         output_name = self._normalize_output_name(
             self.wf_name, "wf_prod", "Walk-Forward output name")
@@ -8389,6 +8435,8 @@ class RLTradingStudio(ctk.CTk):
             "--gae_lambda", self.wf_gae.get(),
             "--vf_coef", self.wf_vf.get(),
         ]
+        if wf_corr != "":
+            cmd.extend(["--corr_threshold", f"{wf_corr:g}"])
         if action_params:
             cmd.extend(["--action_params", action_params])
         if self.wf_action_profile_json_value:

@@ -163,7 +163,8 @@ def check_selection_scope(path, train):
         if pd.Timestamp(info["fit_end"]) > train.timestamp.max():
             raise ValueError("Feature selection used data later than this Train cutoff; use raw CSV")
     elif "_clean" in Path(path).stem:
-        raise ValueError("Clean CSV has no feature-selection provenance; select the original CSV and clean again")
+        raise ValueError("Clean CSV has no feature-selection provenance; select the original CSV and "
+                         "set 'Correlation threshold' on the Train page (or clean it again in Tools)")
 
 
 def walkforward_source(path):

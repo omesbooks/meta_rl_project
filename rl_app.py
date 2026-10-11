@@ -27,6 +27,7 @@ from artifact_paths import (
     find_params_path,
     find_trades_path,
     legacy_final_model_path,
+    final_model_path,
     model_names_from_artifacts,
     train_meta_path,
     model_dir,
@@ -1447,6 +1448,7 @@ class RLTradingStudio(ctk.CTk):
                 "Run in progress", "A run is in progress — stop it and exit?"):
             return
         self.runner.stop()
+        self._close_viz_window()
         self.pipeline_stop_requested = True
         proc = getattr(self, "pipeline_proc", None)
         if proc is not None:
@@ -1463,6 +1465,111 @@ class RLTradingStudio(ctk.CTk):
             if getattr(proc, "pid", None):
                 mark_process_runs(proc.pid, "cancelled")
         self.destroy()
+
+    # --------------------------------------------------------
+    # Live 3D visual (tools/viz/live_viewer.py, pywebview window)
+    # --------------------------------------------------------
+    def _on_viz_snapshot(self, index, step, path):
+        """A training run wrote snapshot `index`; open the window on the first one."""
+        viz_dir = Path(path).parent
+        if hasattr(self, "train_viz_status"):
+            self.train_viz_status.configure(
+                text=f"visual: eval {index + 1} @ {step:,} steps", text_color="#19e6ff")
+        if getattr(self, "_viz_run_dir", None) != viz_dir:
+            self._viz_run_dir = viz_dir
+            self._launch_viz_window(["--run_dir", str(viz_dir)])
+
+    def _viz_window_running(self):
+        proc = getattr(self, "_viz_proc", None)
+        return proc is not None and proc.poll() is None
+
+    def _close_viz_window(self):
+        proc = getattr(self, "_viz_proc", None)
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=1.5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self._viz_proc = None
+
+    def _launch_viz_window(self, viewer_args):
+        """(Re)open the viewer window as its own process (pywebview owns its main thread)."""
+        script = WORK_DIR / "tools" / "viz" / "live_viewer.py"
+        if not script.exists():
+            messagebox.showerror("Live visual", f"Viewer not found: {script}")
+            return
+        self._close_viz_window()
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            self._viz_proc = subprocess.Popen(
+                [sys.executable, str(script), *viewer_args], cwd=str(WORK_DIR), env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
+        except Exception as exc:
+            messagebox.showerror("Live visual", f"Could not open the visual window:\n{exc}")
+
+    def _open_live_visual(self):
+        """◉ Open Visual: the run being trained, else the model's stored snapshots,
+        else offer a one-off snapshot of the trained model."""
+        run_dir = getattr(self, "_viz_run_dir", None)
+        if run_dir and Path(run_dir).exists():
+            self._launch_viz_window(["--run_dir", str(run_dir)])
+            return
+        name = (self.train_name.get() or "").strip() if hasattr(self, "train_name") else ""
+        if not name:
+            messagebox.showinfo("Live visual", "Enter a model name first.")
+            return
+        try:
+            viz_dir = model_dir(name) / "viz"
+        except Exception:
+            viz_dir = None
+        if viz_dir is not None and (viz_dir / "index.json").exists():
+            self._launch_viz_window(["--run_dir", str(viz_dir)])
+            return
+        try:
+            has_model = final_model_path(name).exists()
+        except Exception:
+            has_model = False
+        if not has_model:
+            messagebox.showinfo(
+                "Live visual",
+                f"No visual for '{name}' yet.\n\nTick 'Live 3D visual' before training to watch "
+                "the network learn — a snapshot appears after every evaluation (10k steps).")
+            return
+        if not messagebox.askyesno(
+                "Live visual",
+                f"'{name}' was trained without live snapshots.\n\n"
+                "Create a visual of the trained model now (validation slice, ~15 s)?"):
+            return
+        self.train_viz_status.configure(text="visual: capturing snapshot ...", text_color=COLOR_DIM)
+        out_rel = f"out/{name}_network3d.html"
+
+        def worker():
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            res = subprocess.run(
+                [sys.executable, "tools/viz/capture_snapshot.py", name, "--frames", "400",
+                 "--out", str(WORK_DIR / "tools" / "viz" / out_rel)],
+                cwd=str(WORK_DIR), env=env, capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+            def done():
+                if res.returncode == 0:
+                    self.train_viz_status.configure(text="visual: snapshot ready", text_color="#19e6ff")
+                    self._launch_viz_window(["--html", out_rel])
+                else:
+                    self.train_viz_status.configure(text="visual: capture failed", text_color=COLOR_RED)
+                    tail = (res.stdout or "")[-600:] + (res.stderr or "")[-600:]
+                    messagebox.showerror("Live visual", f"Snapshot failed:\n{tail.strip()}")
+            self.after(0, done)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _start_runner(self, cmd, page=None):
         """Start the shared subprocess runner and remember which page owns it.
@@ -5536,6 +5643,22 @@ class RLTradingStudio(ctk.CTk):
             height=42, state="disabled", width=100)
         self.train_stop_btn.pack(side="left")
 
+        # Live 3D visual (tools/viz): rl_train --viz writes a snapshot after every
+        # evaluation; the pywebview window follows them while training runs.
+        self.train_viz_var = tk.BooleanVar(value=False)
+        self.train_viz_check = ctk.CTkCheckBox(
+            btn_row, text="Live 3D visual", variable=self.train_viz_var,
+            font=ctk.CTkFont(size=12))
+        self.train_viz_check.pack(side="left", padx=(18, 6))
+        self.train_viz_btn = ctk.CTkButton(
+            btn_row, text="◉ Open Visual", command=self._open_live_visual,
+            fg_color="#1b2436", hover_color="#24324a", border_width=1,
+            border_color="#19e6ff", text_color="#19e6ff", height=42, width=130)
+        self.train_viz_btn.pack(side="left")
+        self.train_viz_status = ctk.CTkLabel(
+            btn_row, text="", text_color=COLOR_DIM, font=ctk.CTkFont(size=11))
+        self.train_viz_status.pack(side="left", padx=(10, 0))
+
         # Progress
         prog_frame = ctk.CTkFrame(c4, fg_color=COLOR_BG_INPUT, corner_radius=8)
         prog_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 12))
@@ -7123,6 +7246,12 @@ class RLTradingStudio(ctk.CTk):
         action_profile_json_path = getattr(self, "train_action_profile_json_path", "")
         if action_profile_json_path:
             cmd.extend(["--action_profile_json", action_profile_json_path])
+        viz_var = getattr(self, "train_viz_var", None)
+        if viz_var is not None and viz_var.get():
+            if algo == "dqn":
+                self._log(self.train_log, "Live 3D visual needs PPO/A2C — skipped for DQN", "warn")
+            else:
+                cmd.append("--viz")
 
         self._review_training_command(cmd, lambda confirmed: self._launch_training(
             confirmed, steps_int, name))
@@ -7136,6 +7265,10 @@ class RLTradingStudio(ctk.CTk):
 
         self._train_steps_total = steps_int
         self._train_run_name = name  # for post-train auto-diagnosis
+        self._viz_run_dir = None
+        if hasattr(self, "train_viz_status"):
+            self.train_viz_status.configure(
+                text="visual: waiting for the first evaluation (10k steps)" if "--viz" in cmd else "")
         # ⭐ reset reward graph + threshold tracker for new run
         self._reset_reward_tracking()
         self._start_runner(cmd, "train")
@@ -9947,6 +10080,9 @@ Built with: CustomTkinter + stable-baselines3
 
         # Page-specific updates
         if page == 'train':
+            vm = re.search(r'VIZ_SNAPSHOT\s+(\d+)\s+(\d+)\s+(.+?)\s*$', line)
+            if vm:
+                self._on_viz_snapshot(int(vm.group(1)), int(vm.group(2)), vm.group(3))
             prog = self._parse_progress(line)
             if prog:
                 cur, tot = prog

@@ -414,6 +414,38 @@ class DashboardContractTests(unittest.TestCase):
         set_entry(action, "14")
         self.assertTrue(self.app._on_action_entry_change("trail_atr_period"))
 
+    def test_live_visual_flag_reaches_cli_without_changing_the_recipe(self):
+        self.app.train_viz_var.set(False)
+        plain = self.capture_train()
+        self.app.train_viz_var.set(True)
+        try:
+            viz = self.capture_train()
+        finally:
+            self.app.train_viz_var.set(False)
+        self.assertNotIn("--viz", plain)
+        self.assertEqual(viz[-1], "--viz")
+        self.assertEqual(viz[:-1], plain)
+        # snapshots are read-only: the confirmed recipe fingerprint must not change
+        self.assertEqual(prepare(plain)["recipe_sha256"], prepare(viz)["recipe_sha256"])
+
+    def test_viz_snapshot_lines_open_one_window_per_run(self):
+        script = self.root / "tools" / "viz" / "live_viewer.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("")
+        viz_dir = self.root / "models" / "m" / "runs" / ("a" * 32) / "viz"
+        with patch.object(rl_app.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            self.app._viz_run_dir = None
+            self.app._handle_log_line(f"VIZ_SNAPSHOT 0 10000 {viz_dir / 'snap_000.json'}", page="train")
+            self.app._handle_log_line(f"  12%|#   | VIZ_SNAPSHOT 1 20000 {viz_dir / 'snap_001.json'}", page="train")
+            self.assertEqual(popen.call_count, 1)
+            args = popen.call_args.args[0]
+            self.assertEqual(args[1:], [str(script), "--run_dir", str(viz_dir)])
+            self.assertIn("eval 2 @ 20,000", self.app.train_viz_status.cget("text"))
+            self.app._close_viz_window()
+            popen.return_value.terminate.assert_called_once()
+        self.assertFalse(self.app._viz_window_running())
+
 
 if __name__ == "__main__":
     unittest.main()

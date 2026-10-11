@@ -22,6 +22,7 @@ google-genai>=1.0.0
 
 # GUI
 customtkinter>=5.2.0
+pywebview>=5.0,<6       # Live 3D visual window (tools/viz/live_viewer.py, Edge WebView2 on Windows)
 Pillow>=9.0.0          # for logo/icon image loading (CTkImage)
 
 # MT5 Python API tools (pull/live trading helpers; Windows only)

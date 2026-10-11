@@ -110,3 +110,6 @@ gbpusd_chart_data.json
 # ============================================================
 !example_data_format.csv
 !.github/
+
+# capture_snapshot.py one-off pages (regenerable)
+tools/viz/out/

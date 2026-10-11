@@ -35,6 +35,7 @@ from artifact_paths import (
     ensure_model_dirs,
     final_model_path,
     logs_dir,
+    model_dir,
     norm_path as artifact_norm_path,
     params_path as artifact_params_path,
     train_meta_path,
@@ -153,6 +154,13 @@ def build_parser():
                          "episode starts (default None = nondeterministic). Same data + "
                          "recipe + seed reproduces a run; use different seeds to measure "
                          "run-to-run variance")
+    ap.add_argument("--viz", action="store_true",
+                    help="after every evaluation, save a neon-viewer snapshot (activations, "
+                         "actions, equity on the validation slice) to <run>/viz/ and print "
+                         "VIZ_SNAPSHOT lines for the dashboard's Live Visual window. "
+                         "PPO/A2C only; does not change training")
+    ap.add_argument("--viz_frames", type=int, default=300,
+                    help="bars per visual snapshot (default 300)")
     return ap
 
 
@@ -279,7 +287,9 @@ def prepare_training(args):
         raise ValueError("Data or recipe changed during preparation. Review the training summary again.")
     recipe = dict(
         schema="metafxclub.confirmed_training.v1",
-        settings={k: v for k, v in vars(args).items() if k != "expected_recipe_sha256"},
+        # viz flags only add read-only snapshots, so they are not part of the recipe
+        settings={k: v for k, v in vars(args).items()
+                  if k not in ("expected_recipe_sha256", "viz", "viz_frames")},
         net_arch=net_arch, effective_episode_steps=min(args.ep_len, len(train_df)-args.window-2),
         train_period=_period(train_df), validation_period=_period(validation_df) if validation_df is not None else None,
         test_period=_period(raw_test) if raw_test is not None else None,
@@ -533,7 +543,61 @@ def train(args, run, prepared=None):
     print(f"\n[train] {args.steps:,} steps ...")
     print(f"(progress bar will appear; tensorboard --logdir {log_dir} to monitor)")
 
-    from stable_baselines3.common.callbacks import EvalCallback
+    from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
+    viz_cb = None
+    if args.viz:
+        if eval_env is None:
+            print("[viz] skipped: no validation slice to visualise")
+        elif args.algo == "dqn":
+            print("[viz] skipped: DQN has a single Q-network (visual needs PPO/A2C)")
+        else:
+            import importlib.util
+            _spec = importlib.util.spec_from_file_location(
+                "viz_snapshot", Path(__file__).resolve().parent / "tools" / "viz" / "snapshot.py")
+            viz_snapshot = importlib.util.module_from_spec(_spec)
+            _spec.loader.exec_module(viz_snapshot)
+            viz_dir = model_dir(args.name) / "viz"
+            viz_frames = max(10, min(args.viz_frames, len(validation_df) - args.window - 3))
+            viz_actions = viz_snapshot.action_names(action_profile_cfg)
+
+            def make_viz_env():
+                return TradingEnv(
+                    validation_df, feature_cols, window_size=args.window,
+                    max_steps=len(validation_df) - args.window - 2, random_start=False,
+                    reward_mode=args.reward_mode, reward_profile=args.reward_profile,
+                    reward_overrides=reward_overrides, reward_formula=args.reward_formula,
+                    action_profile=action_profile_cfg, max_hold_bars=args.max_hold)
+
+            class VizCallback(BaseCallback):
+                """Runs right after each EvalCallback evaluation (callback_after_eval)."""
+
+                def __init__(self):
+                    super().__init__()
+                    self.i = 0
+
+                def _on_step(self):
+                    parent = self.parent
+                    meta = dict(model=args.name, slice="validation", step=int(self.num_timesteps),
+                                total_steps=int(args.steps), eval_index=self.i,
+                                eval_reward=float(getattr(parent, "last_mean_reward", float("nan"))),
+                                best_reward=float(getattr(parent, "best_mean_reward", float("nan"))),
+                                symbol=Path(args.csv).name.split("_")[0].upper())
+                    try:
+                        snap = viz_snapshot.capture(self.model.policy, make_viz_env(), args.window,
+                                                    viz_frames, action_names=viz_actions, meta=meta)
+                        entry = {k: meta[k] for k in ("step", "total_steps", "eval_reward", "best_reward")}
+                        entry.update(equity_end=snap["eq"][-1], trades=sum(1 for p in snap["tpnl"] if p),
+                                     capture_s=snap["meta"]["capture_s"])
+                        path = viz_snapshot.write_live(viz_dir, self.i, snap, entry)
+                        # leading newline: the tqdm progress bar leaves the cursor mid-line
+                        print(f"\nVIZ_SNAPSHOT {self.i} {self.num_timesteps} {path}", flush=True)
+                    except Exception as exc:   # a visual must never stop training
+                        print(f"\n[viz] snapshot {self.i} failed: {exc}", flush=True)
+                    self.i += 1
+                    return True
+
+            viz_cb = VizCallback()
+            print(f"[viz] live snapshots after every evaluation -> {viz_dir} ({viz_frames} bars each)")
     eval_cb = EvalCallback(
         eval_env,
         best_model_save_path=str(best_dir(args.name)),
@@ -543,6 +607,7 @@ def train(args, run, prepared=None):
         deterministic=True,
         render=False,
         verbose=0,
+        callback_after_eval=viz_cb,
     ) if eval_env is not None else None
 
     model.learn(total_timesteps=args.steps, callback=eval_cb, progress_bar=True)

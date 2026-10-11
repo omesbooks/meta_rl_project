@@ -466,6 +466,7 @@ class DashboardContractTests(unittest.TestCase):
         script.parent.mkdir(parents=True)
         script.write_text("")
         viz_dir = self.root / "models" / "m" / "runs" / ("a" * 32) / "viz"
+        viz_dir.mkdir(parents=True)
         with patch.object(rl_app.subprocess, "Popen") as popen:
             popen.return_value.poll.return_value = None
             self.app._viz_run_dir = None
@@ -473,10 +474,16 @@ class DashboardContractTests(unittest.TestCase):
             self.app._handle_log_line(f"  12%|#   | VIZ_SNAPSHOT 1 20000 {viz_dir / 'snap_001.json'}", page="train")
             self.assertEqual(popen.call_count, 1)
             args = popen.call_args.args[0]
-            self.assertEqual(args[1:], [str(script), "--run_dir", str(viz_dir)])
+            self.assertEqual(args[1:], [str(script), "--run_dir", str(viz_dir), "--mode", "lite"])
             self.assertIn("eval 2 @ 20,000", self.app.train_viz_status.cget("text"))
+            self.app.train_viz_mode.set("Cinematic")
+            try:
+                self.app._open_live_visual()          # reopen the current run in Cinematic
+            finally:
+                self.app.train_viz_mode.set("Lite (low CPU)")
+            self.assertEqual(popen.call_args.args[0][-2:], ["--mode", "cinematic"])
             self.app._close_viz_window()
-            popen.return_value.terminate.assert_called_once()
+            self.assertGreaterEqual(popen.return_value.terminate.call_count, 1)
         self.assertFalse(self.app._viz_window_running())
 
 

@@ -2,6 +2,7 @@
 
 > คำถาม: ภาพ 3D ตอนนี้กินทรัพยากรที่สุดหรือไม่ และมีรูปแบบอื่นอะไรบ้าง
 > วัดจริงในหน้าต่าง pywebview (Edge WebView2) ขนาด 1600×920 กับ snapshot ของโมเดล `rl_test` (200k steps)
+> สถานะ: **Lite + Auto idle ทำแล้ว** (ดู "ผลหลังทำ" ท้ายไฟล์) · Dashboard ยังไม่ทำ
 > CPU = % ของ 1 core (เครื่องนี้มี 20 logical cores → 100% ≈ 5% ของทั้งเครื่อง) · วัด 10 วินาทีหลังหน้าโหลดเสร็จ
 
 ## ผลวัด
@@ -42,3 +43,22 @@
 - viewer: ตัวเลือกโหมดใน HUD + `mode=` ใน URL (knob `bloom/k/pulses/dpr/play/fps` มีแล้วตั้งแต่การวัดนี้) · auto idle (visibilitychange + จบรอบ) · โหมด Dashboard เป็น layout แยกในไฟล์เดียวกัน
 - GUI: ตัวเลือกโหมดข้าง checkbox "Live 3D visual" (ค่าเริ่มต้น Lite) ส่งผ่าน `live_viewer.py --query`
 - บทเรียนจากการวัด: animation loop ต้อง `requestAnimationFrame` เป็นบรรทัดแรก — ต้นแบบ 2D ที่เรียกไว้ท้ายฟังก์ชันหยุดวาดถาวรใน WebView2 เพราะเฟรมแรกพังตอนหน้าต่างยังไม่มีขนาด (viewer 3D ตัวจริงทำถูกแล้ว)
+
+## ผลหลังทำ Lite + Auto idle (2026-10-11, หน้าต่าง pywebview จริง, snapshot `rl_test`)
+
+| สถานะ | CPU | fps ที่วาดจริง |
+|---|---:|---:|
+| Lite ขณะเล่น (ค่าเริ่มต้นของโหมด live) | 21–26% | 20 |
+| เล่น snapshot จบ → idle เอง | 1.2% | 0 |
+| ขยับเมาส์ → เล่นใหม่ตั้งแต่ต้น | 21% | 20 |
+| ย่อหน้าต่าง → idle | 2.4% | 0 |
+| คืนหน้าต่าง → เล่นต่อ | 23% | 20 |
+| Cinematic | 63% | 30 |
+| idle แล้วมี eval ใหม่เข้ามา | ตื่นเอง โหลด snapshot ใหม่ภายใน ~3 วินาที | 20 |
+
+การทำงาน
+- `mode=lite|cinematic` (URL / เมนู mode ในหน้าต่าง / เมนูข้าง checkbox ในหน้า Train → `live_viewer.py --mode`) · ค่าเริ่มต้น live = Lite, หน้า static = Cinematic
+- live: เล่นแต่ละ snapshot รอบเดียวแล้ว idle (`loop=1` เพื่อวนต่อ) · หน้า static วนตามเดิม
+- ทุกหน้า: idle เมื่อ pause แล้วไม่มี input 8 วินาที, เมื่อ `visibilitychange` เป็น hidden, และเมื่อหน้าต่าง pywebview ถูกย่อ
+  (WebView2 วาดต่อแม้ย่อหน้าต่าง — `live_viewer.py` ส่ง event minimized/restored เข้าไปให้หน้าเว็บ)
+- ตอน idle loop หยุด `requestAnimationFrame` จริง (ภาพสุดท้ายค้างไว้บนจอ) · ตื่นเมื่อ snapshot ใหม่มา ขยับเมาส์ คลิก scroll กดปุ่ม หรือเปลี่ยน control

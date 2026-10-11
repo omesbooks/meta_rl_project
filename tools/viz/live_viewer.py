@@ -79,7 +79,9 @@ def main():
     ap.add_argument("--browser", action="store_true", help="open in the default browser instead of a window")
     ap.add_argument("--serve_only", action="store_true", help="only serve (for testing)")
     ap.add_argument("--port", type=int, default=0, help="fixed port (default: random free port)")
-    ap.add_argument("--fps", type=int, default=30, help="frame cap while training (30 keeps CPU free)")
+    ap.add_argument("--mode", choices=["lite", "cinematic"], default=None,
+                    help="display mode (default: lite for live runs, cinematic for --html pages)")
+    ap.add_argument("--fps", type=int, default=None, help="frame cap override (default: the mode's own)")
     ap.add_argument("--query", default="", help="extra viewer options, e.g. 'bloom=0&k=4&pulses=0&dpr=1'")
     args = ap.parse_args()
 
@@ -92,7 +94,7 @@ def main():
         name, mode = page.stem.replace("_network3d", ""), "snapshot"
     else:
         viz_data = resolve_viz_dir(args.run_dir, args.model)
-        path = f"network3d.html?live=1&fps={args.fps}"
+        path = "network3d.html?live=1"
         name = viz_data.parent.parent.parent.name if viz_data.parent.parent.name == "runs" else viz_data.parent.name
         mode = "live"
     viz_data.mkdir(parents=True, exist_ok=True)       # the window can open before the first snapshot
@@ -100,6 +102,10 @@ def main():
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{port}/{path}"
+    extra = [f"mode={args.mode}" if args.mode else "", f"fps={args.fps}" if args.fps else ""]
+    for q in extra:
+        if q:
+            url += ("&" if "?" in url else "?") + q
     if args.query:
         url += ("&" if "?" in url else "?") + args.query.lstrip("?&")
     print(f"[viz] serving {viz_data} at {url}", flush=True)
@@ -117,8 +123,21 @@ def main():
             webbrowser.open(url)
             threading.Event().wait()
         else:
-            webview.create_window(f"Neural Trader · {name} · {mode}", url, width=1600, height=920,
-                                  background_color="#02030A", min_size=(900, 560))
+            win = webview.create_window(f"Neural Trader · {name} · {mode}", url, width=1600, height=920,
+                                        background_color="#02030A", min_size=(900, 560))
+
+            def host_hidden(flag):
+                # WebView2 keeps animating when its window is minimised — tell the page
+                try:
+                    win.evaluate_js(f"window.__viz && window.__viz.setHidden({'true' if flag else 'false'})")
+                except Exception:
+                    pass
+            try:
+                win.events.minimized += lambda *_: host_hidden(True)
+                win.events.restored += lambda *_: host_hidden(False)
+                win.events.maximized += lambda *_: host_hidden(False)
+            except Exception:
+                pass
             webview.start()
     except KeyboardInterrupt:
         pass

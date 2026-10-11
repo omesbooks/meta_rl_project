@@ -45,6 +45,10 @@
   #wait h2 { margin: 0; font: 700 20px var(--hud); letter-spacing: .4em; color: var(--cyan); text-shadow: 0 0 14px var(--cyan); }
   #wait p { color: var(--dim); letter-spacing: .14em; }
   #err { color: var(--mag); font: 600 16px var(--hud); }
+  #idle { position: fixed; top: 104px; left: 50%; transform: translateX(-50%); pointer-events: none;
+          font: 600 12px var(--hud); letter-spacing: .22em; color: var(--dim); white-space: nowrap;
+          padding: 6px 14px; border: 1px solid rgba(93, 107, 138, .35); border-radius: 999px;
+          background: rgba(6, 10, 24, .6); opacity: 0; transition: opacity .4s; }
   #banner { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); pointer-events: none;
             font: 700 16px var(--hud); letter-spacing: .3em; color: var(--gold); text-shadow: 0 0 14px var(--gold);
             opacity: 0; transition: opacity .35s; white-space: nowrap; }
@@ -64,6 +68,7 @@
 <div id="chartLbl" class="hud"></div>
 <div id="pxHi" class="hud"></div><div id="pxLo" class="hud"></div>
 <div id="banner"></div>
+<div id="idle"></div>
 <div id="timeline" class="panel">
   <div class="lab" id="tLab">–<small>–</small></div>
   <input id="tSlider" type="range" min="0" max="0" value="0">
@@ -71,11 +76,12 @@
   <button id="bLive" class="on">● LIVE</button>
 </div>
 <div id="ctrl" class="panel">
+  <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option></select></label>
   <button id="bPlay">❚❚</button>
   <label>speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
   <label>synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
   <label>glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
-  <label>fps <select id="iFps"><option>30</option><option>60</option></select></label>
+  <label>fps <select id="iFps"><option>15</option><option>20</option><option>30</option><option>60</option></select></label>
   <button id="bRot" class="on">orbit</button>
   <button id="bRec" class="rec">● rec</button>
   <button id="bFull">⛶</button>
@@ -100,12 +106,30 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 const params = new URLSearchParams(location.search);
 const LIVE = params.has("live") && !window.SNAPSHOT;
-let fpsCap = +(params.get("fps") || (LIVE ? 30 : 60));
-// render knobs (URL): bloom=0 · k=4|8|16 · pulses=0 · dpr=1 · play=0
-const OPT = { bloom: params.get("bloom") !== "0", pulses: params.get("pulses") !== "0",
-              dpr: params.has("dpr") ? +params.get("dpr") : 2, k: +(params.get("k") || 8),
-              play: params.get("play") !== "0" };
+// Display modes (measured in WebView2, docs/viz_display_modes_2026-10-11.md):
+//   lite      ~20-25% of one core — no bloom, 4 synapses/neuron, no pulses, 1x pixels, 20 fps
+//   cinematic ~60%                — bloom, 8 synapses, pulses, up to 2x pixels, 30 fps
+// URL: mode=lite|cinematic (default: lite when live, cinematic for a static page);
+// single knobs bloom=0|1 · k=4|8|16 · pulses=0|1 · dpr=1|2 · fps=N override the preset.
+// Auto idle: live pages play each snapshot once, then stop rendering until the next
+// evaluation arrives or the mouse moves (loop=1 to keep looping); every page stops
+// while minimised/hidden and after 8 s paused without input.
+const MODES = {
+  lite:      { bloom: false, k: 4, pulses: false, dpr: 1, fps: 20 },
+  cinematic: { bloom: true,  k: 8, pulses: true,  dpr: 2, fps: 30 },
+};
+let mode = MODES[params.get("mode")] ? params.get("mode") : (LIVE ? "lite" : "cinematic");
+const OPT = Object.assign({}, MODES[mode]);
+if (params.has("bloom")) OPT.bloom = params.get("bloom") !== "0";
+if (params.has("pulses")) OPT.pulses = params.get("pulses") !== "0";
+if (params.has("dpr")) OPT.dpr = +params.get("dpr");
+if (params.has("k")) OPT.k = +params.get("k");
+if (params.has("fps")) OPT.fps = +params.get("fps");
+OPT.play = params.get("play") !== "0";
+const LOOP = params.has("loop") ? params.get("loop") === "1" : !LIVE;
+let fpsCap = OPT.fps;
 document.getElementById("iFps").value = String(fpsCap);
+document.getElementById("iMode").value = mode;
 const $ = id => document.getElementById(id);
 const fail = msg => { const e = $("err"); e.style.display = "grid"; e.textContent = msg; };
 
@@ -199,7 +223,7 @@ const head = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMa
 head.visible = false; chartScene.add(head);
 const NB = 900, bursts = glowPoints(NB, true);
 const bVel = new Float32Array(NB * 2), bLife = new Float32Array(NB);
-bursts.material.uniforms.uScale.value = Math.min(2, devicePixelRatio || 1);
+bursts.material.uniforms.uScale.value = renderer.getPixelRatio();
 chartScene.add(bursts);
 let burstNext = 0, CH = {};
 function layoutChart() {
@@ -460,12 +484,12 @@ function onNewBar(i, ch) {
   $("sWr").textContent = tradesClosed ? Math.round(wins / tradesClosed * 100) + "%" : "–";
   $("sBar").textContent = String(D.ts[i]).slice(0, 16);
 }
-let fpos = 0, START = 0;
+let fpos = 0, START = 0, endAt = 0;
 function seek(i) {
   const D = S.D;
   i = Math.max(0, Math.min(S.NF - 2, i | 0)); fpos = i; tradesClosed = 0; wins = 0;
   for (let j = 0; j < i; j++) if (D.tpnl[j] !== 0) { tradesClosed++; if (D.tpnl[j] > 0) wins++; }
-  lastFrame = i - 1; pLo = pHi = eLo = eHi = null;
+  lastFrame = i - 1; pLo = pHi = eLo = eHi = null; endAt = 0;
 }
 
 // ================================================================== snapshot loading
@@ -483,6 +507,7 @@ function applySnapshot(D) {
   $("sub").textContent = [sym && `${sym} H4`, (m.slice || "validation").toUpperCase(), m.model, what, `${D.ts[0].slice(0, 10)} → ${D.ts[S.NF - 1].slice(0, 10)}`].filter(Boolean).join(" · ");
   $("chartLbl").textContent = `${sym ? sym + " · " : ""}${(m.slice || "validation").toUpperCase()} · AGENT TRADES`;
   if (m.eval_index != null) { banner(`EVAL ${m.eval_index + 1} · STEP ${Number(m.step).toLocaleString()} · REWARD ${Number(m.eval_reward).toFixed(2)}`); glowPulse = 1; }
+  wake("data");
 }
 
 // live mode: poll run/index.json, follow the newest snapshot unless the user scrubbed back
@@ -535,13 +560,49 @@ $("bLive").onclick = () => { follow = true; const last = index[index.length - 1]
 // ================================================================== loop
 let playing = OPT.play, speed = 6, K = OPT.k, glow = 0.9, lastT = performance.now(), lastDraw = 0, drawn = 0;
 $("iK").value = String(K); if (!playing) $("bPlay").textContent = "▶";
+
+// ---------------------------------------------------------------- auto idle
+let idle = false, idleReason = "", hostHidden = false, lastInput = performance.now();
+const IDLE_TEXT = {
+  replay: "💤 IDLE · REPLAY DONE — WAITING FOR THE NEXT EVALUATION · MOVE THE MOUSE TO REPLAY",
+  paused: "💤 IDLE · PAUSED — MOVE THE MOUSE TO WAKE",
+  hidden: "💤 IDLE · WINDOW HIDDEN",
+};
+function sleep(reason) {
+  if (idle) return;
+  idle = true; idleReason = reason;
+  const el = $("idle"); el.textContent = IDLE_TEXT[reason] || "💤 IDLE"; el.style.opacity = reason === "hidden" ? 0 : 1;
+}
+function wake(reason) {
+  if (reason === "input") lastInput = performance.now();
+  if (hostHidden && reason !== "host") return;              // stay asleep while minimised
+  if (!idle) return;
+  if (reason === "input" && idleReason === "replay" && S) seek(START);   // mouse = watch it again
+  idle = false; idleReason = ""; $("idle").style.opacity = 0;
+  lastT = performance.now(); lastDraw = 0;
+  requestAnimationFrame(frame);
+}
+function setHidden(flag) {
+  hostHidden = !!flag;
+  if (hostHidden) sleep("hidden"); else wake("host");
+}
+for (const ev of ["pointermove", "pointerdown", "wheel", "keydown"]) addEventListener(ev, () => wake("input"), { passive: true });
+document.addEventListener("visibilitychange", () => setHidden(document.visibilityState === "hidden"));
+
 function frame(now) {
+  if (idle) return;                       // loop stopped: wake() restarts it
   requestAnimationFrame(frame);
   if (now - lastDraw < 1000 / fpsCap - 1.5) return;
   lastDraw = now; drawn++;
   const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
   if (S && NET) {
-    if (playing) { fpos += dt * speed * 0.45; if (fpos >= S.NF - 1) seek(START); }
+    if (playing) {
+      fpos += dt * speed * 0.45;
+      if (fpos >= S.NF - 1) {
+        if (LOOP) seek(START);
+        else { fpos = S.NF - 1; if (!endAt) endAt = now; }
+      }
+    }
     sample(fpos);
     updateNetwork(dt);
     const ch = updateChart(fpos, dt);
@@ -568,6 +629,8 @@ function frame(now) {
   }
   controls.update();
   composer.render();
+  if (endAt && now - endAt > 1500) sleep("replay");          // let the last bursts fade first
+  else if (!playing && now - lastInput > 8000) sleep("paused");
 }
 function resize() {
   const w = innerWidth, h = innerHeight;
@@ -578,7 +641,19 @@ function resize() {
 addEventListener("resize", resize);
 resize();
 
-$("bPlay").onclick = e => { playing = !playing; e.target.textContent = playing ? "❚❚" : "▶"; };
+function applyMode(name) {
+  if (!MODES[name]) return;
+  mode = name; Object.assign(OPT, MODES[name]);
+  bloom.enabled = OPT.bloom; K = OPT.k; fpsCap = OPT.fps;
+  renderer.setPixelRatio(Math.min(OPT.dpr, 2, devicePixelRatio || 1));
+  composer.setPixelRatio(renderer.getPixelRatio());
+  bursts.material.uniforms.uScale.value = renderer.getPixelRatio();
+  resize();
+  $("iK").value = String(K); $("iFps").value = String(fpsCap); $("iMode").value = name;
+  wake("input");
+}
+$("iMode").onchange = e => applyMode(e.target.value);
+$("bPlay").onclick = e => { playing = !playing; e.target.textContent = playing ? "❚❚" : "▶"; if (playing && endAt) seek(START); wake("input"); };
 $("iSpeed").oninput = e => speed = +e.target.value;
 $("iK").onchange = e => K = +e.target.value;
 $("iGlow").oninput = e => glow = +e.target.value / 10;
@@ -596,7 +671,9 @@ $("bRec").onclick = () => {      // records the WebGL canvas (HUD text is HTML a
     a.download = `${(S && S.D.meta && S.D.meta.model) || "neural"}_trader.webm`; a.click(); rec = null; b.textContent = "● rec"; };
   rec.start(); b.textContent = "■ stop";
 };
-window.__viz = { seek: i => S && seek(i), get frame() { return fpos; }, get drawn() { return drawn; }, get loaded() { return loadedI; }, get ready() { return !!S; } };
+window.__viz = { seek: i => S && seek(i), get frame() { return fpos; }, get drawn() { return drawn; }, get loaded() { return loadedI; },
+                 get ready() { return !!S; }, get idle() { return idle ? idleReason : ""; }, get mode() { return mode; },
+                 setHidden, setMode: applyMode, wake: () => wake("input") };
 
 if (window.SNAPSHOT) applySnapshot(window.SNAPSHOT);
 else if (LIVE) { $("wait").style.display = "grid"; poll(); }

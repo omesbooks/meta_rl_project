@@ -1510,6 +1510,11 @@ class RLTradingStudio(ctk.CTk):
                     pass
         self._viz_proc = None
 
+    def _viz_mode_args(self):
+        menu = getattr(self, "train_viz_mode", None)
+        label = menu.get() if menu is not None else ""
+        return ["--mode", "cinematic" if label.lower().startswith("cinematic") else "lite"]
+
     def _launch_viz_window(self, viewer_args):
         """(Re)open the viewer window as its own process (pywebview owns its main thread)."""
         script = WORK_DIR / "tools" / "viz" / "live_viewer.py"
@@ -1522,7 +1527,8 @@ class RLTradingStudio(ctk.CTk):
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
             self._viz_proc = subprocess.Popen(
-                [sys.executable, str(script), *viewer_args], cwd=str(WORK_DIR), env=env,
+                [sys.executable, str(script), *viewer_args, *self._viz_mode_args()],
+                cwd=str(WORK_DIR), env=env,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags)
         except Exception as exc:
             messagebox.showerror("Live visual", f"Could not open the visual window:\n{exc}")
@@ -5677,6 +5683,11 @@ class RLTradingStudio(ctk.CTk):
             btn_row, text="Live 3D visual", variable=self.train_viz_var,
             font=ctk.CTkFont(size=12))
         self.train_viz_check.pack(side="left", padx=(18, 6))
+        self.train_viz_mode = ctk.CTkOptionMenu(
+            btn_row, values=["Lite (low CPU)", "Cinematic"], width=130, height=30,
+            fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
+        self.train_viz_mode.set("Lite (low CPU)")
+        self.train_viz_mode.pack(side="left", padx=(0, 8))
         self.train_viz_btn = ctk.CTkButton(
             btn_row, text="◉ Open Visual", command=self._open_live_visual,
             fg_color="#1b2436", hover_color="#24324a", border_width=1,

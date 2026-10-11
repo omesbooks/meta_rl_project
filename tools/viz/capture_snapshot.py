@@ -92,9 +92,10 @@ def main():
     out = Path(args.out) if args.out else VIZ / "out" / f"{args.model}_network3d.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__SNAPSHOT__*/null", json.dumps(snap))
-    # the template imports the vendored Three.js as ./vendor/... (relative to tools/viz)
-    rel = Path(os.path.relpath(VIZ / "vendor", out.parent.resolve())).as_posix()
-    html = html.replace('"./vendor/', f'"{rel}/')
+    # the template imports ./vendor/... and ./dashboard.js relative to tools/viz
+    rel = Path(os.path.relpath(VIZ, out.parent.resolve())).as_posix()
+    if rel != ".":
+        html = html.replace('"./vendor/', f'"{rel}/vendor/').replace('"./dashboard.js"', f'"{rel}/dashboard.js"')
     out.write_text(html, encoding="utf-8")
     closed = [p for p in snap["tpnl"] if p != 0.0]
     print(f"[viz] {args.model} ({args.source}) {args.slice}: {snap['frames']} bars {snap['ts'][0]} -> {snap['ts'][-1]}")

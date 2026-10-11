@@ -49,6 +49,8 @@
           font: 600 12px var(--hud); letter-spacing: .22em; color: var(--dim); white-space: nowrap;
           padding: 6px 14px; border: 1px solid rgba(93, 107, 138, .35); border-radius: 999px;
           background: rgba(6, 10, 24, .6); opacity: 0; transition: opacity .4s; }
+  body.dash #gl, body.dash #labels, body.dash #stats, body.dash #chartLbl, body.dash #pxHi,
+  body.dash #pxLo, body.dash #idle, body.dash .c3d { display: none !important; }
   #banner { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); pointer-events: none;
             font: 700 16px var(--hud); letter-spacing: .3em; color: var(--gold); text-shadow: 0 0 14px var(--gold);
             opacity: 0; transition: opacity .35s; white-space: nowrap; }
@@ -65,6 +67,7 @@
   <div class="stat"><div class="k">CRITIC V(s)</div><div class="v" id="sV">–</div></div>
 </div>
 <div id="labels"></div>
+<div id="dash"></div>
 <div id="chartLbl" class="hud"></div>
 <div id="pxHi" class="hud"></div><div id="pxLo" class="hud"></div>
 <div id="banner"></div>
@@ -76,14 +79,14 @@
   <button id="bLive" class="on">● LIVE</button>
 </div>
 <div id="ctrl" class="panel">
-  <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option></select></label>
-  <button id="bPlay">❚❚</button>
-  <label>speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
-  <label>synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
-  <label>glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
-  <label>fps <select id="iFps"><option>15</option><option>20</option><option>30</option><option>60</option></select></label>
-  <button id="bRot" class="on">orbit</button>
-  <button id="bRec" class="rec">● rec</button>
+  <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option><option value="dashboard">Dashboard</option></select></label>
+  <button id="bPlay" class="c3d">❚❚</button>
+  <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
+  <label class="c3d">synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
+  <label class="c3d">glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
+  <label class="c3d">fps <select id="iFps"><option>15</option><option>20</option><option>30</option><option>60</option></select></label>
+  <button id="bRot" class="on c3d">orbit</button>
+  <button id="bRec" class="rec c3d">● rec</button>
   <button id="bFull">⛶</button>
 </div>
 <div id="wait"><div><h2>WAITING FOR THE FIRST EVALUATION</h2><p>a snapshot arrives after every 10,000 training steps</p></div></div>
@@ -92,7 +95,8 @@
 <script type="importmap">
 { "imports": {
   "three": "./vendor/three/three.module.js",
-  "three/addons/": "./vendor/three/addons/"
+  "three/addons/": "./vendor/three/addons/",
+  "viz-dashboard": "./dashboard.js"
 } }
 </script>
 <script>window.SNAPSHOT = /*__SNAPSHOT__*/null;</script>
@@ -103,12 +107,14 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { createDashboard } from "viz-dashboard";
 
 const params = new URLSearchParams(location.search);
 const LIVE = params.has("live") && !window.SNAPSHOT;
 // Display modes (measured in WebView2, docs/viz_display_modes_2026-10-11.md):
 //   lite      ~20-25% of one core — no bloom, 4 synapses/neuron, no pulses, 1x pixels, 20 fps
 //   cinematic ~60%                — bloom, 8 synapses, pulses, up to 2x pixels, 30 fps
+//   dashboard ~0%                 — static panels redrawn only when a snapshot arrives (no loop)
 // URL: mode=lite|cinematic (default: lite when live, cinematic for a static page);
 // single knobs bloom=0|1 · k=4|8|16 · pulses=0|1 · dpr=1|2 · fps=N override the preset.
 // Auto idle: live pages play each snapshot once, then stop rendering until the next
@@ -117,6 +123,7 @@ const LIVE = params.has("live") && !window.SNAPSHOT;
 const MODES = {
   lite:      { bloom: false, k: 4, pulses: false, dpr: 1, fps: 20 },
   cinematic: { bloom: true,  k: 8, pulses: true,  dpr: 2, fps: 30 },
+  dashboard: { bloom: false, k: 4, pulses: false, dpr: 1, fps: 20, dashboard: true },
 };
 let mode = MODES[params.get("mode")] ? params.get("mode") : (LIVE ? "lite" : "cinematic");
 const OPT = Object.assign({}, MODES[mode]);
@@ -137,6 +144,7 @@ const fail = msg => { const e = $("err"); e.style.display = "grid"; e.textConten
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(OPT.dpr, 2, devicePixelRatio || 1));
 renderer.setSize(innerWidth, innerHeight);
+renderer.domElement.id = "gl";
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x02030a);
@@ -508,6 +516,7 @@ function applySnapshot(D) {
   $("chartLbl").textContent = `${sym ? sym + " · " : ""}${(m.slice || "validation").toUpperCase()} · AGENT TRADES`;
   if (m.eval_index != null) { banner(`EVAL ${m.eval_index + 1} · STEP ${Number(m.step).toLocaleString()} · REWARD ${Number(m.eval_reward).toFixed(2)}`); glowPulse = 1; }
   wake("data");
+  dashUpdate();
 }
 
 // live mode: poll run/index.json, follow the newest snapshot unless the user scrubbed back
@@ -517,7 +526,9 @@ async function loadSnap(entry) {
   try {
     const r = await fetch(`run/${entry.file}?t=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
-    applySnapshot(await r.json()); loadedI = entry.i; renderTimeline();
+    const D = await r.json();
+    loadedI = entry.i;               // before applySnapshot: the dashboard renders the selected eval
+    applySnapshot(D); renderTimeline();
   } catch (e) { console.warn("snapshot load failed", e); }
   loading = false;
 }
@@ -531,6 +542,7 @@ async function poll() {
         const last = index[index.length - 1];
         if ((follow && last.i !== loadedI) || loadedI < 0) await loadSnap(last);
         renderTimeline();
+        dashUpdate(false);
       }
     }
   } catch (e) { /* server not ready yet */ }
@@ -562,7 +574,10 @@ let playing = OPT.play, speed = 6, K = OPT.k, glow = 0.9, lastT = performance.no
 $("iK").value = String(K); if (!playing) $("bPlay").textContent = "▶";
 
 // ---------------------------------------------------------------- auto idle
-let idle = false, idleReason = "", hostHidden = false, lastInput = performance.now();
+// hostMinimized comes only from the pywebview window events; page visibility is
+// read live (a cached flag can go stale when the window is first shown)
+let idle = false, idleReason = "", hostMinimized = false, lastInput = performance.now();
+const pageHidden = () => hostMinimized || document.visibilityState === "hidden";
 const IDLE_TEXT = {
   replay: "💤 IDLE · REPLAY DONE — WAITING FOR THE NEXT EVALUATION · MOVE THE MOUSE TO REPLAY",
   paused: "💤 IDLE · PAUSED — MOVE THE MOUSE TO WAKE",
@@ -571,23 +586,24 @@ const IDLE_TEXT = {
 function sleep(reason) {
   if (idle) return;
   idle = true; idleReason = reason;
-  const el = $("idle"); el.textContent = IDLE_TEXT[reason] || "💤 IDLE"; el.style.opacity = reason === "hidden" ? 0 : 1;
+  const el = $("idle"); el.textContent = IDLE_TEXT[reason] || "💤 IDLE"; el.style.opacity = (reason === "hidden" || reason === "dashboard") ? 0 : 1;
 }
 function wake(reason) {
   if (reason === "input") lastInput = performance.now();
-  if (hostHidden && reason !== "host") return;              // stay asleep while minimised
+  if (mode === "dashboard") return;                         // dashboard has no render loop
+  if (pageHidden() && reason !== "host") return;            // stay asleep while minimised / hidden
   if (!idle) return;
   if (reason === "input" && idleReason === "replay" && S) seek(START);   // mouse = watch it again
   idle = false; idleReason = ""; $("idle").style.opacity = 0;
   lastT = performance.now(); lastDraw = 0;
   requestAnimationFrame(frame);
 }
-function setHidden(flag) {
-  hostHidden = !!flag;
-  if (hostHidden) sleep("hidden"); else wake("host");
+function setHidden(flag) {            // called by live_viewer.py on minimize / restore
+  hostMinimized = !!flag;
+  if (pageHidden()) sleep("hidden"); else wake("host");
 }
 for (const ev of ["pointermove", "pointerdown", "wheel", "keydown"]) addEventListener(ev, () => wake("input"), { passive: true });
-document.addEventListener("visibilitychange", () => setHidden(document.visibilityState === "hidden"));
+document.addEventListener("visibilitychange", () => { if (pageHidden()) sleep("hidden"); else wake("host"); });
 
 function frame(now) {
   if (idle) return;                       // loop stopped: wake() restarts it
@@ -643,7 +659,12 @@ resize();
 
 function applyMode(name) {
   if (!MODES[name]) return;
+  const leavingDash = mode === "dashboard" && name !== "dashboard";
   mode = name; Object.assign(OPT, MODES[name]);
+  $("iMode").value = name;
+  document.body.classList.toggle("dash", name === "dashboard");
+  if (name === "dashboard") { sleep("dashboard"); dashUpdate(); return; }
+  if (leavingDash && idle) { idle = false; idleReason = ""; lastT = performance.now(); lastDraw = 0; requestAnimationFrame(frame); }
   bloom.enabled = OPT.bloom; K = OPT.k; fpsCap = OPT.fps;
   renderer.setPixelRatio(Math.min(OPT.dpr, 2, devicePixelRatio || 1));
   composer.setPixelRatio(renderer.getPixelRatio());
@@ -671,10 +692,26 @@ $("bRec").onclick = () => {      // records the WebGL canvas (HUD text is HTML a
     a.download = `${(S && S.D.meta && S.D.meta.model) || "neural"}_trader.webm`; a.click(); rec = null; b.textContent = "● rec"; };
   rec.start(); b.textContent = "■ stop";
 };
+const dash = createDashboard($("dash"), {
+  colors: ACTION_COLORS,
+  fetchSnapshot: async e => { const r = await fetch(`run/${e.file}?t=${Date.now()}`, { cache: "no-store" }); return r.json(); },
+});
+let dashKey = "";
+function dashUpdate(force = true) {
+  if (mode !== "dashboard") return;
+  const key = `${index.length}:${index.length ? index[index.length - 1].i : -1}:${loadedI}:${S ? S.NF : 0}`;
+  if (!force && key === dashKey) return;
+  dashKey = key;
+  dash.render({ index, snap: S ? S.D : null, selectedI: loadedI });
+}
+let dashResize = 0;
+addEventListener("resize", () => { clearTimeout(dashResize); dashResize = setTimeout(() => mode === "dashboard" && dash.rerender(), 200); });
 window.__viz = { seek: i => S && seek(i), get frame() { return fpos; }, get drawn() { return drawn; }, get loaded() { return loadedI; },
                  get ready() { return !!S; }, get idle() { return idle ? idleReason : ""; }, get mode() { return mode; },
+                 get dbg() { return { idle, idleReason, hostMinimized, visibility: document.visibilityState, fpsCap, lastDraw: Math.round(lastDraw), playing, endAt: Math.round(endAt) }; },
                  setHidden, setMode: applyMode, wake: () => wake("input") };
 
+if (mode === "dashboard") applyMode("dashboard");
 if (window.SNAPSHOT) applySnapshot(window.SNAPSHOT);
 else if (LIVE) { $("wait").style.display = "grid"; poll(); }
 else fail("no snapshot data — run tools/viz/capture_snapshot.py or open through tools/viz/live_viewer.py");

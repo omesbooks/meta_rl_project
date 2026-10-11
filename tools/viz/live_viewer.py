@@ -79,7 +79,7 @@ def main():
     ap.add_argument("--browser", action="store_true", help="open in the default browser instead of a window")
     ap.add_argument("--serve_only", action="store_true", help="only serve (for testing)")
     ap.add_argument("--port", type=int, default=0, help="fixed port (default: random free port)")
-    ap.add_argument("--mode", choices=["lite", "cinematic"], default=None,
+    ap.add_argument("--mode", choices=["lite", "cinematic", "dashboard"], default=None,
                     help="display mode (default: lite for live runs, cinematic for --html pages)")
     ap.add_argument("--fps", type=int, default=None, help="frame cap override (default: the mode's own)")
     ap.add_argument("--query", default="", help="extra viewer options, e.g. 'bloom=0&k=4&pulses=0&dpr=1'")

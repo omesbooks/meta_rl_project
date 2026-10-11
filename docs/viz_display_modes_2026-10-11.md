@@ -2,7 +2,7 @@
 
 > คำถาม: ภาพ 3D ตอนนี้กินทรัพยากรที่สุดหรือไม่ และมีรูปแบบอื่นอะไรบ้าง
 > วัดจริงในหน้าต่าง pywebview (Edge WebView2) ขนาด 1600×920 กับ snapshot ของโมเดล `rl_test` (200k steps)
-> สถานะ: **Lite + Auto idle ทำแล้ว** (ดู "ผลหลังทำ" ท้ายไฟล์) · Dashboard ยังไม่ทำ
+> สถานะ: **ทำครบทั้ง 3 โหมด + Auto idle** (ดู "ผลหลังทำ" และ "Dashboard" ท้ายไฟล์)
 > CPU = % ของ 1 core (เครื่องนี้มี 20 logical cores → 100% ≈ 5% ของทั้งเครื่อง) · วัด 10 วินาทีหลังหน้าโหลดเสร็จ
 
 ## ผลวัด
@@ -62,3 +62,25 @@
 - ทุกหน้า: idle เมื่อ pause แล้วไม่มี input 8 วินาที, เมื่อ `visibilitychange` เป็น hidden, และเมื่อหน้าต่าง pywebview ถูกย่อ
   (WebView2 วาดต่อแม้ย่อหน้าต่าง — `live_viewer.py` ส่ง event minimized/restored เข้าไปให้หน้าเว็บ)
 - ตอน idle loop หยุด `requestAnimationFrame` จริง (ภาพสุดท้ายค้างไว้บนจอ) · ตื่นเมื่อ snapshot ใหม่มา ขยับเมาส์ คลิก scroll กดปุ่ม หรือเปลี่ยน control
+
+## Dashboard (2026-10-11)
+
+ไฟล์ `tools/viz/dashboard.js` (ES module, ไม่มี animation loop) · เลือกด้วย `mode=dashboard` / เมนู mode ในหน้าต่าง /
+"Dashboard (lowest CPU)" ในหน้า Train
+
+แผง: KPI 8 ช่อง (step, eval reward, best, trades, win rate, equity, max DD, avg trade) · learning curve (reward ต่อ eval + best so far) ·
+action mix ต่อ eval · equity ของทุก eval ซ้อนกัน (ทอง = ล่าสุด) · ตารางเทรดล่าสุด · replay แท่งเทียน + จุดเข้า/ออก + equity ของ eval ที่เลือก ·
+heatmap นิวรอน × แท่ง ของทุก layer (Actor/Critic, สูงสุด 64 นิวรอนต่อ layer) + แถบความน่าจะเป็นของ action + แถบ V(s)
+
+ข้อมูล: `index.json` เก็บสรุปต่อ eval เพิ่ม (`snapshot.summary()`: equity ย่อ 120 จุด, จำนวน action, trades/wins/win rate, max DD)
+→ Dashboard ไม่ต้องโหลดทุก snapshot · run เก่าที่ไม่มีสรุป Dashboard โหลด snapshot แล้วคำนวณเองครั้งเดียว (cache)
+
+| สถานะ (หน้าต่าง WebView2 จริง, run `rl_test` 7 eval) | CPU |
+|---|---:|
+| Dashboard นิ่ง | 1–2% |
+| เลือก eval ใน timeline (โหลด snapshot + วาดทั้งหน้า) | ~21% เฉลี่ย 3 วินาที (ครั้งเดียว) |
+| resize แล้ววาดใหม่ | ~5% เฉลี่ย 3 วินาที |
+| สลับไป Lite / กลับ Dashboard | Lite วาด 20 fps ตามปกติ · กลับ Dashboard loop หยุดทันที |
+
+หมายเหตุการวัด: ตัวเลข Lite/Cinematic ขึ้นกับสภาพเครื่อง — วัดซ้ำตอนบ่าย Lite ได้ 37–44% และ Cinematic ไปได้แค่ 24 fps
+(เช้า 21–26% / 30 fps) · A/B ไฟล์ viewer รุ่นก่อนกับรุ่นนี้ในสภาพเดียวกัน: 44–45% vs 39–41% → ไม่ได้เกิดจากโค้ด

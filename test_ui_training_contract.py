@@ -482,6 +482,12 @@ class DashboardContractTests(unittest.TestCase):
             finally:
                 self.app.train_viz_mode.set("Lite (low CPU)")
             self.assertEqual(popen.call_args.args[0][-2:], ["--mode", "cinematic"])
+            self.app.train_viz_mode.set("Dashboard (lowest CPU)")
+            try:
+                self.app._open_live_visual()
+            finally:
+                self.app.train_viz_mode.set("Lite (low CPU)")
+            self.assertEqual(popen.call_args.args[0][-2:], ["--mode", "dashboard"])
             self.app._close_viz_window()
             self.assertGreaterEqual(popen.return_value.terminate.call_count, 1)
         self.assertFalse(self.app._viz_window_running())

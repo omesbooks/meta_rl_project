@@ -155,6 +155,28 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None):
     }
 
 
+def summary(snap, points=120):
+    """Compact per-evaluation facts for index.json (the Dashboard reads these
+    instead of downloading every snapshot): downsampled equity, action counts,
+    trade stats, max drawdown on the slice."""
+    eq = np.asarray(snap["eq"], dtype=float)
+    n = len(eq)
+    idx = np.linspace(0, n - 1, min(points, n)).round().astype(int) if n else np.array([], int)
+    tp = np.asarray(snap["tpnl"], dtype=float)
+    closed = tp[tp != 0]
+    n_act = len(snap["actions"])
+    counts = np.bincount(np.asarray(snap["act"], dtype=int), minlength=n_act)[:n_act]
+    peak = np.maximum.accumulate(eq) if n else eq
+    max_dd = float(((eq - peak) / peak).min()) if n else 0.0
+    return {
+        "eq_curve": [round(float(v), 5) for v in eq[idx]],
+        "action_counts": [int(c) for c in counts],
+        "trades": int(len(closed)), "wins": int((closed > 0).sum()),
+        "win_rate": float((closed > 0).mean()) if len(closed) else None,
+        "equity_end": float(eq[-1]) if n else 1.0, "max_dd": round(max_dd, 5),
+    }
+
+
 def _atomic_write(path, text):
     path = Path(path)
     tmp = path.with_suffix(path.suffix + ".tmp")

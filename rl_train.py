@@ -586,8 +586,7 @@ def train(args, run, prepared=None):
                         snap = viz_snapshot.capture(self.model.policy, make_viz_env(), args.window,
                                                     viz_frames, action_names=viz_actions, meta=meta)
                         entry = {k: meta[k] for k in ("step", "total_steps", "eval_reward", "best_reward")}
-                        entry.update(equity_end=snap["eq"][-1], trades=sum(1 for p in snap["tpnl"] if p),
-                                     capture_s=snap["meta"]["capture_s"])
+                        entry.update(viz_snapshot.summary(snap), capture_s=snap["meta"]["capture_s"])
                         path = viz_snapshot.write_live(viz_dir, self.i, snap, entry)
                         # leading newline: the tqdm progress bar leaves the cursor mid-line
                         print(f"\nVIZ_SNAPSHOT {self.i} {self.num_timesteps} {path}", flush=True)

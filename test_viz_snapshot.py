@@ -80,6 +80,16 @@ def test_capture_shapes(net_arch, activation, profile, n_actions):
     json.dumps(snap)                                   # must be serialisable as-is
 
 
+def test_summary_matches_snapshot():
+    policy, make, cfg = _policy_and_env([16], torch.nn.Tanh, "manage_6")
+    snap = snap_mod.capture(policy, make(), WINDOW, 120, k=4, action_names=snap_mod.action_names(cfg))
+    s = snap_mod.summary(snap, points=50)
+    assert len(s["eq_curve"]) == 50 and s["eq_curve"][-1] == round(snap["eq"][-1], 5)
+    assert len(s["action_counts"]) == 6 and sum(s["action_counts"]) == snap["frames"]
+    assert s["trades"] == sum(1 for p in snap["tpnl"] if p) and s["max_dd"] <= 0
+    json.dumps(s)
+
+
 def test_rejects_non_actor_critic():
     class Q(torch.nn.Module):
         pass

@@ -1483,12 +1483,14 @@ class RLTradingStudio(ctk.CTk):
     # --------------------------------------------------------
     # Live 3D visual (tools/viz/live_viewer.py, pywebview window)
     # --------------------------------------------------------
-    def _on_viz_snapshot(self, index, step, path):
-        """A training run wrote snapshot `index`; open the window on the first one."""
+    def _on_viz_snapshot(self, index, step, path, kind="eval"):
+        """A training run wrote an eval snapshot or a training-rollout snapshot
+        (`kind` "rollout"); open the window on the first one of either."""
         viz_dir = Path(path).parent
         if hasattr(self, "train_viz_status"):
+            what = f"training rollout {index + 1}" if kind == "rollout" else f"eval {index + 1}"
             self.train_viz_status.configure(
-                text=f"visual: eval {index + 1} @ {step:,} steps", text_color="#19e6ff")
+                text=f"visual: {what} @ {step:,} steps", text_color="#19e6ff")
         if getattr(self, "_viz_run_dir", None) != viz_dir:
             self._viz_run_dir = viz_dir
             self._launch_viz_window(["--run_dir", str(viz_dir)])
@@ -7312,7 +7314,7 @@ class RLTradingStudio(ctk.CTk):
         self._viz_run_dir = None
         if hasattr(self, "train_viz_status"):
             self.train_viz_status.configure(
-                text="visual: waiting for the first evaluation (10k steps)" if "--viz" in cmd else "")
+                text="visual: waiting for the first training rollout" if "--viz" in cmd else "")
         # ⭐ reset reward graph + threshold tracker for new run
         self._reset_reward_tracking()
         self._start_runner(cmd, "train")
@@ -10141,9 +10143,10 @@ Built with: CustomTkinter + stable-baselines3
 
         # Page-specific updates
         if page == 'train':
-            vm = re.search(r'VIZ_SNAPSHOT\s+(\d+)\s+(\d+)\s+(.+?)\s*$', line)
+            vm = re.search(r'VIZ_(SNAPSHOT|ROLLOUT)\s+(\d+)\s+(\d+)\s+(.+?)\s*$', line)
             if vm:
-                self._on_viz_snapshot(int(vm.group(1)), int(vm.group(2)), vm.group(3))
+                self._on_viz_snapshot(int(vm.group(2)), int(vm.group(3)), vm.group(4),
+                                      kind="rollout" if vm.group(1) == "ROLLOUT" else "eval")
             prog = self._parse_progress(line)
             if prog:
                 cur, tot = prog

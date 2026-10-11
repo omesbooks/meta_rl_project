@@ -118,6 +118,39 @@ def test_edges_ranked_by_influence_not_raw_weight():
         assert set(picked.tolist()) <= set(normal), (tower, picked)
 
 
+def test_rollout_callback_writes_what_the_agent_played(tmp_path):
+    """Training-rollout replay: frames come from the PPO rollout buffer, form one
+    contiguous stretch of bars, and each frame's observation is the window that
+    ends at the bar it is labelled with."""
+    from stable_baselines3 import PPO
+    _, cfg = get_action_profile("basic_4")
+    df = _frame(n=400)
+    env = TradingEnv(df, FEATS, window_size=WINDOW, max_steps=120, action_profile=cfg)
+    model = PPO("MlpPolicy", env, n_steps=64, batch_size=32, seed=1, device="cpu",
+                policy_kwargs=dict(net_arch=[16]))
+    cb = snap_mod.make_rollout_callback(tmp_path, WINDOW, names=snap_mod.action_names(cfg),
+                                        frames=50, min_interval=0.0, total_steps=192, model_name="t")
+    model.learn(total_timesteps=192, callback=cb)
+    meta = json.loads((tmp_path / "rollout_meta.json").read_text(encoding="utf-8"))
+    snap = json.loads((tmp_path / "rollout_latest.json").read_text(encoding="utf-8"))
+    assert meta["seq"] == 2 and snap["meta"]["source"] == "rollout" and snap["meta"]["rollout"] == 2
+    n = snap["frames"]
+    assert 1 <= n <= 50
+    for key in ("act", "greedy", "pos", "eq", "tpnl", "reward", "adv", "ts", "c"):
+        assert len(snap[key]) == n, key
+    assert set(snap["act"]) <= {0, 1, 2, 3} and 0 <= snap["meta"]["explore"] <= 1
+    row = {t: i for i, t in enumerate(df["timestamp"])}
+    tix = [row[t] for t in snap["ts"]]
+    assert tix == list(range(tix[0], tix[0] + n))           # contiguous bars, no episode jump
+    q = np.frombuffer(base64.b64decode(snap["q"]), dtype=np.int8).reshape(n, snap["width"]) / 127
+    nf = len(FEATS)
+    feats = df[FEATS].to_numpy(dtype=np.float32)
+    for f in (0, n // 2, n - 1):
+        t = tix[f]
+        expect = np.clip(feats[t - WINDOW + 1:t + 1].reshape(-1) / 4.0, -1, 1)
+        assert np.allclose(q[f, :WINDOW * nf], expect, atol=0.01), f
+
+
 def test_rejects_non_actor_critic():
     class Q(torch.nn.Module):
         pass

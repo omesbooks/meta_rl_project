@@ -492,6 +492,24 @@ class DashboardContractTests(unittest.TestCase):
             self.assertGreaterEqual(popen.return_value.terminate.call_count, 1)
         self.assertFalse(self.app._viz_window_running())
 
+    def test_viz_rollout_line_opens_the_window_before_the_first_eval(self):
+        script = self.root / "tools" / "viz" / "live_viewer.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("")
+        viz_dir = self.root / "models" / "m" / "runs" / ("b" * 32) / "viz"
+        viz_dir.mkdir(parents=True)
+        with patch.object(rl_app.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
+            self.app._viz_run_dir = None
+            self.app._handle_log_line(f"VIZ_ROLLOUT 0 2048 {viz_dir / 'rollout_latest.json'}", page="train")
+            self.assertEqual(popen.call_count, 1)
+            self.assertEqual(popen.call_args.args[0][1:4], [str(script), "--run_dir", str(viz_dir)])
+            self.assertIn("training rollout 1 @ 2,048", self.app.train_viz_status.cget("text"))
+            self.app._handle_log_line(f"VIZ_SNAPSHOT 0 10000 {viz_dir / 'snap_000.json'}", page="train")
+            self.assertEqual(popen.call_count, 1)                 # same run: same window
+            self.assertIn("eval 1 @ 10,000", self.app.train_viz_status.cget("text"))
+            self.app._close_viz_window()
+
 
 if __name__ == "__main__":
     unittest.main()

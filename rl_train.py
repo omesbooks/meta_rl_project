@@ -545,10 +545,9 @@ def train(args, run, prepared=None):
 
     from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
     viz_cb = None
+    rollout_cb = None
     if args.viz:
-        if eval_env is None:
-            print("[viz] skipped: no validation slice to visualise")
-        elif args.algo == "dqn":
+        if args.algo == "dqn":
             print("[viz] skipped: DQN has a single Q-network (visual needs PPO/A2C)")
         else:
             import importlib.util
@@ -557,7 +556,8 @@ def train(args, run, prepared=None):
             viz_snapshot = importlib.util.module_from_spec(_spec)
             _spec.loader.exec_module(viz_snapshot)
             viz_dir = model_dir(args.name) / "viz"
-            viz_frames = max(10, min(args.viz_frames, len(validation_df) - args.window - 3))
+            viz_frames = (max(10, min(args.viz_frames, len(validation_df) - args.window - 3))
+                          if validation_df is not None else args.viz_frames)
             viz_actions = viz_snapshot.action_names(action_profile_cfg)
 
             def make_viz_env():
@@ -595,8 +595,20 @@ def train(args, run, prepared=None):
                     self.i += 1
                     return True
 
-            viz_cb = VizCallback()
-            print(f"[viz] live snapshots after every evaluation -> {viz_dir} ({viz_frames} bars each)")
+            if eval_env is not None:
+                viz_cb = VizCallback()
+                print(f"[viz] live snapshots after every evaluation -> {viz_dir} ({viz_frames} bars each)")
+            else:
+                print("[viz] no validation slice: eval replays skipped, training rollouts only")
+            # what the agent actually played: sampled actions, rewards, advantages
+            if args.n_steps < 120:
+                print(f"[viz] n_steps={args.n_steps}: too few bars per rollout, training-rollout replay skipped")
+            else:
+                rollout_cb = viz_snapshot.make_rollout_callback(
+                    viz_dir, args.window, names=viz_actions, frames=400, min_interval=4.0,
+                    total_steps=args.steps, model_name=args.name,
+                    symbol=Path(args.csv).name.split("_")[0].upper())
+                print(f"[viz] training rollouts -> {viz_dir / 'rollout_latest.json'} (latest, every rollout, >= 4 s apart)")
     eval_cb = EvalCallback(
         eval_env,
         best_model_save_path=str(best_dir(args.name)),
@@ -609,7 +621,13 @@ def train(args, run, prepared=None):
         callback_after_eval=viz_cb,
     ) if eval_env is not None else None
 
-    model.learn(total_timesteps=args.steps, callback=eval_cb, progress_bar=True)
+    callbacks = [cb for cb in (eval_cb, rollout_cb) if cb is not None]
+    if len(callbacks) > 1:
+        from stable_baselines3.common.callbacks import CallbackList
+        learn_cb = CallbackList(callbacks)
+    else:
+        learn_cb = callbacks[0] if callbacks else None
+    model.learn(total_timesteps=args.steps, callback=learn_cb, progress_bar=True)
 
     # ---------- save ----------
     save_path = final_model_path(args.name)

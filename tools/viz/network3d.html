@@ -19,6 +19,9 @@
   #stats { top: 14px; right: 24px; display: grid; grid-template-columns: repeat(3, auto); gap: 6px 22px; text-align: right; }
   .stat .k { font: 600 10px/1 var(--hud); letter-spacing: .22em; color: var(--dim); text-shadow: none; }
   .stat .v { font: 600 21px/1.2 var(--hud); font-variant-numeric: tabular-nums; }
+  .stat .v.sm { font-size: 16px; line-height: 1.55; }
+  #rstats { right: 24px; display: none; grid-template-columns: repeat(3, auto); gap: 0 22px; text-align: right; }
+  body.ro #rstats { display: grid; }
   .lbl { position: fixed; pointer-events: none; font: 600 13px/1 var(--hud); letter-spacing: .12em;
          white-space: nowrap; transform: translate(-50%, -50%); text-shadow: 0 0 10px currentColor; }
   .lbl.tag { font: 600 10px/1 var(--hud); letter-spacing: .3em; color: var(--dim); text-shadow: none; }
@@ -31,7 +34,7 @@
            border-radius: 12px; backdrop-filter: blur(6px); font-size: 13px; color: var(--dim); }
   #ctrl { right: 18px; bottom: 14px; display: flex; gap: 10px; align-items: center; padding: 7px 12px; }
   #timeline { left: 18px; bottom: 14px; padding: 8px 12px; display: none; gap: 12px; align-items: center; }
-  #timeline .lab { font: 600 12px/1.25 var(--hud); color: var(--fg); min-width: 210px; }
+  #timeline .lab { font: 600 12px/1.25 var(--hud); color: var(--fg); min-width: 250px; }
   #timeline .lab small { display: block; color: var(--dim); font-size: 11px; letter-spacing: .08em; }
   .panel button { background: transparent; color: var(--cyan); border: 1px solid rgba(25, 230, 255, .35);
                   border-radius: 7px; padding: 3px 9px; font: 600 12px var(--hud); cursor: pointer; }
@@ -50,7 +53,7 @@
           padding: 6px 14px; border: 1px solid rgba(93, 107, 138, .35); border-radius: 999px;
           background: rgba(6, 10, 24, .6); opacity: 0; transition: opacity .4s; }
   body.dash #gl, body.dash #labels, body.dash #stats, body.dash #chartLbl, body.dash #pxHi,
-  body.dash #pxLo, body.dash #idle, body.dash .c3d { display: none !important; }
+  body.dash #pxLo, body.dash #idle, body.dash .c3d, body.dash #rstats { display: none !important; }
   #banner { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); pointer-events: none;
             font: 700 16px var(--hud); letter-spacing: .3em; color: var(--gold); text-shadow: 0 0 14px var(--gold);
             opacity: 0; transition: opacity .35s; white-space: nowrap; }
@@ -66,6 +69,11 @@
   <div class="stat"><div class="k">WIN RATE</div><div class="v" id="sWr" style="color:var(--gold)">–</div></div>
   <div class="stat"><div class="k">CRITIC V(s)</div><div class="v" id="sV">–</div></div>
 </div>
+<div id="rstats" class="hud">
+  <div class="stat"><div class="k">REWARD</div><div class="v" id="sRw">–</div></div>
+  <div class="stat"><div class="k">ADVANTAGE</div><div class="v" id="sAdv">–</div></div>
+  <div class="stat"><div class="k">SAMPLED · GREEDY</div><div class="v sm" id="sExp">–</div></div>
+</div>
 <div id="labels"></div>
 <div id="dash"></div>
 <div id="chartLbl" class="hud"></div>
@@ -79,6 +87,7 @@
   <button id="bLive" class="on">● LIVE</button>
 </div>
 <div id="ctrl" class="panel">
+  <label class="c3d" id="lSrc" style="display:none">source <select id="iSrc"><option value="training">Training (live)</option><option value="eval">Eval replay</option></select></label>
   <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option><option value="dashboard">Dashboard</option></select></label>
   <button id="bPlay" class="c3d">❚❚</button>
   <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
@@ -89,7 +98,7 @@
   <button id="bRec" class="rec c3d">● rec</button>
   <button id="bFull">⛶</button>
 </div>
-<div id="wait"><div><h2>WAITING FOR THE FIRST EVALUATION</h2><p>a snapshot arrives after every 10,000 training steps</p></div></div>
+<div id="wait"><div><h2>WAITING FOR TRAINING DATA</h2><p>training rollouts arrive after the first PPO rollout · eval replays every 10,000 steps</p></div></div>
 <div id="err"></div>
 
 <script type="importmap">
@@ -220,6 +229,14 @@ const triShape = new THREE.Shape(); triShape.moveTo(0, 0.6); triShape.lineTo(-0.
 const markers = new THREE.InstancedMesh(new THREE.ShapeGeometry(triShape), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), (CW_BARS + 2) * 2);
 markers.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 6), 3);
 markers.frustumCulled = false; markers.count = 0; chartScene.add(markers);
+// training rollouts only: PPO advantage per bar (strip at the chart floor) and
+// dots where the sampled action differs from the greedy one (exploration)
+const advBars = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), CW_BARS + 2);
+advBars.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3);
+advBars.frustumCulled = false; advBars.count = 0; chartScene.add(advBars);
+const xMarks = new THREE.InstancedMesh(new THREE.CircleGeometry(0.5, 12), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), CW_BARS + 2);
+xMarks.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3);
+xMarks.frustumCulled = false; xMarks.count = 0; chartScene.add(xMarks);
 const eqGeo = new THREE.BufferGeometry();
 eqGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3));
 const eqLine = new THREE.Line(eqGeo, new THREE.LineBasicMaterial({ color: C_GOLD, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }));
@@ -236,13 +253,20 @@ chartScene.add(bursts);
 let burstNext = 0, CH = {};
 function layoutChart() {
   const w = innerWidth, h = innerHeight;
-  const lift = LIVE ? 44 : 0;   // room for the timeline panel
+  let lift = LIVE ? 44 : 0;     // room for the timeline panel
+  const tl = $("timeline"), ct = $("ctrl");
+  tl.style.bottom = "14px";
+  if (tl.offsetWidth) {         // narrow window: timeline and controls collide -> stack the timeline above
+    const a = tl.getBoundingClientRect(), b = ct.getBoundingClientRect();
+    if (a.right + 10 > b.left) { tl.style.bottom = (h - b.top + 8) + "px"; lift += h - b.top - 6; }
+  }
   CH = { x0: 70, x1: w - 90, y0: 34 + lift, y1: Math.max(150, h * 0.27) + lift };
   chartCam.right = w; chartCam.top = h; chartCam.updateProjectionMatrix();
   const g = gridGeo.attributes.position.array;
   for (let i = 0; i < 5; i++) { const y = CH.y0 + (CH.y1 - CH.y0) * i / 4; g.set([CH.x0, y, 0, CH.x1, y, 0], i * 6); }
   g.set([CH.x1, CH.y0, 0, CH.x1, CH.y1, 0], 30); gridGeo.attributes.position.needsUpdate = true;
   $("chartLbl").style.bottom = (CH.y1 + 10) + "px";
+  $("rstats").style.bottom = (CH.y1 + 8) + "px";
   $("pxHi").style.bottom = (CH.y1 - 12) + "px";
   $("pxLo").style.bottom = (CH.y0 - 4) + "px";
 }
@@ -276,6 +300,12 @@ function prepare(D) {
   s.towerLayers = [s.layers.filter(l => l.tower === 0), s.layers.filter(l => l.tower === 1)];
   s.mats = [D.edges.actor, D.edges.critic].map(ms => ms.map(m => ({ rows: m.rows, cols: m.cols, k: m.k, idx: dec(m.idx, Int16Array), w: dec(m.w, Float32Array) })));
   s.colors = s.names.map((n, i) => ACTION_COLORS[n] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]);
+  s.colorsT = s.colors.map(c => new THREE.Color(c));
+  s.ROLL = !!(D.meta && D.meta.source === "rollout" && D.adv && D.greedy);
+  if (s.ROLL) {                      // scale the advantage strip by the 95th percentile of |adv|
+    const a = D.adv.map(Math.abs).sort((x, y) => x - y);
+    s.advMax = Math.max(1e-9, a[Math.floor((a.length - 1) * 0.95)] || 0);
+  }
   s.cur = new Float32Array(s.W);
   return s;
 }
@@ -426,7 +456,8 @@ function updateChart(fp, dt) {
   const py = p => CH.y0 + (p - pLo) / (pHi - pLo) * (CH.y1 - CH.y0);
   const ey = e => CH.y0 + (e - eLo) / (eHi - eLo) * (CH.y1 - CH.y0);
   const wp = wickGeo.attributes.position.array, wc = wickGeo.attributes.color.array, ep = eqGeo.attributes.position.array;
-  let k = 0, mk = 0;
+  let k = 0, mk = 0, ak = 0, xk = 0;
+  const yb = CH.y0 + 8, aw = Math.max(2, sp * 0.7), xs = Math.max(4, Math.min(7, bw * 0.8));
   for (let i = first; i <= fi; i++, k++) {
     const age = fi - i, x = CH.x1 - sp * 0.5 - (age + frac) * sp;
     const col = D.c[i] >= D.o[i] ? C_UP : C_DN;
@@ -448,7 +479,23 @@ function updateChart(fp, dt) {
       m4.compose(v3.set(x, py(D.c[i]), 0), q0, s3.set(7, 7, 1));
       markers.setMatrixAt(mk, m4); const c = D.tpnl[i] > 0 ? C_GOLD : C_DN; markers.instanceColor.setXYZ(mk, c.r * 1.4, c.g * 1.4, c.b * 1.4); mk++;
     }
+    if (S.ROLL) {
+      const r = Math.min(1, Math.abs(D.adv[i]) / S.advMax), hgt = Math.max(0.8, r * 8);
+      if (r > 0.02) {                                     // advantage: up = better than the critic expected
+        m4.compose(v3.set(x, D.adv[i] >= 0 ? yb + hgt / 2 : yb - hgt / 2, 0), q0, s3.set(aw, hgt, 1));
+        const c = D.adv[i] >= 0 ? C_UP : C_DN, f = fade * (0.35 + 0.65 * r);
+        advBars.setMatrixAt(ak, m4); advBars.instanceColor.setXYZ(ak, c.r * f, c.g * f, c.b * f); ak++;
+      }
+      const a = D.act[i];
+      if (a !== D.greedy[i] && a >= 0 && a < S.NA) {      // explored: sampled action != greedy argmax
+        m4.compose(v3.set(x, py(D.h[i]) + 6, 0), q0, s3.set(xs, xs, 1));
+        const c = S.colorsT[a], f = Math.max(0.5, fade) * 1.2;
+        xMarks.setMatrixAt(xk, m4); xMarks.instanceColor.setXYZ(xk, c.r * f, c.g * f, c.b * f); xk++;
+      }
+    }
   }
+  advBars.count = ak; advBars.instanceMatrix.needsUpdate = true; advBars.instanceColor.needsUpdate = true;
+  xMarks.count = xk; xMarks.instanceMatrix.needsUpdate = true; xMarks.instanceColor.needsUpdate = true;
   bodies.count = k; bodies.instanceMatrix.needsUpdate = true; bodies.instanceColor.needsUpdate = true;
   wickGeo.setDrawRange(0, k * 2); wickGeo.attributes.position.needsUpdate = true; wickGeo.attributes.color.needsUpdate = true;
   eqGeo.setDrawRange(0, k); eqGeo.attributes.position.needsUpdate = true;
@@ -491,6 +538,14 @@ function onNewBar(i, ch) {
   $("sTr").textContent = tradesClosed;
   $("sWr").textContent = tradesClosed ? Math.round(wins / tradesClosed * 100) + "%" : "–";
   $("sBar").textContent = String(D.ts[i]).slice(0, 16);
+  if (S.ROLL) {
+    const sgn = v => (v >= 0 ? "+" : "") + v.toFixed(Math.abs(v) >= 1 ? 2 : 4);
+    $("sRw").textContent = sgn(D.reward[i]); $("sRw").style.color = D.reward[i] > 0 ? "var(--green)" : D.reward[i] < 0 ? "var(--mag)" : "var(--dim)";
+    $("sAdv").textContent = sgn(D.adv[i]); $("sAdv").style.color = D.adv[i] >= 0 ? "var(--green)" : "var(--mag)";
+    const g = D.greedy[i], lab = j => S.labels[j] || String(j), ex = a !== g;
+    $("sExp").textContent = ex ? `${lab(a)} ≠ ${lab(g)}` : lab(a);
+    $("sExp").style.color = ex ? "var(--gold)" : "var(--dim)";
+  }
 }
 let fpos = 0, START = 0, endAt = 0;
 function seek(i) {
@@ -503,6 +558,11 @@ function seek(i) {
 // ================================================================== snapshot loading
 let glowPulse = 0;
 function banner(text) { const b = $("banner"); b.textContent = text; b.style.opacity = 1; clearTimeout(banner.t); banner.t = setTimeout(() => b.style.opacity = 0, 2600); }
+// Two sources feed the 3D view: "training" = the newest PPO rollout (what the agent
+// just played on TRAIN data while exploring: sampled actions, rewards, advantages,
+// rollout_latest.json) and "eval" = the deterministic replays on the validation slice
+// (snap_NNN.json). `shown` is what S holds now; the Dashboard always uses evalD.
+let shown = "", source = "eval", srcPinned = false, evalD = null;
 function applySnapshot(D) {
   try { S = prepare(D); } catch (e) { fail("bad snapshot: " + e.message); return; }
   buildNet(S);
@@ -510,55 +570,120 @@ function applySnapshot(D) {
   seek(START);
   $("wait").style.display = "none";
   const m = D.meta || {};
+  shown = S.ROLL ? "rollout" : "eval";
+  if (!S.ROLL) evalD = D;
+  document.body.classList.toggle("ro", S.ROLL);
   const sym = m.symbol || "";
   const what = m.step != null && m.total_steps ? `STEP ${m.step.toLocaleString()} / ${m.total_steps.toLocaleString()}` : (m.steps ? `${m.steps.toLocaleString()} STEPS` : "");
-  $("sub").textContent = [sym && `${sym} H4`, (m.slice || "validation").toUpperCase(), m.model, what, `${D.ts[0].slice(0, 10)} → ${D.ts[S.NF - 1].slice(0, 10)}`].filter(Boolean).join(" · ");
-  $("chartLbl").textContent = `${sym ? sym + " · " : ""}${(m.slice || "validation").toUpperCase()} · AGENT TRADES`;
+  const span = `${D.ts[0].slice(0, 10)} → ${D.ts[S.NF - 1].slice(0, 10)}`;
+  if (S.ROLL) {
+    $("sub").textContent = [sym && `${sym} H4`, `TRAINING ROLLOUT #${(m.rollout || 0) + 1}`, m.model, what].filter(Boolean).join(" · ");
+    $("chartLbl").textContent = `${sym ? sym + " · " : ""}TRAIN · SAMPLED ACTIONS · ● EXPLORED · ▮ ADVANTAGE`;
+  } else {
+    $("sub").textContent = [sym && `${sym} H4`, (m.slice || "validation").toUpperCase(), m.model, what, span].filter(Boolean).join(" · ");
+    $("chartLbl").textContent = `${sym ? sym + " · " : ""}${(m.slice || "validation").toUpperCase()} · AGENT TRADES`;
+  }
   if (m.eval_index != null) { banner(`EVAL ${m.eval_index + 1} · STEP ${Number(m.step).toLocaleString()} · REWARD ${Number(m.eval_reward).toFixed(2)}`); glowPulse = 1; }
   wake("data");
   dashUpdate();
 }
 
-// live mode: poll run/index.json, follow the newest snapshot unless the user scrubbed back
+// live mode: poll run/index.json (evals) + run/rollout_meta.json (training rollouts)
 let index = [], loadedI = -1, follow = true, loading = false;
+let haveRollout = false, rollMeta = null, rollSeq = -1, rollPending = false, rollLoading = false;
 async function loadSnap(entry) {
   if (loading) return; loading = true;
   try {
     const r = await fetch(`run/${entry.file}?t=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const D = await r.json();
-    loadedI = entry.i;               // before applySnapshot: the dashboard renders the selected eval
-    applySnapshot(D); renderTimeline();
+    loadedI = entry.i; evalD = D;    // before applySnapshot: the dashboard renders the selected eval
+    if (source === "eval" || !haveRollout) applySnapshot(D);
+    else {                            // watching training: keep it, just announce the eval
+      $("wait").style.display = "none";
+      if (shown === "rollout") banner(`EVAL ${entry.i + 1} READY · REWARD ${Number(entry.eval_reward).toFixed(2)} · SOURCE → EVAL REPLAY`);
+      dashUpdate();
+    }
+    renderTimeline();
   } catch (e) { console.warn("snapshot load failed", e); }
   loading = false;
 }
+async function loadRollout() {
+  if (rollLoading) return; rollLoading = true; rollPending = false;
+  try {
+    const r = await fetch(`run/rollout_latest.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const D = await r.json();
+    if (source === "training" && mode !== "dashboard") applySnapshot(D);   // user may have switched meanwhile
+  } catch (e) { console.warn("rollout load failed", e); }
+  rollLoading = false;
+  renderTimeline();
+}
+function setSource(src, pin = false) {
+  if (pin) srcPinned = true;
+  source = src; $("iSrc").value = src; follow = true;
+  if (src === "training") { if (haveRollout && mode !== "dashboard") loadRollout(); }
+  else {
+    const last = index[index.length - 1];
+    if (last && last.i !== loadedI) loadSnap(last);
+    else if (evalD && shown !== "eval") applySnapshot(evalD);
+    else if (!evalD) banner("NO EVALUATION YET · THE FIRST ONE COMES AT 10,000 STEPS");
+  }
+  renderTimeline();
+}
 async function poll() {
+  let last = null;
   try {
     const r = await fetch(`run/index.json?t=${Date.now()}`, { cache: "no-store" });
     if (r.ok) {
       const j = await r.json(); index = (j.snapshots || []).slice().sort((a, b) => a.i - b.i);
-      if (index.length) {
-        $("timeline").style.display = "flex";
-        const last = index[index.length - 1];
-        if ((follow && last.i !== loadedI) || loadedI < 0) await loadSnap(last);
-        renderTimeline();
-        dashUpdate(false);
-      }
+      if (index.length) last = index[index.length - 1];
     }
   } catch (e) { /* server not ready yet */ }
+  try {
+    const r = await fetch(`run/rollout_meta.json?t=${Date.now()}`, { cache: "no-store" });
+    if (r.ok) {
+      rollMeta = await r.json();
+      if (!haveRollout) {
+        haveRollout = true; $("lSrc").style.display = ""; layoutChart();
+        // a run that is still training opens on the training stream; a finished one on its evals
+        const age = Date.now() - Date.parse(String(rollMeta.updated || "").replace(" ", "T"));
+        if (!srcPinned && (!(age > 120000) || !index.length)) setSource("training");
+      }
+      if (rollMeta.seq !== rollSeq) {
+        rollSeq = rollMeta.seq;
+        if (source === "training" && mode !== "dashboard") {
+          // never cut a replay short: a new rollout waits for the current one to end
+          if (shown !== "rollout" || (idle && idleReason === "replay")) loadRollout(); else rollPending = true;
+        }
+      }
+    }
+  } catch (e) { /* eval-only run (older folder or DQN) */ }
+  if (last && ((follow && last.i !== loadedI) || loadedI < 0)) await loadSnap(last);
+  if ((index.length || haveRollout) && $("timeline").style.display !== "flex") { $("timeline").style.display = "flex"; layoutChart(); }
+  renderTimeline();
+  dashUpdate(false);
   setTimeout(poll, 2500);
 }
 function renderTimeline() {
-  if (!index.length) return;
-  const sl = $("tSlider"); sl.max = String(index.length - 1);
+  const sl = $("tSlider"), svg = $("spark");
+  $("bLive").classList.toggle("on", haveRollout ? source === "training" : follow);
+  sl.style.display = svg.style.display = index.length ? "" : "none";
+  let lab = "";
+  if (source === "training" && shown === "rollout" && S) {
+    const m = S.D.meta || {};
+    lab = `TRAINING · ROLLOUT ${(m.rollout || 0) + 1} · STEP ${Number(m.step).toLocaleString()}` +
+      `<small>reward Σ ${Number(m.reward_sum).toFixed(2)} · exploring ${Math.round((m.explore || 0) * 100)}% · ${index.length ? index.length + " evals" : "no eval yet"}</small>`;
+  }
+  if (!index.length) { if (lab) $("tLab").innerHTML = lab; return; }
+  sl.max = String(index.length - 1);
   const pos = Math.max(0, index.findIndex(e => e.i === loadedI));
   if (document.activeElement !== sl) sl.value = String(pos);
   const e = index[pos] || index[index.length - 1];
-  $("tLab").innerHTML = `EVAL ${e.i + 1} / ${index.length} · STEP ${Number(e.step).toLocaleString()}` +
-    `<small>reward ${Number(e.eval_reward).toFixed(2)} · best ${Number(e.best_reward).toFixed(2)} · ${e.trades ?? "–"} trades</small>`;
-  $("bLive").classList.toggle("on", follow);
+  $("tLab").innerHTML = lab || (`EVAL ${e.i + 1} / ${index.length} · STEP ${Number(e.step).toLocaleString()}` +
+    `<small>reward ${Number(e.eval_reward).toFixed(2)} · best ${Number(e.best_reward).toFixed(2)} · ${e.trades ?? "–"} trades</small>`);
   const rw = index.map(x => Number(x.eval_reward)).filter(Number.isFinite);
-  const svg = $("spark"); if (rw.length < 1) { svg.innerHTML = ""; return; }
+  if (rw.length < 1) { svg.innerHTML = ""; return; }
   const lo = Math.min(...rw), hi = Math.max(...rw), w = 170, h = 40, pad = 4;
   const X = i => pad + (index.length > 1 ? i * (w - 2 * pad) / (index.length - 1) : (w - 2 * pad) / 2);
   const Y = v => h - pad - (hi > lo ? (v - lo) / (hi - lo) : 0.5) * (h - 2 * pad);
@@ -566,8 +691,17 @@ function renderTimeline() {
   svg.innerHTML = `<polyline points="${pts}" fill="none" stroke="#19e6ff" stroke-width="1.6" style="filter:drop-shadow(0 0 3px #19e6ff)"/>` +
     `<circle cx="${X(pos)}" cy="${Y(Number(e.eval_reward))}" r="3.2" fill="#ffc53d" style="filter:drop-shadow(0 0 4px #ffc53d)"/>`;
 }
-$("tSlider").oninput = ev => { follow = false; const e = index[+ev.target.value]; if (e && e.i !== loadedI) loadSnap(e); };
-$("bLive").onclick = () => { follow = true; const last = index[index.length - 1]; if (last && last.i !== loadedI) loadSnap(last); renderTimeline(); };
+// scrubbing the eval timeline = watch that eval (pins the source to eval replays)
+$("tSlider").oninput = ev => {
+  follow = false; srcPinned = true; source = "eval"; $("iSrc").value = "eval";
+  const e = index[+ev.target.value];
+  if (e && e.i !== loadedI) loadSnap(e); else if (evalD && shown !== "eval") applySnapshot(evalD);
+};
+$("bLive").onclick = () => {
+  if (haveRollout) { setSource("training", true); return; }
+  follow = true; const last = index[index.length - 1]; if (last && last.i !== loadedI) loadSnap(last); renderTimeline();
+};
+$("iSrc").onchange = e => setSource(e.target.value, true);
 
 // ================================================================== loop
 let playing = OPT.play, speed = 6, K = OPT.k, glow = 0.9, lastT = performance.now(), lastDraw = 0, drawn = 0;
@@ -580,13 +714,14 @@ let idle = false, idleReason = "", hostMinimized = false, lastInput = performanc
 const pageHidden = () => hostMinimized || document.visibilityState === "hidden";
 const IDLE_TEXT = {
   replay: "💤 IDLE · REPLAY DONE — WAITING FOR THE NEXT EVALUATION · MOVE THE MOUSE TO REPLAY",
+  replayRoll: "💤 IDLE · REPLAY DONE — WAITING FOR THE NEXT TRAINING ROLLOUT · MOVE THE MOUSE TO REPLAY",
   paused: "💤 IDLE · PAUSED — MOVE THE MOUSE TO WAKE",
   hidden: "💤 IDLE · WINDOW HIDDEN",
 };
 function sleep(reason) {
   if (idle) return;
   idle = true; idleReason = reason;
-  const el = $("idle"); el.textContent = IDLE_TEXT[reason] || "💤 IDLE"; el.style.opacity = (reason === "hidden" || reason === "dashboard") ? 0 : 1;
+  const el = $("idle"); el.textContent = IDLE_TEXT[reason === "replay" && shown === "rollout" ? "replayRoll" : reason] || "💤 IDLE"; el.style.opacity = (reason === "hidden" || reason === "dashboard") ? 0 : 1;
 }
 function wake(reason) {
   if (reason === "input") lastInput = performance.now();
@@ -645,7 +780,10 @@ function frame(now) {
   }
   controls.update();
   composer.render();
-  if (endAt && now - endAt > 1500) sleep("replay");          // let the last bursts fade first
+  if (endAt && now - endAt > 1500) {                         // let the last bursts fade first
+    if (source === "training" && rollPending && mode !== "dashboard") loadRollout();
+    else if (!rollLoading) sleep("replay");
+  }
   else if (!playing && now - lastInput > 8000) sleep("paused");
 }
 function resize() {
@@ -672,6 +810,7 @@ function applyMode(name) {
   resize();
   $("iK").value = String(K); $("iFps").value = String(fpsCap); $("iMode").value = name;
   wake("input");
+  if (source === "training" && haveRollout && (shown !== "rollout" || rollPending)) loadRollout();
 }
 $("iMode").onchange = e => applyMode(e.target.value);
 $("bPlay").onclick = e => { playing = !playing; e.target.textContent = playing ? "❚❚" : "▶"; if (playing && endAt) seek(START); wake("input"); };
@@ -699,17 +838,19 @@ const dash = createDashboard($("dash"), {
 let dashKey = "";
 function dashUpdate(force = true) {
   if (mode !== "dashboard") return;
-  const key = `${index.length}:${index.length ? index[index.length - 1].i : -1}:${loadedI}:${S ? S.NF : 0}`;
+  const key = `${index.length}:${index.length ? index[index.length - 1].i : -1}:${loadedI}:${evalD ? evalD.frames : 0}`;
   if (!force && key === dashKey) return;
   dashKey = key;
-  dash.render({ index, snap: S ? S.D : null, selectedI: loadedI });
+  dash.render({ index, snap: evalD, selectedI: loadedI });
 }
 let dashResize = 0;
 addEventListener("resize", () => { clearTimeout(dashResize); dashResize = setTimeout(() => mode === "dashboard" && dash.rerender(), 200); });
 window.__viz = { seek: i => S && seek(i), get frame() { return fpos; }, get drawn() { return drawn; }, get loaded() { return loadedI; },
                  get ready() { return !!S; }, get idle() { return idle ? idleReason : ""; }, get mode() { return mode; },
                  get dbg() { return { idle, idleReason, hostMinimized, visibility: document.visibilityState, fpsCap, lastDraw: Math.round(lastDraw), playing, endAt: Math.round(endAt) }; },
-                 setHidden, setMode: applyMode, wake: () => wake("input") };
+                 get source() { return source; }, get shown() { return shown; },
+                 get roll() { return { haveRollout, rollSeq, rollPending, rollLoading, loaded: shown === "rollout" && S ? S.D.meta.rollout : -1 }; },
+                 setHidden, setMode: applyMode, setSource: s => setSource(s, true), wake: () => wake("input") };
 
 if (mode === "dashboard") applyMode("dashboard");
 if (window.SNAPSHOT) applySnapshot(window.SNAPSHOT);

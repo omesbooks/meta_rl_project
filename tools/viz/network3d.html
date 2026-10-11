@@ -101,13 +101,17 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 const params = new URLSearchParams(location.search);
 const LIVE = params.has("live") && !window.SNAPSHOT;
 let fpsCap = +(params.get("fps") || (LIVE ? 30 : 60));
+// render knobs (URL): bloom=0 · k=4|8|16 · pulses=0 · dpr=1 · play=0
+const OPT = { bloom: params.get("bloom") !== "0", pulses: params.get("pulses") !== "0",
+              dpr: params.has("dpr") ? +params.get("dpr") : 2, k: +(params.get("k") || 8),
+              play: params.get("play") !== "0" };
 document.getElementById("iFps").value = String(fpsCap);
 const $ = id => document.getElementById(id);
 const fail = msg => { const e = $("err"); e.style.display = "grid"; e.textContent = msg; };
 
 // ================================================================== static scene
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+renderer.setPixelRatio(Math.min(OPT.dpr, 2, devicePixelRatio || 1));
 renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
@@ -132,6 +136,7 @@ const chartPass = new RenderPass(chartScene, chartCam); chartPass.clear = false;
 composer.addPass(chartPass);
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.45, 0.22);
 composer.addPass(bloom);
+bloom.enabled = OPT.bloom;
 composer.addPass(new OutputPass());
 
 const glowPoints = (n, pixelSpace = false) => {
@@ -355,6 +360,8 @@ function updateNetwork(dt) {
   }
   N.eGeo.setDrawRange(0, end * 2); N.eGeo.attributes.color.needsUpdate = true;
 
+  N.pulses.visible = OPT.pulses;
+  if (!OPT.pulses) return;
   const pp = N.pulses.geometry.attributes.position.array, pc = N.pulses.geometry.attributes.aColor.array, ps = N.pulses.geometry.attributes.aSize.array;
   for (let i = 0; i < N.NP; i++) {
     if (N.pEdge[i] < 0 || N.pT[i] >= 1) {
@@ -526,11 +533,12 @@ $("tSlider").oninput = ev => { follow = false; const e = index[+ev.target.value]
 $("bLive").onclick = () => { follow = true; const last = index[index.length - 1]; if (last && last.i !== loadedI) loadSnap(last); renderTimeline(); };
 
 // ================================================================== loop
-let playing = true, speed = 6, K = 8, glow = 0.9, lastT = performance.now(), lastDraw = 0;
+let playing = OPT.play, speed = 6, K = OPT.k, glow = 0.9, lastT = performance.now(), lastDraw = 0, drawn = 0;
+$("iK").value = String(K); if (!playing) $("bPlay").textContent = "▶";
 function frame(now) {
   requestAnimationFrame(frame);
   if (now - lastDraw < 1000 / fpsCap - 1.5) return;
-  lastDraw = now;
+  lastDraw = now; drawn++;
   const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
   if (S && NET) {
     if (playing) { fpos += dt * speed * 0.45; if (fpos >= S.NF - 1) seek(START); }
@@ -588,7 +596,7 @@ $("bRec").onclick = () => {      // records the WebGL canvas (HUD text is HTML a
     a.download = `${(S && S.D.meta && S.D.meta.model) || "neural"}_trader.webm`; a.click(); rec = null; b.textContent = "● rec"; };
   rec.start(); b.textContent = "■ stop";
 };
-window.__viz = { seek: i => S && seek(i), get frame() { return fpos; }, get loaded() { return loadedI; }, get ready() { return !!S; } };
+window.__viz = { seek: i => S && seek(i), get frame() { return fpos; }, get drawn() { return drawn; }, get loaded() { return loadedI; }, get ready() { return !!S; } };
 
 if (window.SNAPSHOT) applySnapshot(window.SNAPSHOT);
 else if (LIVE) { $("wait").style.display = "grid"; poll(); }

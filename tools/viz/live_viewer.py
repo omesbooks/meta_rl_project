@@ -80,6 +80,7 @@ def main():
     ap.add_argument("--serve_only", action="store_true", help="only serve (for testing)")
     ap.add_argument("--port", type=int, default=0, help="fixed port (default: random free port)")
     ap.add_argument("--fps", type=int, default=30, help="frame cap while training (30 keeps CPU free)")
+    ap.add_argument("--query", default="", help="extra viewer options, e.g. 'bloom=0&k=4&pulses=0&dpr=1'")
     args = ap.parse_args()
 
     if args.html:
@@ -99,6 +100,8 @@ def main():
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{port}/{path}"
+    if args.query:
+        url += ("&" if "?" in url else "?") + args.query.lstrip("?&")
     print(f"[viz] serving {viz_data} at {url}", flush=True)
 
     try:

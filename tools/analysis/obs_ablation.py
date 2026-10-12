@@ -290,6 +290,10 @@ def main():
     ap.add_argument("--oos_start", type=float, default=0.85,
                     help="backtest start fraction = Test slice (Validation = train_pct..oos_start)")
     ap.add_argument("--max_hold", type=int, default=35)
+    ap.add_argument("--spread_pct", type=float, default=0.0002, help="half-spread per side (fraction of price) for train + backtest")
+    ap.add_argument("--commission", type=float, default=0.0001, help="commission per trade (fraction of price) for train + backtest")
+    ap.add_argument("--atr_sl", type=float, default=1.5); ap.add_argument("--atr_tp", type=float, default=3.0)
+    ap.add_argument("--reward_profile", default="", help="override the recipe's reward profile (default balanced)")
     ap.add_argument("--mc_eval", type=int, default=0, help="quick-eval MC runs in rl_train (0 = off)")
     ap.add_argument("--mc", type=int, default=1000, help="order-shuffle MC in the OOS backtest")
     ap.add_argument("--bootstrap", type=int, default=1000)
@@ -340,17 +344,19 @@ def main():
         train_cmd = [py, "rl_train.py", args.csv, "--name", name,
                      "--steps", str(args.steps), "--window", str(window),
                      "--corr_threshold", str(thr), "--train_pct", str(args.train_pct),
-                     "--max_hold", str(args.max_hold), "--mc_eval", str(args.mc_eval)]
+                     "--max_hold", str(args.max_hold), "--mc_eval", str(args.mc_eval),
+                     "--spread_pct", str(args.spread_pct), "--commission", str(args.commission)]
         if seed is not None:
             train_cmd += ["--seed", str(seed)]
         for k, v in RECIPE.items():
-            train_cmd += [f"--{k}", v]
+            train_cmd += [f"--{k}", (args.reward_profile or v) if k == "reward_profile" else v]
         diag_cmd = [py, "train_diagnose.py", name]
         bt_cmd = [py, "backtest_live.py", name, args.csv, "--conf", "0",
                   "--mode", "pure_agent", "--source", "best",
                   "--start", str(args.oos_start), "--max_hold", str(args.max_hold),
                   "--mc", str(args.mc), "--bootstrap", str(args.bootstrap),
-                  "--random_baseline", "0"]
+                  "--random_baseline", "0", "--spread", str(args.spread_pct), "--commission", str(args.commission),
+                  "--atr_sl", str(args.atr_sl), "--atr_tp", str(args.atr_tp)]
 
         print(f"\n--- arm {arm} seed {seed}: window={window} corr_threshold={thr} -> {name}")
         if args.dry_run:

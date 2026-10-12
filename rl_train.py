@@ -121,6 +121,11 @@ def build_parser():
                     help="path to limited action profile JSON recipe; CLI action_params win")
     ap.add_argument("--max_hold", type=int, default=30,
                     help="บังคับปิด position ถ้าถือเกินกี่ bars")
+    ap.add_argument("--spread_pct", type=float, default=0.0002,
+                    help="half-spread per side as a fraction of price (env default 0.0002 = 0.02%%); "
+                         "USDJPY H1 at 1 pip round-trip ~ 3.8e-5")
+    ap.add_argument("--commission", type=float, default=0.0001,
+                    help="commission per trade as a fraction of price (env default 0.0001)")
     ap.add_argument("--net_arch", default="auto",
                     help="NN layers e.g. '128,64' or 'auto' (scale by window)")
     ap.add_argument("--mc_eval", type=int, default=1000,
@@ -421,6 +426,8 @@ def train(args, run, prepared=None):
             "action_profile_params": action_profile_cfg["params"],
             "action_profile_config": action_profile_cfg,
             "max_hold": args.max_hold,
+            "spread_pct": args.spread_pct,
+            "commission": args.commission,
             "net_arch": net_arch,
             "seed": args.seed,
             **algo_hparams,
@@ -445,6 +452,7 @@ def train(args, run, prepared=None):
             reward_formula=args.reward_formula,
             action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
+            spread_pct=args.spread_pct, commission=args.commission,
         ))
 
     def make_eval_env():
@@ -459,6 +467,7 @@ def train(args, run, prepared=None):
             reward_formula=args.reward_formula,
             action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
+            spread_pct=args.spread_pct, commission=args.commission,
         ))
 
     train_env = DummyVecEnv([make_train_env])
@@ -566,7 +575,8 @@ def train(args, run, prepared=None):
                     max_steps=len(validation_df) - args.window - 2, random_start=False,
                     reward_mode=args.reward_mode, reward_profile=args.reward_profile,
                     reward_overrides=reward_overrides, reward_formula=args.reward_formula,
-                    action_profile=action_profile_cfg, max_hold_bars=args.max_hold)
+                    action_profile=action_profile_cfg, max_hold_bars=args.max_hold,
+                    spread_pct=args.spread_pct, commission=args.commission)
 
             class VizCallback(BaseCallback):
                 """Runs right after each EvalCallback evaluation (callback_after_eval)."""
@@ -644,7 +654,8 @@ def train(args, run, prepared=None):
                               reward_overrides=reward_overrides,
                               reward_formula=args.reward_formula,
                               action_profile=action_profile_cfg,
-                              max_hold_bars=args.max_hold)
+                              max_hold_bars=args.max_hold,
+                              spread_pct=args.spread_pct, commission=args.commission)
     obs, _ = test_env_raw.reset()
     done = False
     while not done:

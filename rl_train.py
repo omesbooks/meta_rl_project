@@ -60,6 +60,7 @@ from artifact_paths import ArtifactRun
 from training_data import (load_dataset, feature_columns, split_training_data,
                            fit_preprocessing, apply_normalization,
                            check_selection_scope, validate_hyperparameters)
+ENTRY_GATE_COL = "entry_gate__raw"   # reserved: raw gate values carried next to the normalised features
 
 
 def _period(df):
@@ -126,6 +127,10 @@ def build_parser():
                          "USDJPY H1 at 1 pip round-trip ~ 3.8e-5")
     ap.add_argument("--commission", type=float, default=0.0001,
                     help="commission per trade as a fraction of price (env default 0.0001)")
+    ap.add_argument("--entry_gate", default="",
+                    help="gated entries: RAW column that must be > 0 to open a buy and < 0 to open a sell "
+                         "(e.g. srb_sig); off-gate buys/sells act as hold. Recorded in the train meta and "
+                         "auto-applied by backtest_live.py")
     ap.add_argument("--net_arch", default="auto",
                     help="NN layers e.g. '128,64' or 'auto' (scale by window)")
     ap.add_argument("--mc_eval", type=int, default=1000,
@@ -286,6 +291,13 @@ def prepare_training(args):
     else:
         test_df = apply_normalization(raw_test, feature_cols, norm)
         eval_source = "held-out Test (not used by EvalCallback)"
+    # the gate must read the RAW signal (a z-scored 0 is not 0): carry it in a reserved column
+    if args.entry_gate:
+        if args.entry_gate not in raw_train.columns:
+            raise ValueError(f"--entry_gate column '{args.entry_gate}' is not in the CSV")
+        for dst, src in ((train_df, raw_train), (validation_df, raw_validation), (test_df, raw_test)):
+            if dst is not None and src is not None:
+                dst[ENTRY_GATE_COL] = src[args.entry_gate].to_numpy(dtype=np.float32)
 
     import hashlib
     if files != _input_fingerprints(args):
@@ -428,6 +440,7 @@ def train(args, run, prepared=None):
             "max_hold": args.max_hold,
             "spread_pct": args.spread_pct,
             "commission": args.commission,
+            "entry_gate": args.entry_gate,
             "net_arch": net_arch,
             "seed": args.seed,
             **algo_hparams,
@@ -453,6 +466,7 @@ def train(args, run, prepared=None):
             action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
             spread_pct=args.spread_pct, commission=args.commission,
+            entry_gate=ENTRY_GATE_COL if args.entry_gate else "",
         ))
 
     def make_eval_env():
@@ -468,6 +482,7 @@ def train(args, run, prepared=None):
             action_profile=action_profile_cfg,
             max_hold_bars=args.max_hold,
             spread_pct=args.spread_pct, commission=args.commission,
+            entry_gate=ENTRY_GATE_COL if args.entry_gate else "",
         ))
 
     train_env = DummyVecEnv([make_train_env])
@@ -576,7 +591,8 @@ def train(args, run, prepared=None):
                     reward_mode=args.reward_mode, reward_profile=args.reward_profile,
                     reward_overrides=reward_overrides, reward_formula=args.reward_formula,
                     action_profile=action_profile_cfg, max_hold_bars=args.max_hold,
-                    spread_pct=args.spread_pct, commission=args.commission)
+                    spread_pct=args.spread_pct, commission=args.commission,
+                    entry_gate=ENTRY_GATE_COL if args.entry_gate else "")
 
             class VizCallback(BaseCallback):
                 """Runs right after each EvalCallback evaluation (callback_after_eval)."""
@@ -655,7 +671,8 @@ def train(args, run, prepared=None):
                               reward_formula=args.reward_formula,
                               action_profile=action_profile_cfg,
                               max_hold_bars=args.max_hold,
-                              spread_pct=args.spread_pct, commission=args.commission)
+                              spread_pct=args.spread_pct, commission=args.commission,
+                    entry_gate=ENTRY_GATE_COL if args.entry_gate else "")
     obs, _ = test_env_raw.reset()
     done = False
     while not done:

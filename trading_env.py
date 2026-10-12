@@ -80,9 +80,17 @@ class TradingEnv(gym.Env):
         action_profile: str | dict = "basic_4",
         action_params: dict | None = None,
         random_start: bool = True,
+        entry_gate: str = "",
     ):
         super().__init__()
         self.df = df.reset_index(drop=True)
+        # Gated entries: a buy opens only on bars where this RAW column is > 0, a sell
+        # only where it is < 0 (an off-gate buy/sell is a plain hold). Used to let the
+        # agent filter + manage an external signal (e.g. srb_sig) instead of timing entries.
+        self.entry_gate = entry_gate or ""
+        if self.entry_gate and self.entry_gate not in self.df.columns:
+            raise ValueError(f"entry_gate column '{self.entry_gate}' is not in the data")
+        self._gate = self.df[self.entry_gate].values.astype(np.float32) if self.entry_gate else None
         self.feature_cols = feature_cols
         self.window_size = window_size
         self.random_start = random_start
@@ -283,14 +291,15 @@ class TradingEnv(gym.Env):
         # ⭐⭐ Phase 2: apply spread to entry/exit prices (match backtest_live.py)
         # Long:  buy at higher price (market + spread), sell at lower (market - spread)
         # Short: sell at lower price (market - spread), buy at higher (market + spread)
-        if action == buy_id and self.position == 0:      # BUY
+        gate = self._gate[self.t] if self._gate is not None else None
+        if action == buy_id and self.position == 0 and (gate is None or gate > 0):      # BUY
             self.position = 1
             self.entry_price = price * (1.0 + self.spread)   # ⭐ shift up
             self.stop_price = 0.0
             self.bars_in_position = 0
             just_opened = True
 
-        elif action == sell_id and self.position == 0:   # SELL
+        elif action == sell_id and self.position == 0 and (gate is None or gate < 0):   # SELL
             self.position = -1
             self.entry_price = price * (1.0 - self.spread)   # ⭐ shift down
             self.stop_price = 0.0

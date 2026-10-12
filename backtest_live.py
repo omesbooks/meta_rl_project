@@ -282,6 +282,22 @@ def _resolve_action_profile(args, model):
     return key, profile, action_profile_json_meta
 
 
+def _resolve_entry_gate(args):
+    """Gated entries: CLI --entry_gate, else the gate the model was trained with (train
+    metadata), else none. A model trained with a gate is meaningless without it."""
+    if args.entry_gate:
+        return args.entry_gate, "cli"
+    meta_file = train_meta_path(args.model)
+    if meta_file.exists():
+        try:
+            hparams = json.loads(meta_file.read_text(encoding="utf-8-sig")).get("hyperparameters", {})
+            if hparams.get("entry_gate"):
+                return str(hparams["entry_gate"]), "model meta"
+        except Exception as exc:
+            print(f"[entry_gate] warn: could not read train metadata: {exc}")
+    return "", "none"
+
+
 def _resolve_max_hold(args):
     """Resolve max-hold from CLI, then the selected model's train metadata."""
     if args.max_hold is not None:
@@ -655,7 +671,16 @@ def run_backtest_live(args):
     data_rows_before_start = len(df)
     data_period_before_start = _period(df)
 
-    skip = {"timestamp", "symbol", "ticker", "open", "high", "low", "close", "volume"}
+    entry_gate, gate_source = _resolve_entry_gate(args)
+    gate_col = ""
+    if entry_gate:
+        if entry_gate not in df.columns:
+            print(f"ERROR: entry gate column '{entry_gate}' ({gate_source}) is not in {args.csv}")
+            return 1
+        gate_col = "entry_gate__raw"                      # raw values: a z-scored 0 is not 0
+        df[gate_col] = pd.to_numeric(df[entry_gate], errors="coerce").fillna(0.0).to_numpy(dtype=np.float32)
+        print(f"[entry_gate] {entry_gate} ({gate_source}): buys only where > 0, sells only where < 0")
+    skip = {"timestamp", "symbol", "ticker", "open", "high", "low", "close", "volume", "entry_gate__raw"}
     feature_cols = [c for c in df.columns
                     if c not in skip and pd.api.types.is_numeric_dtype(df[c])]
     print(f"[data] rows: {len(df):,} | features: {len(feature_cols)}")
@@ -839,7 +864,7 @@ def run_backtest_live(args):
         counters = {
             "n_signals": {int(a["id"]): 0 for a in action_profile_cfg["actions"]},
             "n_executed": {int(a["id"]): 0 for a in action_profile_cfg["actions"] if int(a["id"]) > 0},
-            "n_skipped_conf": 0, "n_skipped_pos": 0,
+            "n_skipped_conf": 0, "n_skipped_pos": 0, "n_skipped_gate": 0,
             "n_force_close": 0, "n_hard_stop": 0,
         }
         paused = False
@@ -905,6 +930,13 @@ def run_backtest_live(args):
             if action in entry_action_ids and confidence < args.conf:
                 counters["n_skipped_conf"] += 1
                 continue
+
+            # ---- Gated entries (same rule as TradingEnv) ----
+            if gate_col and action in entry_action_ids:
+                g = float(row[gate_col])
+                if (action == buy_id and not g > 0) or (action == sell_id and not g < 0):
+                    counters["n_skipped_gate"] += 1
+                    continue
 
             # ---- Position limit ----
             if action in entry_action_ids and sim_account.position_count() >= args.max_positions:
@@ -1004,6 +1036,7 @@ def run_backtest_live(args):
     n_executed = run_counters["n_executed"]
     n_skipped_conf = run_counters["n_skipped_conf"]
     n_skipped_pos = run_counters["n_skipped_pos"]
+    n_skipped_gate = run_counters.get("n_skipped_gate", 0)
     n_force_close = run_counters["n_force_close"]
     n_hard_stop = run_counters["n_hard_stop"]
 
@@ -1201,6 +1234,8 @@ def run_backtest_live(args):
     print(f"\n  Filter stats:")
     print(f"    Skipped (low confidence): {n_skipped_conf:,}")
     print(f"    Skipped (max positions) : {n_skipped_pos:,}")
+    if gate_col:
+        print(f"    Skipped (entry gate)    : {n_skipped_gate:,}  [{entry_gate}]")
     print(f"    Force closed (max hold) : {n_force_close:,}")
     print(f"    Hard stops triggered    : {n_hard_stop:,}")
 
@@ -1551,6 +1586,8 @@ def run_backtest_live(args):
         "executed": n_executed,
         "skipped_low_confidence": n_skipped_conf,
         "skipped_max_positions": n_skipped_pos,
+        "skipped_entry_gate": n_skipped_gate,
+        "entry_gate": entry_gate,
         "force_closed_max_hold": n_force_close,
         "hard_stops": n_hard_stop,
         "intrabar_mode": account.intrabar,
@@ -1752,6 +1789,9 @@ def main():
     ap.add_argument("--spread", type=float, default=0.0002,
                     help="spread %% (0.02%% default)")
     ap.add_argument("--commission", type=float, default=0.0001)
+    ap.add_argument("--entry_gate", default="",
+                    help="gated entries: raw CSV column that must be > 0 for a buy / < 0 for a sell "
+                         "(default: the gate recorded in the model's train metadata, if any)")
 
     # Execution realism
     ap.add_argument("--intrabar", default="pessimistic",

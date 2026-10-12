@@ -294,6 +294,7 @@ def main():
     ap.add_argument("--commission", type=float, default=0.0001, help="commission per trade (fraction of price) for train + backtest")
     ap.add_argument("--atr_sl", type=float, default=1.5); ap.add_argument("--atr_tp", type=float, default=3.0)
     ap.add_argument("--reward_profile", default="", help="override the recipe's reward profile (default balanced)")
+    ap.add_argument("--entry_gate", default="", help="gated entries column for rl_train/backtest_live (e.g. srb_sig)")
     ap.add_argument("--mc_eval", type=int, default=0, help="quick-eval MC runs in rl_train (0 = off)")
     ap.add_argument("--mc", type=int, default=1000, help="order-shuffle MC in the OOS backtest")
     ap.add_argument("--bootstrap", type=int, default=1000)
@@ -346,6 +347,8 @@ def main():
                      "--corr_threshold", str(thr), "--train_pct", str(args.train_pct),
                      "--max_hold", str(args.max_hold), "--mc_eval", str(args.mc_eval),
                      "--spread_pct", str(args.spread_pct), "--commission", str(args.commission)]
+        if args.entry_gate:
+            train_cmd += ["--entry_gate", args.entry_gate]
         if seed is not None:
             train_cmd += ["--seed", str(seed)]
         for k, v in RECIPE.items():

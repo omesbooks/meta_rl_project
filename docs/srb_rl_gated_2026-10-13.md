@@ -102,3 +102,24 @@ The EA's own use of H4 is a single object — the zone — which G0 already had 
 the EA never uses H4/D1 trend or volatility.
 
 Same direction as the earlier 28 → 41 step: on this problem, fewer inputs train better.
+
+## Addendum 2 — lean feature set (base 28 + `srb_sig` only)
+
+`usdjpy_tds_h1_lean.csv` = the 41-feature set minus the 12 zone columns (dist/touches/room/brk/n_zones);
+same rows, G0 recipe, gated.
+
+| arm | features | obs | seed 0 | seed 1 | seed 2 | pooled PF | CI lo > 1 |
+|---|---:|---:|---|---|---|---:|---:|
+| G0-lean | 29 | 438 | 1.77 (112 tr, +690 pips) | 1.35 (32, +145) | 0.93 (67, −71) | 1.31 | 1/3 |
+| G0 | 41 | 618 | 2.35 (47, +571) | 1.71 (41, +242) | 2.12 (101, +1,154) | 2.09 | 2/3 |
+| G0-ctx | 63 | 948 | 1.36 (85, +441) | 1.00 (60, −7) | 0.53 (59, −572) | 0.96 | 0/3 |
+
+Accepted-vs-skipped (fixed 4-bar rule): lean s0 1.48 / 1.27, s1 0.80 / 1.47, s2 1.32 / 1.37.
+
+"Fewer inputs = better" does not hold below 41: dropping the zone columns lands at the all-signals
+benchmark (1.31 vs 1.35). The zone geometry (distance to the next level, room, touches) is plausibly
+what the exit-timing policy uses (take profit near the next level); the ctx block, which carries no
+such information, only added noise. Across the four gated arms the per-seed spread (0.5–2.4) is as
+large as the between-arm differences, so G0's pooled 2.09 should be read as "best of four noisy
+arms", not as an established edge; a 5–10-seed run of G0 (and a forced-entry, exit-only variant) is
+the next step that would separate the two.

@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PPO กับ action แบบค่าต่อเนื่อง</title>
+  <style>
+    :root {
+      --bg: #f7f7f1; --paper: #ffffff; --ink: #17202a; --muted: #667085; --line: #d8ddcf;
+      --gold: #c9a100; --gold-soft: #fff4bf; --green: #1c8a55; --green-soft: #dff4e9;
+      --red: #c24135; --red-soft: #ffe3df; --blue: #245b8f; --blue-soft: #e5f0fb;
+      --shadow: 0 16px 40px rgba(23, 32, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Segoe UI", Tahoma, sans-serif; line-height: 1.65; }
+    .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 44px 0 28px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #fff 0%, #f7f7f1 100%); }
+    .eyebrow { margin: 0 0 10px; color: var(--gold); font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 0; max-width: 900px; font-size: clamp(30px, 4.6vw, 52px); line-height: 1.15; }
+    .lede { max-width: 820px; margin: 16px 0 0; font-size: 18px; color: var(--muted); }
+    main { padding: 28px 0 64px; }
+    section { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 26px 28px; margin: 18px 0; box-shadow: var(--shadow); }
+    h2 { margin: 0 0 12px; font-size: 24px; }
+    h3 { margin: 22px 0 8px; font-size: 17px; }
+    p { margin: 10px 0; }
+    .note { padding: 12px 16px; border-radius: 12px; margin: 14px 0; }
+    .note.gold { background: var(--gold-soft); border-left: 5px solid var(--gold); }
+    .note.green { background: var(--green-soft); border-left: 5px solid var(--green); }
+    .note.red { background: var(--red-soft); border-left: 5px solid var(--red); }
+    .note.blue { background: var(--blue-soft); border-left: 5px solid var(--blue); }
+    code, .f { font-family: Consolas, "Cascadia Mono", monospace; font-size: .93em; }
+    code { background: #f1f2ea; padding: 1px 6px; border-radius: 6px; }
+    pre { background: #17202a; color: #e9eef5; padding: 14px 18px; border-radius: 12px; overflow-x: auto; font-size: 14px; line-height: 1.55; }
+    pre b { color: #ffd84d; font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 15px; }
+    th, td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #f1f2ea; font-weight: 700; }
+    td.c, th.c { text-align: center; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+    .card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; background: #fcfcf8; }
+    .card h4 { margin: 0 0 8px; font-size: 16px; }
+    .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+    .pill.b { background: var(--blue-soft); color: var(--blue); } .pill.g { background: var(--green-soft); color: var(--green); } .pill.r { background: var(--red-soft); color: var(--red); } .pill.y { background: var(--gold-soft); color: #8a6d00; }
+    .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+    .flow .box { background: var(--blue-soft); border: 1px solid #b9d0ea; border-radius: 10px; padding: 8px 12px; font-size: 14px; }
+    .flow .box.hi { background: var(--gold-soft); border-color: #e6cd5a; }
+    .flow .arr { color: var(--muted); font-size: 18px; }
+    /* interactive */
+    .lab { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 900px) { .lab { grid-template-columns: 1.3fr 1fr; } }
+    canvas { width: 100%; height: 300px; background: #fcfcf8; border: 1px solid var(--line); border-radius: 12px; }
+    .ctrl { display: grid; gap: 10px; align-content: start; }
+    .ctrl label { display: grid; grid-template-columns: 110px 1fr 70px; align-items: center; gap: 10px; font-size: 14px; }
+    .ctrl input[type=range] { width: 100%; accent-color: var(--blue); }
+    .btns { display: flex; flex-wrap: wrap; gap: 8px; }
+    button { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 14px; font: 600 14px "Segoe UI", Tahoma, sans-serif; cursor: pointer; }
+    button.p { background: var(--blue); color: #fff; border-color: var(--blue); }
+    button.g { background: var(--green); color: #fff; border-color: var(--green); }
+    button.r { background: var(--red); color: #fff; border-color: var(--red); }
+    .readout { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13.5px; background: #17202a; color: #e9eef5; border-radius: 12px; padding: 12px 14px; min-height: 150px; white-space: pre-wrap; }
+    .readout b { color: #ffd84d; }
+    ol li, ul li { margin: 4px 0; }
+    .small { color: var(--muted); font-size: 14px; }
+    footer { color: var(--muted); font-size: 13px; padding: 10px 0 30px; }
+  </style>
+</head>
+<body>
+<header><div class="wrap">
+  <p class="eyebrow">Explainer 15 · RL internals</p>
+  <h1>PPO ออก "ค่าต่อเนื่อง" ได้อย่างไร — และจะใช้ให้ RL กำหนด SL เองได้ไหม</h1>
+  <p class="lede">PPO ไม่ได้ทำนายตัวเลขแบบ regression มันเรียน <b>การแจกแจงความน่าจะเป็นของ action</b> แล้วสุ่มจากมัน สิ่งที่ต่างระหว่าง action แบบเลือกช่อง (discrete) กับแบบตัวเลข (continuous) คือชนิดของการแจกแจงเท่านั้น สูตร PPO เหมือนกันทุกบรรทัด หน้านี้อธิบายกลไก พร้อมตัวทดลองให้ลองดันค่า μ ด้วยมือ และสรุปว่าในโปรเจกต์นี้ต้องแก้อะไรบ้างถ้าจะให้ network ออก "ระยะ SL" เป็นตัวเลข</p>
+</div></header>
+
+<main class="wrap">
+
+<section>
+  <h2>1. หัวใจของ PPO: มันต้องการจาก policy แค่ตัวเลขเดียว</h2>
+  <p>Policy คือ network ที่รับสถานะ <code>s</code> (หน้าต่าง feature 15 แท่ง + สถานะ position) แล้วให้ <b>π(a|s)</b> = ความน่าจะเป็นที่จะเลือก action <code>a</code> ตอนเทรน agent <em>สุ่ม</em> action จาก π เพื่อสำรวจ แล้ว env ตอบกลับด้วย reward ซึ่งถูกแปลงเป็น <b>advantage</b> (A) = "ดีกว่าที่ critic คาดไว้เท่าไร" จากนั้น PPO ปรับ network ด้วย loss นี้:</p>
+<pre>ratio = π_new(a|s) / π_old(a|s)          <b>← ความน่าจะเป็นของ action ที่สุ่มไป เทียบก่อน/หลังอัปเดต</b>
+loss  = −min( ratio × A ,  clip(ratio, 1−ε, 1+ε) × A )</pre>
+  <div class="flow">
+    <span class="box">state s</span><span class="arr">→</span>
+    <span class="box">network</span><span class="arr">→</span>
+    <span class="box hi">การแจกแจง π(·|s)</span><span class="arr">→</span>
+    <span class="box">สุ่ม a</span><span class="arr">→</span>
+    <span class="box">env → reward</span><span class="arr">→</span>
+    <span class="box">advantage A</span><span class="arr">→</span>
+    <span class="box">เพิ่ม/ลด π(a|s)</span>
+  </div>
+  <p>A บวก → ทำให้ action นั้นมีโอกาสถูกเลือกมากขึ้น, A ลบ → น้อยลง ส่วน clip กันไม่ให้ก้าวแรงเกินในหนึ่งรอบ</p>
+  <div class="note gold"><b>ประเด็นเดียวที่ต้องจำ:</b> PPO ไม่สนว่า <code>a</code> เป็นเลขจำนวนเต็ม (ช่องที่ 2 = buy) หรือทศนิยม (SL = 1.73 ATR) ขอแค่คำนวณ π(a|s) ได้ ก็เรียนได้ด้วยสูตรเดียวกัน</div>
+</section>
+
+<section>
+  <h2>2. Discrete — ที่โปรเจกต์นี้ใช้อยู่</h2>
+  <p>network ออก <b>logits</b> 4 ตัว (hold / buy / sell / close) → softmax → ได้ความน่าจะเป็น 4 ช่อง (Categorical distribution)</p>
+<pre>logits  = [ 0.2 , 1.4 , −0.3 , 0.1 ]
+softmax = [ 0.17, <b>0.56</b>, 0.10 , 0.16 ]      ← π(buy|s) = 0.56
+ตอนเทรน : จับฉลากตาม prob → อาจได้ sell ก็ได้ (สำรวจ)
+ตอน deploy: argmax → buy   (EA ทำ ArgMax(probs) ตรงนี้)</pre>
+  <p>ถ้า buy ที่สุ่มได้มี A = +0.3 → gradient ดัน logit ของ buy ขึ้น ช่องอื่นลงตามสัดส่วน <code>confidence</code> ที่หน้า Analyze ใช้ก็คือ prob ของช่อง argmax นี่เอง</p>
+</section>
+
+<section>
+  <h2>3. Continuous — เปลี่ยนแค่การแจกแจง</h2>
+  <p>แทนที่จะออก logits ของช่อง network ออก <b>μ</b> (ค่ากลาง) และมี <b>σ</b> (ความกว้าง) ประกอบเป็น Gaussian <code>N(μ, σ)</code> action ที่สุ่มได้คือ</p>
+<pre>a = μ + σ × noise            noise ~ N(0, 1)
+π(a|s) = pdf ของ Gaussian ที่จุด a
+       = 1/(σ√2π) × exp( −(a−μ)² / 2σ² )
+log π(a|s) = −(a−μ)²/2σ² − log σ − ½ log 2π</pre>
+  <p>gradient ของ log π เทียบกับ μ คือ <code>(a − μ)/σ²</code> — นี่คือสาเหตุที่ "มันเรียนได้": ถ้า action ที่สุ่มไป (a) ได้ A บวก μ จะถูกดันเข้าหา a ถ้าได้ A ลบ μ จะถูกดันออกห่างจาก a</p>
+<pre>Δμ  ∝  A × (a − μ) / σ²</pre>
+  <table>
+    <tr><th></th><th>Discrete</th><th>Continuous</th></tr>
+    <tr><td>network ออก</td><td>logits k ตัว</td><td>μ (1 ตัวต่อมิติ) + σ</td></tr>
+    <tr><td>การแจกแจง</td><td>Categorical</td><td>Gaussian N(μ, σ)</td></tr>
+    <tr><td>สุ่มตอนเทรน</td><td>จับฉลากตาม prob</td><td>μ + σ·noise</td></tr>
+    <tr><td>π(a|s)</td><td>prob ของช่องที่เลือก</td><td>pdf ที่จุด a</td></tr>
+    <tr><td>exploration</td><td>prob ยังไม่ชัน</td><td>σ ยังกว้าง</td></tr>
+    <tr><td>deploy</td><td>argmax</td><td>ใช้ μ ตรง ๆ (deterministic)</td></tr>
+    <tr><td>entropy (ตัวที่ ent_coef คุม)</td><td>ขึ้นกับความแบนของ prob</td><td>= log σ + const → ขึ้นกับ σ ล้วน ๆ</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>4. ทดลองเอง: ดัน μ ด้วย advantage</h2>
+  <p class="small">สมมติหัว SL ของ network ออก μ = 1.6 ATR, σ = 0.4 กด <b>สุ่ม action</b> เพื่อจับ a หนึ่งค่า แล้วบอกว่า trade นั้นได้ advantage บวกหรือลบ จะเห็น μ ขยับตามสูตร Δμ ∝ A·(a−μ)/σ² (lr = 0.3 เพื่อให้เห็นชัด) ปุ่ม <b>ลด σ</b> จำลองสิ่งที่เกิดเมื่อ ent_coef ต่ำและ policy มั่นใจขึ้น</p>
+  <div class="lab">
+    <canvas id="cv" width="760" height="300"></canvas>
+    <div class="ctrl">
+      <label>μ (ค่ากลาง) <input id="mu" type="range" min="0.5" max="3" step="0.01" value="1.6"><span id="muV">1.60</span></label>
+      <label>σ (ความกว้าง) <input id="sg" type="range" min="0.05" max="1" step="0.01" value="0.40"><span id="sgV">0.40</span></label>
+      <div class="btns">
+        <button class="p" id="bSample">สุ่ม action</button>
+        <button class="g" id="bPos">trade นี้ A = +0.3</button>
+        <button class="r" id="bNeg">trade นี้ A = −0.3</button>
+        <button id="bShrink">ลด σ 20%</button>
+        <button id="bReset">reset</button>
+      </div>
+      <div class="readout" id="ro">ยังไม่ได้สุ่ม — กด "สุ่ม action"</div>
+    </div>
+  </div>
+  <div class="note blue">สังเกต: ยิ่ง σ แคบ (1) ค่าที่สุ่มได้ยิ่งใกล้ μ = สำรวจน้อยลง (2) ก้าว Δμ ต่อหนึ่ง advantage ยิ่งใหญ่ เพราะหาร σ² → policy ที่มั่นใจมากเกินไปจะเหวี่ยงแรงเมื่อเจอ reward ที่ผิดคาด</div>
+</section>
+
+<section>
+  <h2>5. ตัวอย่างตัวเลขเต็ม ๆ หนึ่งรอบ</h2>
+  <ol>
+    <li>สถานะ s (แท่งสัญญาณ SRB ฝั่ง buy) → network ออก μ = 1.6 ATR, σ = 0.4</li>
+    <li>สุ่มได้ a = 1.9 → env ตั้ง SL = entry − 1.9 × ATR แล้วเดินต่อจน trade ปิด</li>
+    <li>ผล: trade ได้ reward สูงกว่าที่ critic คาด → A = +0.3</li>
+    <li>log π(1.9 | s) = −(0.3)²/(2·0.16) − log 0.4 − 0.92 = −0.28 + 0.92 − 0.92 = <b>−0.28</b></li>
+    <li>gradient ต่อ μ = (1.9 − 1.6)/0.16 = +1.875 → μ เพิ่ม (ขนาดตาม learning rate และ clip ของ PPO)</li>
+    <li>รอบถัดไปสถานะคล้ายกัน สุ่มได้ 1.2 → A = −0.2 → gradient = (1.2−1.6)/0.16 × (−0.2) → μ เพิ่มอีก (ออกห่างจาก 1.2)</li>
+    <li>ทำซ้ำหลายพันครั้ง μ(s) ลู่ไปหาระยะ SL ที่ให้ A สูงสุด<em>ในสถานะแบบนั้น</em> และ σ หดเมื่อมั่นใจ</li>
+    <li>ตอน deploy ไม่สุ่ม: EA ได้ μ(s) = ระยะ SL เป็นตัวเลขจาก network โดยตรง</li>
+  </ol>
+</section>
+
+<section>
+  <h2>6. รายละเอียดที่ต้องรู้ก่อนทำจริง</h2>
+  <div class="grid">
+    <div class="card"><h4><span class="pill b">SB3</span> σ ไม่ขึ้นกับ state</h4><p>ใน stable-baselines3 PPO (<code>DiagGaussianDistribution</code>) σ เป็นพารามิเตอร์อิสระตัวเดียวทั้ง policy (ตั้งต้นด้วย <code>log_std_init</code>) network เรียนแค่ μ(s) ส่วน σ ค่อย ๆ ลดลงทั่วทั้ง policy ไม่ได้ "กว้างในสถานะที่ไม่แน่ใจ แคบในสถานะที่แน่ใจ"</p></div>
+    <div class="card"><h4><span class="pill y">entropy</span> ent_coef ตัวเดียวคุมสองหัวไม่ได้</h4><p>entropy ของ Gaussian = log σ + ค่าคงที่ ดังนั้น ent_coef ที่ตั้งไว้สำหรับหัว discrete (0.02) จะไปดันให้ σ กว้างค้าง หรือถ้าต่ำไป σ หดเร็วจนเลิกสำรวจ ต้องแยกน้ำหนักสองหัว</p></div>
+    <div class="card"><h4><span class="pill r">ขอบเขต</span> Gaussian ไม่มีขอบ</h4><p>สุ่มได้ SL ติดลบหรือ 9 ATR ได้ SB3 แค่ clip ตามขอบ Box (gradient ที่ขอบหาย) ทางที่ถูกคือ tanh squash: <code>a = lo + (hi−lo)·(tanh(u)+1)/2</code> แล้วแก้ log-prob ด้วย Jacobian <code>− Σ log(1 − tanh²(u))</code> แบบที่ SAC ทำ</p></div>
+    <div class="card"><h4><span class="pill g">ผสม 2 หัว</span> ต้อง custom policy</h4><p>SB3 ให้หนึ่งการแจกแจงต่อ policy ถ้าจะมีทั้ง action (Categorical) และ SL (Gaussian) ต้องเขียน <code>ActorCriticPolicy</code> เองที่ถือว่าสองหัวเป็นอิสระ: <code>log π = log π_cat(action) + log π_gauss(SL)</code> และ entropy รวมกัน</p></div>
+    <div class="card"><h4><span class="pill r">credit</span> หัว SL ได้สัญญาณน้อยมาก</h4><p>SL มีผลต่อ reward เฉพาะ trade ที่ SL "ทำงาน" (โดนหรือเกือบโดน) trade ที่ปิดด้วย close/max_hold ก่อนถึง SL ให้ gradient ≈ 0 แก่หัว SL จาก event SRB ~770 ครั้งในช่วง train จึงเหลือตัวอย่างที่สอนหัวนี้จริง ๆ ไม่กี่ร้อย — คาดว่า μ จะเรียนได้แค่ค่าเฉลี่ย</p></div>
+    <div class="card"><h4><span class="pill b">ทางลัด</span> MultiDiscrete</h4><p>Categorical 2 ชุด: action 4 ช่อง × SL 5 ช่อง {1.0, 1.5, 2.0, 2.5, 3.0 ATR} SB3 รองรับเอง รวม log-prob ให้ ได้ "เลือก SL ตามสถานะ" เหมือนกัน แค่เป็นขั้น ๆ — ตัวเลือก SL ในงานจริงก็ต่างกันทีละ 0.5 ATR อยู่แล้ว</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>7. ในโปรเจกต์นี้ต้องแก้อะไรบ้าง (continuous เต็มรูปแบบ)</h2>
+  <table>
+    <tr><th style="width:26%">ชั้น</th><th>งาน</th><th class="c" style="width:12%">ขนาด</th></tr>
+    <tr><td><b>Policy</b></td><td>custom <code>ActorCriticPolicy</code> 2 distribution (Categorical + squashed Gaussian), log-prob/entropy/deterministic mode, <code>log_std_init</code> + ent_coef แยกหัว, test ว่า log-prob ถูก (ผิดตรงนี้ = เทรนได้แต่เรียนผิดเงียบ ๆ)</td><td class="c">150–200 บรรทัด</td></tr>
+    <tr><td><b>trading_env.py</b></td><td>action space รับ (action, sl_atr); ตั้ง <code>stop_price</code> ตอนเปิด; พกคอลัมน์ ATR ดิบ (feature ถูก normalize แล้ว); เปลี่ยน <code>_check_managed_stop</code> จากเช็คกับ close เป็น intrabar high/low ให้ตรงกับ backtest</td><td class="c">~60</td></tr>
+    <tr><td><b>action_profiles.py</b></td><td>profile ชนิดใหม่ที่ประกาศหัว continuous + ช่วง; ทุกตัวที่อ่าน profile (train / walkforward / finetune / analyze / export) ต้องรู้จัก</td><td class="c">~40 + จุดอ่าน</td></tr>
+    <tr><td><b>rl_train / walkforward / finetune</b></td><td>ใช้ custom policy, hyperparam ใหม่เข้า recipe/meta, quick-eval และ MC eval อ่าน action แบบ tuple</td><td class="c">~80</td></tr>
+    <tr><td><b>backtest_live.py</b></td><td><code>select_action</code> คืน (action, confidence, sl_atr); วาง SL จาก model แทน <code>--atr_sl</code>; trades CSV เพิ่ม <code>sl_atr</code>; random baseline สุ่ม SL ด้วย; report แสดง distribution ของ SL</td><td class="c">~80</td></tr>
+    <tr><td><b>export_to_onnx.py</b></td><td><code>PolicyWrapper</code> ออก 2 outputs (probs, sl_atr) แทน <code>action_probs</code> เดียว; verify ONNX vs torch ทั้งสองหัว; config .mqh บันทึกช่วง SL + สูตร squash</td><td class="c">~60</td></tr>
+    <tr><td><b>EA template + live_trader.py</b></td><td><code>OnnxRun</code> อ่าน 2 outputs; <code>ArgMax(probs)</code> + sl_atr × ATR(14) — ATR ใน EA ต้องเป็นตัวเดียวกับที่ env ใช้ (iATR ของ MT5 = SMA ของ TR ไม่ใช่ Wilder)</td><td class="c">~60 MQL + ~20 py</td></tr>
+    <tr><td><b>rl_app.py</b></td><td>Train: ตัวเลือก SL mode + ช่วง; Backtest/Models: คอลัมน์ SL; Analyze: confidence ยังใช้หัว categorical ได้</td><td class="c">~120</td></tr>
+    <tr><td><b>Tests</b></td><td>env (SL intrabar + ATR ดิบ), policy (log-prob/entropy เทียบค่าคำนวณมือ), export parity, backtest parity กับ env</td><td class="c">~150</td></tr>
+  </table>
+  <p><b>รวม:</b> 8–9 ไฟล์ + MQL ≈ 2–3 วันงาน จุดเสี่ยงคือ policy (ผิดแบบเงียบ) และ EA/ONNX 2 outputs — MultiDiscrete ตัดข้อแรกทิ้งทั้งข้อ เหลือ ≈ 1 วัน</p>
+</section>
+
+<section>
+  <h2>8. ควรทำเมื่อไร — บันไดที่แนะนำ</h2>
+  <div class="note green"><b>ขั้น 1 (ตอนนี้):</b> SL คงที่ 1.5 ATR เป็นกฎใน env (แบบ EA ที่พิสูจน์ OOS แล้ว) + gated entries → RL ตัดสินใจแค่รับ/ข้าม และปิดก่อนเวลา/ถือต่อ</div>
+  <div class="note blue"><b>ขั้น 2:</b> <code>manage_6</code> (breakeven / trailing เป็น action) — ใกล้ runner ของ EA และมีอยู่แล้ว ใช้ต่อเมื่อขั้น 1 ชนะ benchmark</div>
+  <div class="note gold"><b>ขั้น 3:</b> MultiDiscrete เมนู SL — เมื่อมี event หลักหลายพัน (หลาย symbol / TF ต่ำกว่า)</div>
+  <div class="note red"><b>ขั้น 4:</b> continuous เต็มรูปแบบ — เมื่อขั้น 3 แสดงว่า SL ที่เลือกตามสถานะต่างจากค่าคงที่จริง ๆ มิฉะนั้นความละเอียดระดับทศนิยมไม่มีอะไรให้เรียน</div>
+  <p class="small">เหตุผลเชิงข้อมูล: ขั้น B ของการศึกษา SRB (<code>docs/srb_event_edge_2026-10-12.md</code>) แสดงว่า exit แบบง่าย (SL 1.5 ATR + ออกที่ 4 แท่ง) ได้ PF 1.36 ส่วน EA ที่มี 2 ขา + breakeven ได้ 1.55 — โครงสร้าง exit เพิ่มได้นิดเดียว ความซับซ้อนตรงนี้ไม่คุ้มเสี่ยง overfit จาก 770 ตัวอย่าง</p>
+</section>
+
+<section>
+  <h2>9. ศัพท์</h2>
+  <table>
+    <tr><th style="width:22%">คำ</th><th>ความหมาย</th></tr>
+    <tr><td>policy π(a|s)</td><td>กฎการเลือก action ของ agent ในรูปความน่าจะเป็น — network คือตัวคำนวณมัน</td></tr>
+    <tr><td>advantage A</td><td>ผลที่ได้ดีกว่า/แย่กว่าที่ critic คาดเท่าไร (GAE) — สัญญาณที่ใช้ตัดสินว่าจะเพิ่มหรือลดโอกาสของ action</td></tr>
+    <tr><td>log-prob</td><td>log π(a|s) ใช้แทน π ตรง ๆ เพราะคูณกลายเป็นบวกและคำนวณเสถียร — หัว 2 หัวที่อิสระกันเอา log-prob มาบวกกัน</td></tr>
+    <tr><td>entropy</td><td>ความ "กระจาย" ของการแจกแจง สูง = สำรวจมาก <code>ent_coef</code> ให้รางวัลกับ entropy เพื่อกันไม่ให้ policy มั่นใจเร็วเกิน</td></tr>
+    <tr><td>Discrete / Box / MultiDiscrete</td><td>ชนิด action space ของ Gym: เลือก 1 ใน k ช่อง / เวกเตอร์ตัวเลขในช่วง / เลือกหลายช่องพร้อมกันคนละชุด</td></tr>
+    <tr><td>squash</td><td>แปลงค่าไม่มีขอบให้อยู่ในช่วง (tanh) ต้องแก้ log-prob ด้วย Jacobian</td></tr>
+    <tr><td>deterministic</td><td>โหมด deploy: ไม่สุ่ม ใช้ argmax (discrete) หรือ μ (continuous)</td></tr>
+  </table>
+</section>
+
+</main>
+<footer class="wrap">Metafxclub RL Studio · explainer 15 · 2026-10-13 · เกี่ยวข้อง: 07_rl_reward_explained.html, 08_rl_deep_dive.html, docs/srb_event_edge_2026-10-12.md, docs/srb_rl_ab_2026-10-12.md</footer>
+
+<script>
+(function () {
+  const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+  const mu = document.getElementById("mu"), sg = document.getElementById("sg"), muV = document.getElementById("muV"), sgV = document.getElementById("sgV");
+  const ro = document.getElementById("ro");
+  const LO = 0, HI = 3.5, LR = 0.3;
+  let a = null, hist = [];
+  const X = v => 40 + (v - LO) / (HI - LO) * (cv.width - 60);
+  const pdf = (x, m, s) => Math.exp(-0.5 * ((x - m) / s) ** 2) / (s * Math.sqrt(2 * Math.PI));
+  function draw() {
+    const m = +mu.value, s = +sg.value; muV.textContent = m.toFixed(2); sgV.textContent = s.toFixed(2);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    const base = cv.height - 36, ymax = pdf(m, m, Math.max(0.12, s)) * 1.05, Y = p => base - p / ymax * (base - 20);
+    ctx.strokeStyle = "#d8ddcf"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(40, base); ctx.lineTo(cv.width - 20, base); ctx.stroke();
+    ctx.fillStyle = "#667085"; ctx.font = "12px Segoe UI, Tahoma"; ctx.textAlign = "center";
+    for (let v = 0.5; v <= 3.0; v += 0.5) { ctx.fillText(v.toFixed(1) + " ATR", X(v), base + 18); ctx.fillRect(X(v), base - 3, 1, 6); }
+    // bell
+    ctx.beginPath(); ctx.strokeStyle = "#245b8f"; ctx.lineWidth = 2.5;
+    for (let i = 0; i <= 300; i++) { const x = LO + (HI - LO) * i / 300, y = Y(pdf(x, m, s)); i ? ctx.lineTo(X(x), y) : ctx.moveTo(X(x), y); }
+    ctx.stroke();
+    ctx.fillStyle = "rgba(36,91,143,.10)"; ctx.lineTo(X(HI), base); ctx.lineTo(X(LO), base); ctx.closePath(); ctx.fill();
+    // mu line
+    ctx.strokeStyle = "#c9a100"; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(X(m), 14); ctx.lineTo(X(m), base); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = "#8a6d00"; ctx.fillText("μ = " + m.toFixed(2), X(m), 12);
+    // history of mu
+    ctx.fillStyle = "rgba(201,161,0,.35)"; hist.forEach(h => ctx.fillRect(X(h) - 1, base - 10, 2, 10));
+    if (a !== null) {
+      const y = Y(pdf(a, m, s));
+      ctx.fillStyle = "#c24135"; ctx.beginPath(); ctx.arc(X(a), y, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillText("a = " + a.toFixed(2), X(a), y - 12);
+    }
+  }
+  function report(extra) {
+    const m = +mu.value, s = +sg.value;
+    if (a === null) { ro.innerHTML = extra || "ยังไม่ได้สุ่ม — กด \"สุ่ม action\""; return; }
+    const lp = -0.5 * ((a - m) / s) ** 2 - Math.log(s) - 0.5 * Math.log(2 * Math.PI);
+    ro.innerHTML = `μ = <b>${m.toFixed(3)}</b>   σ = <b>${s.toFixed(3)}</b>\nsampled a = <b>${a.toFixed(3)}</b>  (= μ + σ·noise)\npdf π(a|s) = <b>${pdf(a, m, s).toFixed(3)}</b>   log π = <b>${lp.toFixed(3)}</b>\n∂log π/∂μ = (a−μ)/σ² = <b>${((a - m) / (s * s)).toFixed(3)}</b>\n` + (extra || "");
+  }
+  function sample() { const u = Math.random(), v = Math.random(); const z = Math.sqrt(-2 * Math.log(u + 1e-12)) * Math.cos(2 * Math.PI * v); a = Math.min(HI, Math.max(LO, +mu.value + +sg.value * z)); draw(); report(); }
+  function push(A) {
+    if (a === null) { report("สุ่ม action ก่อน"); return; }
+    const m = +mu.value, s = +sg.value, g = (a - m) / (s * s), d = LR * A * g;
+    hist.push(m); const nm = Math.min(3, Math.max(0.5, m + d)); mu.value = nm.toFixed(3); draw();
+    report(`A = <b>${A > 0 ? "+" : ""}${A}</b> → Δμ = lr × A × (a−μ)/σ² = 0.3 × ${A} × ${g.toFixed(3)} = <b>${d >= 0 ? "+" : ""}${d.toFixed(3)}</b>\nμ: ${m.toFixed(3)} → <b>${nm.toFixed(3)}</b>   (${A > 0 ? "ดันเข้าหา a" : "ดันออกห่างจาก a"})`);
+  }
+  mu.oninput = () => { draw(); report(); }; sg.oninput = () => { draw(); report(); };
+  document.getElementById("bSample").onclick = sample;
+  document.getElementById("bPos").onclick = () => push(0.3);
+  document.getElementById("bNeg").onclick = () => push(-0.3);
+  document.getElementById("bShrink").onclick = () => { sg.value = Math.max(0.05, +sg.value * 0.8).toFixed(3); draw(); report("σ ลดลง 20% — ความกว้างแคบลง ก้าว Δμ ต่อ advantage ใหญ่ขึ้น"); };
+  document.getElementById("bReset").onclick = () => { mu.value = 1.6; sg.value = 0.4; a = null; hist = []; draw(); report(); };
+  draw();
+})();
+</script>
+</body>
+</html>

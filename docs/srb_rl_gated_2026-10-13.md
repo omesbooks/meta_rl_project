@@ -76,3 +76,29 @@ have skill, 1 is anti-skilled), so the pooled PF 2.09 overstates what a single m
 Artifacts: `docs/ablation_h1_gate.md`, `docs/ablation_h1_gate_sl.md`; models `h1gate_C_w15_t100_s*`,
 `h1gsl_C_w15_t100_s*` (gitignored). Diagnostic script: scratchpad `gate_diag.py` (accepted vs
 skipped signals under `srb_event_edge.exit_sim`).
+
+## Addendum — H4 + D1 context block (same day)
+
+`build_srb_h1_dataset.py --ctx` appends 22 lag-safe higher-TF columns (`tools/data/htf_context.py`:
+EMA50/200 distance + slope, RSI14, Wilder ADX14, ATR pct/ratio, 20-bar range position, ret 1/5,
+trend, on H4 and on D1, each H1 bar seeing only higher bars that had closed). G0 recipe otherwise unchanged.
+
+| arm | features | obs | seed 0 | seed 1 | seed 2 | pooled PF | CI lo > 1 |
+|---|---:|---:|---|---|---|---:|---:|
+| G0 | 41 | 618 | 2.35 (47 tr, +571 pips) | 1.71 (41, +242) | 2.12 (101, +1,154) | 2.09 | 2/3 |
+| G0-ctx | 63 | 948 | 1.36 (85, +441) | 1.00 (60, −7) | 0.53 (59, −572) | 0.96 | 0/3 |
+
+Accepted-vs-skipped under the fixed 4-bar rule: ctx s0 1.52 / 1.26, s1 0.87 / 1.55, s2 1.22 / 1.40 —
+and in s2 the agent's own exits turned a +1.22 selection into PF 0.53.
+
+Why context hurt (conditional test on all 1,765 signal bars, outcome = 4-bar exit in R at 1 pip):
+no context, zone or base feature reaches |z| ≥ 3 against the per-signal outcome; the strongest are
+`rsi_14` (+0.067, z 2.8), `ema50_dist_atr` (+0.062, z 2.6), `d1_ema200_dist` (+0.060, z 2.5). The
+per-signal outcome has mean +0.06 R and sd 1.23 R (signal-to-noise 0.05 per event); with 1,246 Train
+signals the smallest detectable rank correlation at z = 3 is ~0.085, so there is nothing for a
+selection policy to learn from these inputs, and 22 × 15 = 330 extra window inputs (carrying only
+~22–44 distinct values, since H4 repeats 4× and D1 24× inside the window) only let PPO fit noise.
+The EA's own use of H4 is a single object — the zone — which G0 already had through the SRB block;
+the EA never uses H4/D1 trend or volatility.
+
+Same direction as the earlier 28 → 41 step: on this problem, fewer inputs train better.

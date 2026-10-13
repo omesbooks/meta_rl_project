@@ -91,14 +91,15 @@ class ArtifactRun:
             raise ValueError("Normalization does not match the trained feature contract")
         if model.observation_space.shape != (hp["window"] * len(features) + 3,):
             raise ValueError("Model observation dimension does not match metadata")
-        if model.action_space.n != len(hp["action_profile_config"]["actions"]):
+        from hybrid_policy import n_discrete_actions
+        if n_discrete_actions(model.action_space) != len(hp["action_profile_config"]["actions"]):
             raise ValueError("Model action dimension does not match metadata")
         weights = self.path / f"{self.name}.zip"
         if not weights.is_file():
             raise ValueError("Final model weights are missing")
         saved = model.__class__.load(weights, device="cpu")
         if (saved.observation_space.shape != model.observation_space.shape or
-                saved.action_space.n != model.action_space.n):
+                n_discrete_actions(saved.action_space) != n_discrete_actions(model.action_space)):
             raise ValueError("Saved weights do not match the trained model")
         params = self.path / f"{self.name}.params.json"
         if params.exists():

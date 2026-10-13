@@ -113,7 +113,8 @@ def _resolve_base_contract(args, old_df):
     hparams = base_meta.get("hyperparameters", {})
 
     probe_model = PPO.load(str(base_path))
-    model_actions = int(probe_model.action_space.n)
+    from hybrid_policy import n_discrete_actions
+    model_actions = n_discrete_actions(probe_model.action_space)
     obs_dim = int(probe_model.observation_space.shape[0])
 
     feature_cols = list(base_meta.get("features") or [])

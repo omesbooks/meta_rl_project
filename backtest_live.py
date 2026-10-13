@@ -244,7 +244,8 @@ def _boot_dd_confs(x, n_boot=1000, levels=(0.90, 0.95, 0.99), seed=17):
 
 def _resolve_action_profile(args, model):
     """Resolve action profile for a loaded model, preferring train metadata."""
-    n_actions = int(model.action_space.n)
+    from hybrid_policy import n_discrete_actions
+    n_actions = n_discrete_actions(model.action_space)
     action_params = {}
     action_profile_json_meta = None
     action_profile_value = None

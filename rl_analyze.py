@@ -79,7 +79,8 @@ def main():
         except Exception as exc:
             print(f"[contract] warn: could not read {meta_path}: {exc}")
 
-    n_actions = int(model.action_space.n)
+    from hybrid_policy import n_discrete_actions
+    n_actions = n_discrete_actions(model.action_space)
     action_value = hparams.get("action_profile_config") or hparams.get("action_profile")
     action_params = hparams.get("action_profile_params") or {}
     if action_value is None:

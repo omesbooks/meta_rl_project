@@ -57,10 +57,11 @@ from action_profiles import (
 )
 from trading_env import TradingEnv
 from artifact_paths import ArtifactRun
-from training_data import (load_dataset, feature_columns, split_training_data,
+from training_data import (load_dataset, feature_columns, split_training_data, atr_mt5,
                            fit_preprocessing, apply_normalization,
                            check_selection_scope, validate_hyperparameters)
 ENTRY_GATE_COL = "entry_gate__raw"   # reserved: raw gate values carried next to the normalised features
+ATR_COL = "atr__raw"                 # reserved: raw MT5-style ATR for the continuous SL head
 
 
 def _period(df):
@@ -127,6 +128,14 @@ def build_parser():
                          "USDJPY H1 at 1 pip round-trip ~ 3.8e-5")
     ap.add_argument("--commission", type=float, default=0.0001,
                     help="commission per trade as a fraction of price (env default 0.0001)")
+    ap.add_argument("--sl_mode", default="none", choices=["none", "continuous"],
+                    help="continuous: hybrid policy with a second head that outputs the stop-loss distance in ATR "
+                         "(hybrid_policy.HybridPolicy; PPO only). The stop is set at entry from MT5-style ATR(14) "
+                         "of the raw bars and checked intrabar")
+    ap.add_argument("--sl_range", default="0.5,3.0", help="continuous SL head bounds in ATR, 'lo,hi'")
+    ap.add_argument("--sl_log_std_init", type=float, default=-0.7, help="initial log sigma of the SL head (exp(-0.7) ~ 0.5 ATR)")
+    ap.add_argument("--sl_ent_scale", type=float, default=0.1, help="weight of the SL head's entropy inside ent_coef (the categorical head keeps 1.0)")
+    ap.add_argument("--atr_period", type=int, default=14, help="ATR period for the continuous SL head")
     ap.add_argument("--entry_gate", default="",
                     help="gated entries: RAW column that must be > 0 to open a buy and < 0 to open a sell "
                          "(e.g. srb_sig); off-gate buys/sells act as hold. Recorded in the train meta and "
@@ -291,6 +300,18 @@ def prepare_training(args):
     else:
         test_df = apply_normalization(raw_test, feature_cols, norm)
         eval_source = "held-out Test (not used by EvalCallback)"
+    sl_range = tuple(float(x) for x in str(args.sl_range).split(","))
+    if args.sl_mode == "continuous":
+        if args.algo != "ppo":
+            raise ValueError("--sl_mode continuous needs --algo ppo")
+        if len(sl_range) != 2 or not (0 < sl_range[0] < sl_range[1]):
+            raise ValueError("--sl_range must be 'lo,hi' with 0 < lo < hi")
+        for dst, src in ((train_df, raw_train), (validation_df, raw_validation), (test_df, raw_test)):
+            if dst is not None and src is not None:
+                a = atr_mt5(src["high"], src["low"], src["close"], args.atr_period)
+                a = np.where(np.isfinite(a) & (a > 0), a, np.nan)
+                a = pd.Series(a).bfill().to_numpy()            # the first bars inherit the first valid ATR
+                dst[ATR_COL] = a.astype(np.float32)
     # the gate must read the RAW signal (a z-scored 0 is not 0): carry it in a reserved column
     if args.entry_gate:
         if args.entry_gate not in raw_train.columns:
@@ -347,6 +368,7 @@ def train(args, run, prepared=None):
     raw_test = prepared["raw_test"]
     split = prepared["split"]
     feature_cols = prepared["feature_cols"]
+    sl_range = tuple(float(x) for x in str(args.sl_range).split(","))
     norm = prepared["norm"]
     preprocessing = prepared["preprocessing"]
     feat_mean = prepared["feat_mean"]
@@ -441,6 +463,11 @@ def train(args, run, prepared=None):
             "spread_pct": args.spread_pct,
             "commission": args.commission,
             "entry_gate": args.entry_gate,
+            "sl_mode": args.sl_mode,
+            "sl_range": list(sl_range),
+            "sl_log_std_init": args.sl_log_std_init,
+            "sl_ent_scale": args.sl_ent_scale,
+            "atr_period": args.atr_period,
             "net_arch": net_arch,
             "seed": args.seed,
             **algo_hparams,
@@ -467,6 +494,7 @@ def train(args, run, prepared=None):
             max_hold_bars=args.max_hold,
             spread_pct=args.spread_pct, commission=args.commission,
             entry_gate=ENTRY_GATE_COL if args.entry_gate else "",
+            sl_mode=args.sl_mode, sl_range=sl_range, atr_col=ATR_COL if args.sl_mode == "continuous" else "",
         ))
 
     def make_eval_env():
@@ -483,6 +511,7 @@ def train(args, run, prepared=None):
             max_hold_bars=args.max_hold,
             spread_pct=args.spread_pct, commission=args.commission,
             entry_gate=ENTRY_GATE_COL if args.entry_gate else "",
+            sl_mode=args.sl_mode, sl_range=sl_range, atr_col=ATR_COL if args.sl_mode == "continuous" else "",
         ))
 
     train_env = DummyVecEnv([make_train_env])
@@ -508,9 +537,17 @@ def train(args, run, prepared=None):
     else:
         print("[seed] none — run is not reproducible; pass --seed to compare runs")
 
+    policy_cls, policy_kwargs = "MlpPolicy", dict(net_arch=net_arch)
+    if args.sl_mode == "continuous":
+        from hybrid_policy import HybridPolicy
+        policy_cls = HybridPolicy
+        policy_kwargs.update(n_actions=len(action_profile_cfg["actions"]), sl_range=sl_range,
+                             sl_ent_scale=args.sl_ent_scale, log_std_init=args.sl_log_std_init)
+        print(f"[sl] continuous head: range {sl_range[0]}-{sl_range[1]} ATR({args.atr_period}), "
+              f"log_std_init={args.sl_log_std_init}, ent scale={args.sl_ent_scale}")
     if args.algo == "ppo":
         model = PPO(
-            "MlpPolicy", train_env,
+            policy_cls, train_env,
             learning_rate=args.learning_rate,
             n_steps=args.n_steps,
             batch_size=args.batch_size,
@@ -522,7 +559,7 @@ def train(args, run, prepared=None):
             vf_coef=args.vf_coef,
             verbose=1,
             tensorboard_log=log_dir,
-            policy_kwargs=dict(net_arch=net_arch),
+            policy_kwargs=policy_kwargs,
             seed=args.seed,
         )
         print(f"[hyper] lr={args.learning_rate}, clip={args.clip_range}, ent={args.ent_coef}")
@@ -570,6 +607,9 @@ def train(args, run, prepared=None):
     from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
     viz_cb = None
     rollout_cb = None
+    if args.viz and args.sl_mode == "continuous":
+        print("[viz] continuous SL head: live visual not supported yet, skipped")
+        args.viz = False
     if args.viz:
         if args.algo == "dqn":
             print("[viz] skipped: DQN has a single Q-network (visual needs PPO/A2C)")
@@ -592,7 +632,8 @@ def train(args, run, prepared=None):
                     reward_overrides=reward_overrides, reward_formula=args.reward_formula,
                     action_profile=action_profile_cfg, max_hold_bars=args.max_hold,
                     spread_pct=args.spread_pct, commission=args.commission,
-                    entry_gate=ENTRY_GATE_COL if args.entry_gate else "")
+                    entry_gate=ENTRY_GATE_COL if args.entry_gate else "",
+                    sl_mode=args.sl_mode, sl_range=sl_range, atr_col=ATR_COL if args.sl_mode == "continuous" else "")
 
             class VizCallback(BaseCallback):
                 """Runs right after each EvalCallback evaluation (callback_after_eval)."""
@@ -672,12 +713,13 @@ def train(args, run, prepared=None):
                               action_profile=action_profile_cfg,
                               max_hold_bars=args.max_hold,
                               spread_pct=args.spread_pct, commission=args.commission,
-                    entry_gate=ENTRY_GATE_COL if args.entry_gate else "")
+                    entry_gate=ENTRY_GATE_COL if args.entry_gate else "",
+                    sl_mode=args.sl_mode, sl_range=sl_range, atr_col=ATR_COL if args.sl_mode == "continuous" else "")
     obs, _ = test_env_raw.reset()
     done = False
     while not done:
         action, _ = model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = test_env_raw.step(int(action))
+        obs, reward, terminated, truncated, info = test_env_raw.step(action if args.sl_mode == "continuous" else int(action))
         done = terminated or truncated
 
     stats = test_env_raw.get_stats()

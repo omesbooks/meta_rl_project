@@ -156,7 +156,12 @@ def export_model(model_name: str, deploy_name: str = None, output_dir: str = Non
     model = PPO.load(str(model_path), device='cpu')
 
     obs_dim = model.policy.observation_space.shape[0]
-    n_actions = int(model.policy.action_space.n)
+    from hybrid_policy import is_hybrid_space, n_discrete_actions
+    if is_hybrid_space(model.policy.action_space):
+        print("ERROR: this model has a continuous stop-loss head (sl_mode=continuous); ONNX/EA export "
+              "for the hybrid policy is not implemented yet")
+        sys.exit(1)
+    n_actions = n_discrete_actions(model.policy.action_space)
     print(f"  Input dim:  {obs_dim}")
     print(f"  Actions:    {n_actions}")
     try:

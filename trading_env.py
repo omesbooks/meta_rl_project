@@ -81,9 +81,26 @@ class TradingEnv(gym.Env):
         action_params: dict | None = None,
         random_start: bool = True,
         entry_gate: str = "",
+        sl_mode: str = "none",
+        sl_range=(0.5, 3.0),
+        atr_col: str = "",
     ):
         super().__init__()
         self.df = df.reset_index(drop=True)
+        # Continuous stop-loss head (hybrid_policy.HybridPolicy): the action is
+        # [discrete index, SL distance in ATR]; the stop is set at entry from the RAW
+        # ATR column and checked intrabar (bar low/high, pessimistic fill at the stop).
+        self.sl_mode = (sl_mode or "none").lower()
+        if self.sl_mode not in ("none", "continuous"):
+            raise ValueError("sl_mode must be 'none' or 'continuous'")
+        self.sl_range = (float(sl_range[0]), float(sl_range[1]))
+        if self.sl_mode == "continuous":
+            if not atr_col or atr_col not in self.df.columns:
+                raise ValueError("sl_mode='continuous' needs atr_col (raw ATR column) in the data")
+            if not (0 < self.sl_range[0] < self.sl_range[1]):
+                raise ValueError("sl_range must be 0 < lo < hi")
+        self._atr = self.df[atr_col].values.astype(np.float32) if (self.sl_mode == "continuous") else None
+        self._sl_atr_open = 0.0
         # Gated entries: a buy opens only on bars where this RAW column is > 0, a sell
         # only where it is < 0 (an off-gate buy/sell is a plain hold). Used to let the
         # agent filter + manage an external signal (e.g. srb_sig) instead of timing entries.
@@ -123,6 +140,9 @@ class TradingEnv(gym.Env):
 
         # Action profile decides output dimension.
         self.action_space = spaces.Discrete(len(self.action_profile["actions"]))
+        if self.sl_mode == "continuous":
+            from hybrid_policy import hybrid_action_space
+            self.action_space = hybrid_action_space(len(self.action_profile["actions"]), self.sl_range)
 
         # Obs: window flat + [position, unrealized_pnl, bars_in_position]
         obs_dim = self.window_size * self.n_features + 3
@@ -225,7 +245,9 @@ class TradingEnv(gym.Env):
             "pnl": net_pnl,
             "reason": reason,
             "stop": self.stop_price,
+            "sl_atr": self._sl_atr_open if self.sl_mode == "continuous" else None,
         })
+        self._sl_atr_open = 0.0
         self.position = 0
         self.entry_price = 0.0
         self.stop_price = 0.0
@@ -271,12 +293,24 @@ class TradingEnv(gym.Env):
 
     # --------------------------------------------------------------
     def step(self, action):
-        action = int(action)
-        if not self.action_space.contains(action):
-            raise ValueError("Action is outside the selected profile")
+        sl_atr = None
+        if self.sl_mode == "continuous":
+            from hybrid_policy import split_action
+            action, sl_atr = split_action(action, len(self.action_profile["actions"]), self.sl_range)
+        else:
+            action = int(action)
+            if not self.action_space.contains(action):
+                raise ValueError("Action is outside the selected profile")
         prev_equity = self._last_mark_equity
         price = self._closes[self.t]
         trade_closed_pnl = None
+        # ---- intrabar stop (continuous SL): the bar that just completed vs the stop ----
+        if (self.sl_mode == "continuous" and self.position != 0 and self.stop_price > 0
+                and self.bars_in_position >= 1):
+            hit = ((self.position == 1 and self._lows[self.t] <= self.stop_price) or
+                   (self.position == -1 and self._highs[self.t] >= self.stop_price))
+            if hit:
+                trade_closed_pnl = self._close_current_position(self.stop_price, "sl")
         just_opened = False   # ⭐ Phase 2: flag สำหรับ trade penalty (แทน cost > 0)
         management_action = False
         stop_adjusted = False
@@ -298,6 +332,9 @@ class TradingEnv(gym.Env):
             self.stop_price = 0.0
             self.bars_in_position = 0
             just_opened = True
+            if sl_atr is not None:
+                self._sl_atr_open = sl_atr
+                self.stop_price = self.entry_price - sl_atr * float(self._atr[self.t])
 
         elif action == sell_id and self.position == 0 and (gate is None or gate < 0):   # SELL
             self.position = -1
@@ -305,6 +342,9 @@ class TradingEnv(gym.Env):
             self.stop_price = 0.0
             self.bars_in_position = 0
             just_opened = True
+            if sl_atr is not None:
+                self._sl_atr_open = sl_atr
+                self.stop_price = self.entry_price + sl_atr * float(self._atr[self.t])
 
         elif action == close_id and self.position != 0:  # CLOSE
             trade_closed_pnl = self._close_current_position(price, "signal")

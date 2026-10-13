@@ -14,6 +14,18 @@ NON_FEATURES = {"timestamp", "symbol", "ticker", "open", "high", "low", "close",
 LEAKY = ("future_", "forward_", "next_", "target")
 
 
+def atr_mt5(high, low, close, period=14):
+    """MT5 built-in iATR: a SIMPLE moving average of true range (not Wilder). Used for
+    the continuous-SL head so the stop distance in Python equals the EA's iATR(period)."""
+    h = np.asarray(high, float); l = np.asarray(low, float); c = np.asarray(close, float)
+    tr = np.zeros(len(h)); pc = c[:-1]
+    tr[1:] = np.maximum(h[1:], pc) - np.minimum(l[1:], pc)
+    out = np.full(len(h), np.nan)
+    if len(h) > period:
+        cs = np.cumsum(tr); out[period:] = (cs[period:] - cs[:-period]) / period
+    return out
+
+
 def feature_columns(df):
     return [c for c in df if c not in NON_FEATURES
             and not any(k in c.lower() for k in LEAKY)

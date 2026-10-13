@@ -1282,7 +1282,7 @@ def run_backtest_live(args):
         _sla = [t.get("sl_atr") for t in trades if t.get("sl_atr") is not None]
         if _sla:
             print(f"    Model stop-loss         : mean {np.mean(_sla):.2f} ATR, min {np.min(_sla):.2f}, max {np.max(_sla):.2f} "
-                  f"(range {sl_range[0]:.2f}-{sl_range[1]:.2f}); SL exits {sum(1 for t in trades if str(t.get('reason', '')).startswith('sl')):,}")
+                  f"(range {sl_range[0]:.2f}-{sl_range[1]:.2f}); SL exits {sum(1 for t in trades if str(t.get('reason', '')).lower().startswith('sl')):,}")
             meta.setdefault("result", {})["model_sl_atr_mean"] = float(np.mean(_sla))
     print(f"    Force closed (max hold) : {n_force_close:,}")
     print(f"    Hard stops triggered    : {n_hard_stop:,}")

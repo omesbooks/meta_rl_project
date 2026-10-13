@@ -127,6 +127,10 @@ class HybridPolicy(ActorCriticPolicy):
         # swap the default DiagGaussian(2) for the hybrid head before the networks are built
         self.action_dist = HybridDistribution(self.n_actions, self.sl_ent_scale)
         super()._build(lr_schedule)
+        # start the SL mean in the middle of the range: SB3's ortho init zeroes the bias, and a
+        # mean outside [lo, hi] gets clipped by the env, which hides the head's effect from PPO
+        with th.no_grad():
+            self.action_net.bias[-1] = 0.5 * (self.sl_range[0] + self.sl_range[1])
 
     def _get_constructor_parameters(self):
         data = super()._get_constructor_parameters()

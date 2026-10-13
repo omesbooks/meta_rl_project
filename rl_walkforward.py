@@ -433,7 +433,7 @@ def main():
                 )
                 break
             action, _ = model.predict(obs, deterministic=True)
-            obs, _, terminated, truncated, _ = test_env_raw.step(int(action))
+            obs, _, terminated, truncated, _ = test_env_raw.step(action if np.ndim(action) else int(action))
             done = terminated or truncated
 
         stats = test_env_raw.get_stats()

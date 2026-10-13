@@ -453,7 +453,7 @@ def finetune(args, out_name, run):
         done = False
         while not done:
             action, _ = model.predict(obs, deterministic=True)
-            obs, _, terminated, truncated, _ = eval_env.step(int(action))
+            obs, _, terminated, truncated, _ = eval_env.step(action if np.ndim(action) else int(action))
             done = terminated or truncated
         stats = eval_env.get_stats()
         print("\n" + "=" * 50)

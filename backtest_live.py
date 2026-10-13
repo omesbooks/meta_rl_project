@@ -699,11 +699,15 @@ def run_backtest_live(args):
         print(f"ERROR: norm stats missing for {args.model}; cannot reproduce training inputs")
         return 1
 
+    # raw MT5-style ATR for the continuous SL head (features are normalised, OHLC are not)
+    from training_data import atr_mt5
+    _atr_raw = pd.Series(atr_mt5(df["high"], df["low"], df["close"], 14)).bfill().to_numpy()
     # Apply start fraction (use last X% as test)
     start_idx = 0
     if args.start > 0:
         start_idx = int(len(df) * args.start)
         df = df.iloc[start_idx:].reset_index(drop=True)
+        _atr_raw = _atr_raw[start_idx:]
         print(f"[split] using rows {start_idx}.. ({len(df):,} rows)")
     backtest_period = _period(df)
 
@@ -764,6 +768,24 @@ def run_backtest_live(args):
     meta["settings"]["model_source"] = source
     print(f"\n[load] {model_path}  (source={source})")
     model = PPO.load(str(model_path))
+    # Continuous stop-loss head (hybrid_policy): the model outputs the stop distance in ATR.
+    # Stops use MT5-style ATR(period) of the RAW bars, as in training; sliced like df below.
+    from hybrid_policy import is_hybrid_space
+    model_sl = is_hybrid_space(model.action_space)
+    sl_range = tuple(float(x) for x in model.policy.sl_range) if model_sl else None
+    atr_period = 14
+    if model_sl:
+        try:
+            _hp = json.loads(train_meta_path(args.model).read_text(encoding="utf-8-sig")).get("hyperparameters", {})
+            atr_period = int(_hp.get("atr_period", 14) or 14)
+        except Exception:
+            pass
+        print(f"[sl] model stop-loss head: {sl_range[0]:.2f}-{sl_range[1]:.2f} x ATR({atr_period}) (replaces --atr_sl)")
+        if atr_period != 14:
+            _full = pd.read_csv(args.csv)
+            _atr_raw = pd.Series(atr_mt5(_full["high"], _full["low"], _full["close"], atr_period)).bfill().to_numpy()[start_idx:]
+        meta["settings"]["sl_source"] = "model"; meta["settings"]["sl_range"] = list(sl_range); meta["settings"]["atr_period"] = atr_period
+    atr_raw = _atr_raw
     try:
         action_profile_key, action_profile_cfg, action_profile_json_meta = _resolve_action_profile(args, model)
     except Exception as exc:
@@ -924,7 +946,9 @@ def run_backtest_live(args):
             else:
                 state = None
 
-            action, confidence = select_action(state)
+            _sel = select_action(state)
+            action, confidence = int(_sel[0]), float(_sel[1])
+            sl_atr = float(_sel[2]) if len(_sel) > 2 and _sel[2] is not None else None
             counters["n_signals"][action] += 1
 
             # ---- Apply confidence filter ----
@@ -957,7 +981,11 @@ def run_backtest_live(args):
 
             # ---- Execute ----
             if action == buy_id:  # Buy
-                if sltp_enabled:
+                if sl_atr is not None:                       # continuous SL head
+                    sl = price - sl_atr * float(atr_raw[i])
+                    tp = price + atr_proxy * args.atr_tp if sltp_enabled else 0
+                    lots = sim_account.calc_lot_size(price - sl, args.risk)
+                elif sltp_enabled:
                     sl = price - atr_proxy * args.atr_sl
                     tp = price + atr_proxy * args.atr_tp
                     lots = sim_account.calc_lot_size(price - sl, args.risk)
@@ -966,13 +994,19 @@ def run_backtest_live(args):
                     tp = 0
                     lots = max(0.01, args.risk * 100)
                 sim_account.open_position('long', price, lots, sl, tp, i, bar_time)
+                if sl_atr is not None:
+                    sim_account.positions[-1]['sl_atr'] = sl_atr
                 counters["n_executed"][action] += 1
                 if verbose:
                     print(f"  [{bar_time}] BUY  conf={confidence:.2f} lots={lots} "
                           f"price={price:.2f} sl={sl:.2f} tp={tp:.2f}")
 
             elif action == sell_id:  # Sell
-                if sltp_enabled:
+                if sl_atr is not None:                       # continuous SL head
+                    sl = price + sl_atr * float(atr_raw[i])
+                    tp = price - atr_proxy * args.atr_tp if sltp_enabled else 0
+                    lots = sim_account.calc_lot_size(sl - price, args.risk)
+                elif sltp_enabled:
                     sl = price + atr_proxy * args.atr_sl
                     tp = price - atr_proxy * args.atr_tp
                     lots = sim_account.calc_lot_size(sl - price, args.risk)
@@ -981,6 +1015,8 @@ def run_backtest_live(args):
                     tp = 0
                     lots = max(0.01, args.risk * 100)
                 sim_account.open_position('short', price, lots, sl, tp, i, bar_time)
+                if sl_atr is not None:
+                    sim_account.positions[-1]['sl_atr'] = sl_atr
                 counters["n_executed"][action] += 1
                 if verbose:
                     print(f"  [{bar_time}] SELL conf={confidence:.2f} lots={lots} "
@@ -1021,6 +1057,11 @@ def run_backtest_live(args):
 
     def _model_select(state):
         obs_tensor = torch.as_tensor(state).unsqueeze(0).float()
+        if model_sl:
+            probs, sl_mu, _ = model.policy.heads(obs_tensor)
+            probs = probs.numpy().flatten()
+            action = int(np.argmax(probs))
+            return action, float(probs[action]), float(sl_mu[0])
         with torch.no_grad():
             dist = model.policy.get_distribution(obs_tensor)
             probs = dist.distribution.probs.numpy().flatten()
@@ -1237,6 +1278,12 @@ def run_backtest_live(args):
     print(f"    Skipped (max positions) : {n_skipped_pos:,}")
     if gate_col:
         print(f"    Skipped (entry gate)    : {n_skipped_gate:,}  [{entry_gate}]")
+    if model_sl and trades:
+        _sla = [t.get("sl_atr") for t in trades if t.get("sl_atr") is not None]
+        if _sla:
+            print(f"    Model stop-loss         : mean {np.mean(_sla):.2f} ATR, min {np.min(_sla):.2f}, max {np.max(_sla):.2f} "
+                  f"(range {sl_range[0]:.2f}-{sl_range[1]:.2f}); SL exits {sum(1 for t in trades if str(t.get('reason', '')).startswith('sl')):,}")
+            meta.setdefault("result", {})["model_sl_atr_mean"] = float(np.mean(_sla))
     print(f"    Force closed (max hold) : {n_force_close:,}")
     print(f"    Hard stops triggered    : {n_hard_stop:,}")
 
@@ -1285,7 +1332,8 @@ def run_backtest_live(args):
                               swap_long=getattr(args, 'swap_long', 0.0),
                               swap_short=getattr(args, 'swap_short', 0.0))
             _simulate(acct,
-                      lambda _s: (int(rng_base.integers(0, n_actions_total)), 1.0),
+                      (lambda _s: (int(rng_base.integers(0, n_actions_total)), 1.0, float(rng_base.uniform(*sl_range))))
+                      if model_sl else (lambda _s: (int(rng_base.integers(0, n_actions_total)), 1.0)),
                       need_state=False, verbose=False)
             base_returns.append(acct.balance / args.balance - 1)
         base_arr = np.array(base_returns)

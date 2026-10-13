@@ -108,3 +108,32 @@ def test_rl_train_continuous_sl_saves_loadable_hybrid_model(tmp_path):
     assert a.shape == (2,) and 0 <= a[0] <= 3 and 0.8 <= a[1] <= 2.5
     probs, sl, v = model.policy.heads(obs)
     assert abs(float(probs.sum()) - 1.0) < 1e-5 and 0.8 <= float(sl[0]) <= 2.5
+
+
+def test_backtest_applies_the_model_stop(tmp_path):
+    """backtest_live resolves the SL head from the loaded model: every trade carries sl_atr
+    inside the range and its sl price is entry -/+ sl_atr * ATR(14) of the raw bars."""
+    df = _df(500, seed=7).drop(columns=["atr__raw"])
+    csv = tmp_path / "sl.csv"; df.to_csv(csv, index=False)
+    py = str(ROOT / ".venv" / "Scripts" / "python.exe"); name = "test_sl_bt_tmp"
+    r = subprocess.run([py, "rl_train.py", str(csv), "--steps", "600", "--window", "5", "--name", name,
+                        "--sl_mode", "continuous", "--sl_range", "0.8,2.5", "--max_hold", "6", "--mc_eval", "0",
+                        "--n_steps", "64", "--batch_size", "32", "--ep_len", "100"],
+                       cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
+    r = subprocess.run([py, "backtest_live.py", name, str(csv), "--conf", "0", "--mode", "pure_agent",
+                        "--start", "0.5", "--mc", "0", "--bootstrap", "0", "--random_baseline", "2", "--spread", "0", "--commission", "0"],
+                       cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
+    assert "[sl] model stop-loss head: 0.80-2.50" in r.stdout
+    trades = sorted((ROOT / "artifacts" / "models" / name).rglob("*_live_bt_trades.csv"), key=lambda q: q.stat().st_mtime)
+    tr = pd.read_csv(trades[-1])
+    if len(tr):
+        assert tr["sl_atr"].between(0.8, 2.5).all()
+        atr = pd.Series(atr_mt5(df["high"], df["low"], df["close"], 14)).bfill().to_numpy()
+        full = df.copy(); full["t"] = pd.to_datetime(full["timestamp"], format="%Y.%m.%d %H:%M")
+        at = full.set_index("t")
+        for _, t in tr.head(20).iterrows():
+            i = full.index[full["t"] == pd.Timestamp(t["open_time"])][0]
+            sign = 1 if str(t["side"]).startswith("l") else -1
+            assert abs(t["sl"] - (float(df.loc[i, "close"]) - sign * t["sl_atr"] * atr[i])) < 1e-6

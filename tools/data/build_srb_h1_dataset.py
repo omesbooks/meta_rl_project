@@ -26,6 +26,7 @@ import pandas as pd
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from srb_features import SRBParams, atr_mt5, ema, srb_features  # noqa: E402
+from htf_context import htf_context  # noqa: E402
 
 CAP = 10.0   # ATR-distance cap for "no zone in sight"
 
@@ -73,6 +74,8 @@ def main():
     ap.add_argument("h1"); ap.add_argument("h4"); ap.add_argument("--out", required=True)
     ap.add_argument("--warmup", type=int, default=300, help="bars dropped at the start (rolling windows + zone history)")
     ap.add_argument("--start", default="", help="keep bars from this date (after warm-up)")
+    ap.add_argument("--ctx", action="store_true",
+                    help="append lag-safe H4 + D1 context blocks (tools/data/htf_context.py) -> <out>_base_ctx.csv / <out>_srb_ctx.csv")
     args = ap.parse_args()
     h1 = pd.read_csv(args.h1); h4 = pd.read_csv(args.h4)
     for d in (h1, h4): d["t"] = pd.to_datetime(d["timestamp"], format="%Y.%m.%d %H:%M")
@@ -94,14 +97,19 @@ def main():
     })
     head = pd.DataFrame({"timestamp": h1["t"].dt.strftime("%Y.%m.%d %H:%M"), "open": h1["open"], "high": h1["high"],
                          "low": h1["low"], "close": h1["close"], "volume": h1.get("tick_volume", 0)})
-    base = pd.concat([head, B], axis=1); full = pd.concat([head, B, srb], axis=1)
+    ctx = pd.concat([htf_context(h1, "4h", "h4"), htf_context(h1, "1D", "d1")], axis=1) if args.ctx else None
+    base = pd.concat([head, B] + ([ctx] if ctx is not None else []), axis=1)
+    full = pd.concat([head, B, srb] + ([ctx] if ctx is not None else []), axis=1)
     keep = np.ones(len(full), bool); keep[:args.warmup] = False
     keep &= np.isfinite(full.drop(columns=["timestamp"]).to_numpy(float)).all(axis=1)
     if args.start: keep &= (h1["t"] >= args.start).to_numpy()
     base = base[keep].reset_index(drop=True); full = full[keep].reset_index(drop=True)
-    pb = Path(f"{args.out}_base.csv"); pf = Path(f"{args.out}_srb.csv")
+    tag = "_ctx" if args.ctx else ""
+    pb = Path(f"{args.out}_base{tag}.csv"); pf = Path(f"{args.out}_srb{tag}.csv")
     base.to_csv(pb, index=False); full.to_csv(pf, index=False)
     ns = int((full["srb_sig"] != 0).sum())
+    if ctx is not None:
+        print(f"context block: {ctx.shape[1]} columns ({', '.join(ctx.columns[:4])} ... )")
     print(f"{pb}: {len(base)} rows x {base.shape[1] - 6} features | {pf}: +{srb.shape[1]} SRB columns, "
           f"{ns} signals ({ns / len(full):.2%} of bars), {full['timestamp'].iloc[0]} -> {full['timestamp'].iloc[-1]}")
 

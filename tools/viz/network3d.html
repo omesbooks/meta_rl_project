@@ -54,6 +54,8 @@
           background: rgba(6, 10, 24, .6); opacity: 0; transition: opacity .4s; }
   body.dash #gl, body.dash #labels, body.dash #stats, body.dash #chartLbl, body.dash #pxHi,
   body.dash #pxLo, body.dash #idle, body.dash .c3d, body.dash #rstats { display: none !important; }
+  #mon { display: none; } body.mon #mon { display: block; }
+  body.mon #dash, body.mon #timeline { display: none !important; }
   #banner { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); pointer-events: none;
             font: 700 16px var(--hud); letter-spacing: .3em; color: var(--gold); text-shadow: 0 0 14px var(--gold);
             opacity: 0; transition: opacity .35s; white-space: nowrap; }
@@ -76,6 +78,7 @@
 </div>
 <div id="labels"></div>
 <div id="dash"></div>
+<div id="mon"></div>
 <div id="chartLbl" class="hud"></div>
 <div id="pxHi" class="hud"></div><div id="pxLo" class="hud"></div>
 <div id="banner"></div>
@@ -88,7 +91,7 @@
 </div>
 <div id="ctrl" class="panel">
   <label class="c3d" id="lSrc" style="display:none">source <select id="iSrc"><option value="training">Training (live)</option><option value="eval">Eval replay</option></select></label>
-  <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option><option value="dashboard">Dashboard</option></select></label>
+  <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option><option value="dashboard">Dashboard</option><option value="monitor">Monitor</option></select></label>
   <button id="bPlay" class="c3d">❚❚</button>
   <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
   <label class="c3d">synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
@@ -105,7 +108,8 @@
 { "imports": {
   "three": "./vendor/three/three.module.js",
   "three/addons/": "./vendor/three/addons/",
-  "viz-dashboard": "./dashboard.js"
+  "viz-dashboard": "./dashboard.js",
+  "viz-monitor": "./monitor.js"
 } }
 </script>
 <script>window.SNAPSHOT = /*__SNAPSHOT__*/null;</script>
@@ -117,6 +121,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createDashboard } from "viz-dashboard";
+import { createMonitor } from "viz-monitor";
 
 const params = new URLSearchParams(location.search);
 const LIVE = params.has("live") && !window.SNAPSHOT;
@@ -133,6 +138,7 @@ const MODES = {
   lite:      { bloom: false, k: 4, pulses: false, dpr: 1, fps: 20 },
   cinematic: { bloom: true,  k: 8, pulses: true,  dpr: 2, fps: 30 },
   dashboard: { bloom: false, k: 4, pulses: false, dpr: 1, fps: 20, dashboard: true },
+  monitor:   { bloom: false, k: 4, pulses: false, dpr: 1, fps: 20, dashboard: true, monitor: true },
 };
 let mode = MODES[params.get("mode")] ? params.get("mode") : (LIVE ? "lite" : "cinematic");
 const OPT = Object.assign({}, MODES[mode]);
@@ -614,7 +620,7 @@ async function loadRollout() {
     const r = await fetch(`run/rollout_latest.json?t=${Date.now()}`, { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const D = await r.json();
-    if (source === "training" && mode !== "dashboard") applySnapshot(D);   // user may have switched meanwhile
+    if (source === "training" && mode !== "dashboard" && mode !== "monitor") applySnapshot(D);   // user may have switched meanwhile
   } catch (e) { console.warn("rollout load failed", e); }
   rollLoading = false;
   renderTimeline();
@@ -622,7 +628,7 @@ async function loadRollout() {
 function setSource(src, pin = false) {
   if (pin) srcPinned = true;
   source = src; $("iSrc").value = src; follow = true;
-  if (src === "training") { if (haveRollout && mode !== "dashboard") loadRollout(); }
+  if (src === "training") { if (haveRollout && mode !== "dashboard" && mode !== "monitor") loadRollout(); }
   else {
     const last = index[index.length - 1];
     if (last && last.i !== loadedI) loadSnap(last);
@@ -652,13 +658,17 @@ async function poll() {
       }
       if (rollMeta.seq !== rollSeq) {
         rollSeq = rollMeta.seq;
-        if (source === "training" && mode !== "dashboard") {
+        if (source === "training" && mode !== "dashboard" && mode !== "monitor") {
           // never cut a replay short: a new rollout waits for the current one to end
           if (shown !== "rollout" || (idle && idleReason === "replay")) loadRollout(); else rollPending = true;
         }
       }
     }
   } catch (e) { /* eval-only run (older folder or DQN) */ }
+  try {
+    const r = await fetch(`run/monitor.json?t=${Date.now()}`, { cache: "no-store" });
+    if (r.ok) { monData = await r.json(); monUpdate(false); }
+  } catch (e) { /* no monitor rows yet */ }
   if (last && ((follow && last.i !== loadedI) || loadedI < 0)) await loadSnap(last);
   if ((index.length || haveRollout) && $("timeline").style.display !== "flex") { $("timeline").style.display = "flex"; layoutChart(); }
   renderTimeline();
@@ -725,7 +735,7 @@ function sleep(reason) {
 }
 function wake(reason) {
   if (reason === "input") lastInput = performance.now();
-  if (mode === "dashboard") return;                         // dashboard has no render loop
+  if (mode === "dashboard" || mode === "monitor") return;   // panel modes have no render loop
   if (pageHidden() && reason !== "host") return;            // stay asleep while minimised / hidden
   if (!idle) return;
   if (reason === "input" && idleReason === "replay" && S) seek(START);   // mouse = watch it again
@@ -781,7 +791,7 @@ function frame(now) {
   controls.update();
   composer.render();
   if (endAt && now - endAt > 1500) {                         // let the last bursts fade first
-    if (source === "training" && rollPending && mode !== "dashboard") loadRollout();
+    if (source === "training" && rollPending && mode !== "dashboard" && mode !== "monitor") loadRollout();
     else if (!rollLoading) sleep("replay");
   }
   else if (!playing && now - lastInput > 8000) sleep("paused");
@@ -797,11 +807,13 @@ resize();
 
 function applyMode(name) {
   if (!MODES[name]) return;
-  const leavingDash = mode === "dashboard" && name !== "dashboard";
+  const isPanel = n => n === "dashboard" || n === "monitor";
+  const leavingDash = isPanel(mode) && !isPanel(name);
   mode = name; Object.assign(OPT, MODES[name]);
   $("iMode").value = name;
-  document.body.classList.toggle("dash", name === "dashboard");
-  if (name === "dashboard") { sleep("dashboard"); dashUpdate(); return; }
+  document.body.classList.toggle("dash", isPanel(name));
+  document.body.classList.toggle("mon", name === "monitor");
+  if (isPanel(name)) { sleep("dashboard"); dashUpdate(); monUpdate(); return; }
   if (leavingDash && idle) { idle = false; idleReason = ""; lastT = performance.now(); lastDraw = 0; requestAnimationFrame(frame); }
   bloom.enabled = OPT.bloom; K = OPT.k; fpsCap = OPT.fps;
   renderer.setPixelRatio(Math.min(OPT.dpr, 2, devicePixelRatio || 1));
@@ -843,16 +855,26 @@ function dashUpdate(force = true) {
   dashKey = key;
   dash.render({ index, snap: evalD, selectedI: loadedI });
 }
+const mon = createMonitor($("mon"));
+let monData = null, monKey = "";
+function monUpdate(force = true) {
+  if (mode !== "monitor" || !monData) return;
+  const rows = monData.rows || [];
+  const key = `${rows.length}:${rows.length ? rows[rows.length - 1].seq : -1}:${index.length}`;
+  if (!force && key === monKey) return;
+  monKey = key;
+  mon.render({ rows, meta: monData, index });
+}
 let dashResize = 0;
-addEventListener("resize", () => { clearTimeout(dashResize); dashResize = setTimeout(() => mode === "dashboard" && dash.rerender(), 200); });
+addEventListener("resize", () => { clearTimeout(dashResize); dashResize = setTimeout(() => { if (mode === "dashboard") dash.rerender(); if (mode === "monitor") mon.rerender(); }, 200); });
 window.__viz = { seek: i => S && seek(i), get frame() { return fpos; }, get drawn() { return drawn; }, get loaded() { return loadedI; },
                  get ready() { return !!S; }, get idle() { return idle ? idleReason : ""; }, get mode() { return mode; },
                  get dbg() { return { idle, idleReason, hostMinimized, visibility: document.visibilityState, fpsCap, lastDraw: Math.round(lastDraw), playing, endAt: Math.round(endAt) }; },
-                 get source() { return source; }, get shown() { return shown; },
+                 get source() { return source; }, get shown() { return shown; }, get monitorRows() { return monData ? (monData.rows || []).length : 0; },
                  get roll() { return { haveRollout, rollSeq, rollPending, rollLoading, loaded: shown === "rollout" && S ? S.D.meta.rollout : -1 }; },
                  setHidden, setMode: applyMode, setSource: s => setSource(s, true), wake: () => wake("input") };
 
-if (mode === "dashboard") applyMode("dashboard");
+if (mode === "dashboard" || mode === "monitor") applyMode(mode);
 if (window.SNAPSHOT) applySnapshot(window.SNAPSHOT);
 else if (LIVE) { $("wait").style.display = "grid"; poll(); }
 else fail("no snapshot data — run tools/viz/capture_snapshot.py or open through tools/viz/live_viewer.py");

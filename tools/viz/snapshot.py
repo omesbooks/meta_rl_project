@@ -270,8 +270,93 @@ def _segment(starts, n, frames, min_len=150):
     return max(prev, last - frames), last
 
 
+MONITOR_ROWS = 1000       # rollouts kept in monitor.json
+CF_EXIT_BARS = 4          # fixed-rule counterfactual: enter on the signal bar, exit N bars later, no stop
+
+
+def monitor_row(seq, step, total_steps, rec, aux, df, env, n_actions):
+    """One row of training-behaviour diagnostics for a whole rollout.
+
+    rec: [(t, pos_after, equity_after, close_pnl, reward)], aux: [(action, gate, prev_pos, close_info)]
+    where close_info is None or (reason, bars, pnl) for a trade that closed on that step.
+    The counterfactual takes every gate (signal) bar of the rollout in the signal's
+    direction, exits CF_EXIT_BARS bars later at the close with the env's spread and
+    commission, and splits the bars into those the agent accepted (opened in the
+    signal direction on that bar) and those it skipped."""
+    n = len(rec)
+    acts = np.array([a[0] for a in aux], dtype=int)
+    gate = np.array([a[1] if a[1] is not None else 0.0 for a in aux], dtype=float)
+    has_gate = any(a[1] is not None for a in aux)
+    prev_pos = np.array([a[2] for a in aux], dtype=int)
+    pos = np.array([r[1] for r in rec], dtype=int)
+    opened = (prev_pos == 0) & (pos != 0)
+    closes = [a[3] for a in aux if a[3] is not None]
+    pnls = np.array([c[2] for c in closes], dtype=float)
+    holds = np.array([c[1] for c in closes], dtype=float)
+    exits = {}
+    for c in closes:
+        exits[str(c[0])] = exits.get(str(c[0]), 0) + 1
+    counts = np.bincount(acts[(acts >= 0) & (acts < n_actions)], minlength=n_actions).astype(float)
+    pr = counts / max(1.0, counts.sum())
+    entropy = float(-np.sum(pr[pr > 0] * np.log(pr[pr > 0])))
+    row = {
+        "seq": int(seq), "step": int(step), "total_steps": int(total_steps or 0), "bars": int(n),
+        "trades_opened": int(opened.sum()), "trades_closed": int(len(closes)),
+        "trades_per_100": round(100.0 * opened.sum() / max(1, n), 2),
+        "hold_mean": round(float(holds.mean()), 2) if len(holds) else None,
+        "exits": exits,
+        "pnl_mean_bp": round(float(pnls.mean()) * 1e4, 2) if len(pnls) else None,
+        "win_rate": round(float((pnls > 0).mean()), 3) if len(pnls) else None,
+        "gross_win": round(float(pnls[pnls > 0].sum()) * 1e4, 2), "gross_loss": round(float(-pnls[pnls < 0].sum()) * 1e4, 2),
+        "action_mix": counts.astype(int).tolist(), "action_entropy": round(entropy, 3),
+        "reward_sum": round(float(sum(r[4] for r in rec)), 4),
+        "gate": bool(has_gate),
+    }
+    if has_gate:
+        ts = np.array([r[0] for r in rec], dtype=int)
+        sig = gate != 0
+        sgn = np.sign(gate)
+        accepted = sig & opened & (np.sign(pos) == sgn)
+        buy_id = env.action_ids.get("buy"); sell_id = env.action_ids.get("sell")
+        attempt = (acts == buy_id) | (acts == sell_id)
+        wrong = attempt & (prev_pos == 0) & ~((acts == buy_id) & (gate > 0)) & ~((acts == sell_id) & (gate < 0))
+        close = df["close"].to_numpy(float)
+        cost = 2.0 * float(env.spread) + float(env.commission)
+        cf = np.full(n, np.nan)
+        ok = sig & (ts + CF_EXIT_BARS < len(close))
+        cf[ok] = sgn[ok] * (close[ts[ok] + CF_EXIT_BARS] - close[ts[ok]]) / close[ts[ok]] - cost
+        def m(mask):
+            v = cf[mask & np.isfinite(cf)]
+            return (round(float(v.mean()) * 1e4, 2) if len(v) else None, int(len(v)))
+        row.update({
+            "signal_bars": int(sig.sum()), "signal_share": round(float(sig.mean()), 4),
+            "accepted": int(accepted.sum()), "acceptance": round(float(accepted.sum()) / max(1, sig.sum()), 3),
+            "blocked_attempts": int(wrong.sum()),
+            "cf_all_bp": m(sig)[0], "cf_accepted_bp": m(accepted)[0], "cf_accepted_n": m(accepted)[1],
+            "cf_skipped_bp": m(sig & ~accepted)[0], "cf_skipped_n": m(sig & ~accepted)[1],
+        })
+    return row
+
+
+def write_monitor(viz_dir, row, extra=None):
+    """Append one rollout row to monitor.json (small file the viewer polls)."""
+    viz_dir = Path(viz_dir)
+    viz_dir.mkdir(parents=True, exist_ok=True)
+    path = viz_dir / "monitor.json"
+    try:
+        mon = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        mon = {"schema": SCHEMA, "rows": []}
+    mon["rows"] = [r for r in mon.get("rows", []) if r.get("seq") != row["seq"]] + [row]
+    mon["rows"] = mon["rows"][-MONITOR_ROWS:]
+    mon.update(extra or {})
+    mon["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _atomic_write(path, json.dumps(mon))
+    return path
+
+
 def make_rollout_callback(viz_dir, window, names=None, frames=400, min_interval=4.0,
-                          total_steps=None, model_name="", symbol=""):
+                          total_steps=None, model_name="", symbol="", gate_name=""):
     """SB3 callback: after every rollout (at most every `min_interval` s) write
     the real training stretch the agent just played. Prints
     `VIZ_ROLLOUT <seq> <step> <path>` for the first write and every 10th."""
@@ -280,10 +365,13 @@ def make_rollout_callback(viz_dir, window, names=None, frames=400, min_interval=
     class RolloutViz(BaseCallback):
         def __init__(self):
             super().__init__()
-            self.seq = 0
+            self.seq = 0            # heavy snapshot counter
+            self.rollouts = 0       # every rollout (monitor rows)
             self.last_write = 0.0
             self.rec = []
+            self.aux = []
             self.pre = None
+            self.prev_ntr = 0
 
         def _env(self):
             e = self.training_env.envs[0]
@@ -295,7 +383,9 @@ def make_rollout_callback(viz_dir, window, names=None, frames=400, min_interval=
 
         def _on_rollout_start(self):
             self.rec = []
+            self.aux = []
             self.pre = self._state()
+            self.prev_ntr = len(getattr(self._env(), "trades", []))
 
         def _on_step(self):
             # env.step has run (and an auto-reset, if the episode ended): `pre` is
@@ -307,11 +397,37 @@ def make_rollout_callback(viz_dir, window, names=None, frames=400, min_interval=
             pnl = eq_after / eq_before - 1.0 if abs(eq_after - eq_before) > 1e-12 else 0.0
             self.rec.append((t, int(info.get("position", 0)), eq_after, pnl,
                              float(np.asarray(self.locals["rewards"]).ravel()[0])))
+            env = self._env()
+            act = np.asarray(self.locals["actions"]).reshape(-1)
+            action = int(round(float(act[0])))                       # hybrid: [index, sl]
+            gate = float(env._gate[t]) if getattr(env, "_gate", None) is not None else None
+            prev_pos = self.rec[-2][1] if len(self.rec) > 1 else 0
+            ntr = int(info.get("n_trades", len(getattr(env, "trades", []))))
+            close_info = None
+            if ntr > self.prev_ntr and getattr(env, "trades", None):
+                tr = env.trades[-1]
+                close_info = (tr.get("reason", "?"), int(tr.get("bars", 0)), float(tr.get("pnl", 0.0)))
+            elif ntr < self.prev_ntr and pnl != 0.0:                 # closed by an episode reset: trades list is gone
+                close_info = ("episode_end", 0, float(pnl))
+            self.prev_ntr = ntr
+            self.aux.append((action, gate, prev_pos, close_info))
             self.pre = self._state()
             return True
 
         def _on_rollout_end(self):
             now = time.time()
+            if self.rec:
+                try:                                                  # cheap, every rollout
+                    env = self._env()
+                    row = monitor_row(self.rollouts, int(self.num_timesteps), total_steps, self.rec, self.aux,
+                                      env.df, env, len(env.action_profile["actions"]))
+                    write_monitor(viz_dir, row, {"model": model_name, "symbol": symbol,
+                                                 "actions": list(names or env.action_profile["actions"]),
+                                                 "entry_gate": gate_name or getattr(env, "entry_gate", ""),
+                                                 "max_hold": int(env.max_hold_bars), "cf_exit_bars": CF_EXIT_BARS})
+                except Exception as exc:
+                    print(f"\n[viz] monitor row failed: {exc}", flush=True)
+                self.rollouts += 1
             if now - self.last_write < min_interval or not self.rec:
                 return
             try:

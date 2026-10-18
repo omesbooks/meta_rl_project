@@ -169,3 +169,34 @@ def test_write_live_index(tmp_path):
     assert {s["i"]: s["eval_reward"] for s in index["snapshots"]}[1] == 9.0
     assert all((tmp_path / s["file"]).is_file() for s in index["snapshots"])
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_rollout_callback_writes_monitor_rows_with_gate_counterfactual(tmp_path):
+    """monitor.json gets one row per rollout: trade frequency, holds, exits, action mix,
+    and - on a gated env - acceptance plus the fixed-rule counterfactual split into the
+    signal bars the agent accepted vs skipped."""
+    from stable_baselines3 import PPO
+    _, cfg = get_action_profile("basic_4")
+    df = _frame(n=400)
+    rng = np.random.default_rng(0)
+    df["gate"] = 0.0
+    df.loc[rng.choice(np.arange(20, 380), 60, replace=False), "gate"] = rng.choice([-1.0, 1.0], 60)
+    env = TradingEnv(df, FEATS, window_size=WINDOW, max_steps=120, action_profile=cfg, entry_gate="gate")
+    model = PPO("MlpPolicy", env, n_steps=64, batch_size=32, seed=2, device="cpu", policy_kwargs=dict(net_arch=[16]))
+    cb = snap_mod.make_rollout_callback(tmp_path, WINDOW, names=snap_mod.action_names(cfg),
+                                        frames=50, min_interval=0.0, total_steps=256, model_name="t")
+    model.learn(total_timesteps=256, callback=cb)
+    mon = json.loads((tmp_path / "monitor.json").read_text(encoding="utf-8"))
+    rows = mon["rows"]
+    assert len(rows) == 4 and [r["seq"] for r in rows] == [0, 1, 2, 3] and mon["entry_gate"] == "gate"
+    tot = {k: sum(r[k] for r in rows) for k in ("bars", "trades_opened", "trades_closed", "signal_bars", "accepted")}
+    assert tot["bars"] == 256 and tot["accepted"] <= tot["signal_bars"] and tot["trades_opened"] >= tot["accepted"]
+    for r in rows:
+        assert r["gate"] and len(r["action_mix"]) == 4 and sum(r["action_mix"]) == r["bars"]
+        assert 0 <= r["action_entropy"] <= np.log(4) + 1e-6
+        assert r["cf_accepted_n"] + r["cf_skipped_n"] <= r["signal_bars"]
+        assert abs(r["trades_per_100"] - 100 * r["trades_opened"] / r["bars"]) < 0.02
+    # every opened trade on a gated env sits on a signal bar in the signal's direction
+    assert tot["trades_opened"] == tot["accepted"]
+    closed = sum(len(r["exits"]) > 0 for r in rows)
+    assert closed >= 1 and all(set(r["exits"]) <= {"signal", "max_hold", "episode_end", "sl", "managed_sl"} for r in rows)

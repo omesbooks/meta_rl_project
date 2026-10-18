@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor design demo — 3 glass styles</title>
+<style>
+  :root { --hud: "Bahnschrift", "Segoe UI", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; font-family: var(--hud); }
+  body { padding: 76px 24px 60px; transition: background .4s; }
+  /* ------------------------------------------------ switcher */
+  #sw { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 6px; padding: 6px;
+        border-radius: 999px; background: rgba(0,0,0,.55); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.15); }
+  #sw button { border: 0; background: transparent; color: #cfd8e8; font: 600 13px var(--hud); padding: 8px 16px; border-radius: 999px; cursor: pointer; letter-spacing: .04em; }
+  #sw button.on { background: rgba(255,255,255,.16); color: #fff; }
+  /* ------------------------------------------------ shared layout */
+  .wrap { max-width: 1500px; margin: 0 auto; }
+  .ttl { display: flex; align-items: baseline; gap: 16px; margin: 0 0 14px; }
+  .ttl h1 { margin: 0; font: 700 20px/1 var(--hud); letter-spacing: .3em; }
+  .ttl span { font-size: 12px; letter-spacing: .12em; opacity: .7; }
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+  .s12 { grid-column: span 12; } .s6 { grid-column: span 6; } .s4 { grid-column: span 4; } .s3 { grid-column: span 3; }
+  .card { position: relative; border-radius: var(--r); padding: 14px 16px; overflow: hidden; min-width: 0; }
+  .card h3 { margin: 0 0 10px; font: 600 10px/1 var(--hud); letter-spacing: .26em; opacity: .65; }
+  .card h3 b { opacity: 1; letter-spacing: .08em; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip { flex: 1 1 250px; border-radius: calc(var(--r) - 4px); padding: 10px 12px; position: relative; overflow: hidden; }
+  .chip .t { font: 700 12px/1.2 var(--hud); letter-spacing: .14em; } .chip .d { margin-top: 5px; font-size: 12px; opacity: .72; line-height: 1.4; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .kpi .k { font: 600 10px/1 var(--hud); letter-spacing: .22em; opacity: .6; } .kpi .v { font: 600 24px/1.25 var(--hud); font-variant-numeric: tabular-nums; } .kpi .u { font-size: 11px; opacity: .55; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; } td, th { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--line); } th { font-size: 10px; letter-spacing: .08em; opacity: .6; font-weight: 600; } td:first-child, th:first-child { text-align: left; }
+  svg { display: block; width: 100%; } .lab { font-size: 11px; opacity: .55; margin-top: 6px; }
+  .bar { height: 12px; border-radius: 6px; overflow: hidden; display: flex; margin: 6px 0 4px; }
+  .tl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; } .tl .p { border-radius: 10px; padding: 8px 10px; } .tl .p .k { font: 600 10px/1 var(--hud); letter-spacing: .2em; opacity: .6; margin-bottom: 4px; }
+  .mode { position: fixed; right: 18px; bottom: 14px; padding: 8px 12px; border-radius: 12px; font-size: 13px; display: flex; gap: 10px; align-items: center; }
+  .mode select { border-radius: 6px; padding: 2px 6px; font: inherit; }
+
+  /* ================================================ A · DEEP GLASS (neon, dark) */
+  body.A { --r: 16px; --fg: #d9e7ff; --dim: #7f8fb0; --line: rgba(255,255,255,.07); --acc: #19e6ff; color: var(--fg);
+    background: radial-gradient(1200px 700px at 15% -10%, #0b2a52 0%, transparent 60%), radial-gradient(900px 600px at 95% 110%, #2a0b3a 0%, transparent 55%), #02030a; }
+  body.A::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1; opacity: .9;
+    background-image: radial-gradient(circle, rgba(25,230,255,.55) 1px, transparent 1.6px), radial-gradient(circle, rgba(255,138,31,.45) 1px, transparent 1.6px);
+    background-size: 160px 160px, 230px 230px; background-position: 20px 40px, 90px 10px; }
+  body.A .card, body.A .mode, body.A .tl .p { background: linear-gradient(135deg, rgba(25,230,255,.10), rgba(25,230,255,.02) 40%, rgba(255,255,255,.015));
+    backdrop-filter: blur(16px) saturate(170%); border: 1px solid rgba(25,230,255,.22);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(25,230,255,.08), 0 14px 44px rgba(0,0,0,.5); }
+  body.A .card::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.7) 40%, rgba(25,230,255,.6) 60%, transparent); }
+  body.A .card::after { content: ""; position: absolute; width: 60%; height: 60%; left: -20%; top: -40%; background: radial-gradient(closest-side, rgba(255,255,255,.12), transparent); pointer-events: none; }
+  body.A .ttl h1 { color: var(--acc); text-shadow: 0 0 10px var(--acc); }
+  body.A .chip { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(8px); }
+  body.A .chip.green { border-color: rgba(0,255,163,.55); background: linear-gradient(135deg, rgba(0,255,163,.18), rgba(0,255,163,.04)); } body.A .chip.green .t { color: #00ffa3; text-shadow: 0 0 8px rgba(0,255,163,.6); }
+  body.A .chip.red { border-color: rgba(255,46,136,.6); background: linear-gradient(135deg, rgba(255,46,136,.2), rgba(255,46,136,.04)); } body.A .chip.red .t { color: #ff2e88; text-shadow: 0 0 8px rgba(255,46,136,.6); }
+  body.A .chip.amber { border-color: rgba(255,197,61,.55); background: linear-gradient(135deg, rgba(255,197,61,.18), rgba(255,197,61,.03)); } body.A .chip.amber .t { color: #ffc53d; }
+  body.A .chip.grey .t { color: var(--dim); }
+  body.A .pos { color: #00ffa3; text-shadow: 0 0 8px rgba(0,255,163,.5); } body.A .neg { color: #ff2e88; }
+
+  /* ================================================ B · CLEAR LIQUID (light, Apple-like) */
+  body.B { --r: 22px; --fg: #0f1a2b; --dim: #5b6b85; --line: rgba(15,26,43,.08); --acc: #0a66ff; color: var(--fg);
+    background: #dfe8f6; }
+  body.B::before { content: ""; position: fixed; inset: -10%; z-index: -1; filter: blur(60px); opacity: .9;
+    background: radial-gradient(500px 420px at 18% 22%, #ffb86b, transparent 70%), radial-gradient(560px 460px at 80% 18%, #7cc4ff, transparent 70%),
+                radial-gradient(640px 520px at 60% 90%, #c58cff, transparent 70%), radial-gradient(420px 380px at 10% 85%, #7fffd4, transparent 70%); }
+  body.B .card, body.B .mode, body.B .tl .p { background: linear-gradient(140deg, rgba(255,255,255,.72), rgba(255,255,255,.42));
+    backdrop-filter: blur(26px) saturate(180%); border: 1px solid rgba(255,255,255,.75);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.95), inset 0 -1px 0 rgba(15,26,43,.05), 0 18px 50px rgba(15,26,43,.14), 0 1px 2px rgba(15,26,43,.08); }
+  body.B .card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(115deg, rgba(255,255,255,.55) 0%, transparent 35%, transparent 70%, rgba(255,255,255,.35) 100%); }
+  body.B .card::after { content: ""; position: absolute; inset: 2px; border-radius: inherit; pointer-events: none; border: 1px solid rgba(255,255,255,.35); }
+  body.B .ttl h1 { color: var(--fg); letter-spacing: .22em; } body.B .ttl span { color: var(--dim); }
+  body.B .chip { background: rgba(255,255,255,.55); border: 1px solid rgba(255,255,255,.9); box-shadow: inset 0 1px 0 #fff, 0 4px 14px rgba(15,26,43,.08); }
+  body.B .chip.green { background: linear-gradient(135deg, rgba(53,214,145,.35), rgba(255,255,255,.5)); } body.B .chip.green .t { color: #0f7a4a; }
+  body.B .chip.red { background: linear-gradient(135deg, rgba(255,92,120,.38), rgba(255,255,255,.5)); } body.B .chip.red .t { color: #b3123c; }
+  body.B .chip.amber { background: linear-gradient(135deg, rgba(255,196,70,.45), rgba(255,255,255,.5)); } body.B .chip.amber .t { color: #8a5a00; }
+  body.B .chip.grey .t { color: var(--dim); }
+  body.B .pos { color: #0f7a4a; } body.B .neg { color: #b3123c; }
+  body.B .kpi .v { color: #0f1a2b; }
+
+  /* ================================================ C · OBSIDIAN MONO (graphite, data-first) */
+  body.C { --r: 10px; --fg: #e6e9ef; --dim: #8a93a3; --line: rgba(255,255,255,.06); --acc: #5ad1ff; color: var(--fg);
+    background: linear-gradient(180deg, #121418 0%, #0b0d11 100%); }
+  body.C::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 48px 48px; }
+  body.C .card, body.C .mode, body.C .tl .p { background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+    backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.09); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.45); }
+  body.C .card::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,.18), transparent 70%); }
+  body.C .ttl h1 { color: #fff; letter-spacing: .34em; font-weight: 600; }
+  body.C .chip { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08); border-left-width: 3px; }
+  body.C .chip.green { border-left-color: #35d691; } body.C .chip.green .t { color: #35d691; }
+  body.C .chip.red { border-left-color: #ff5c78; } body.C .chip.red .t { color: #ff5c78; }
+  body.C .chip.amber { border-left-color: #ffc446; } body.C .chip.amber .t { color: #ffc446; }
+  body.C .chip.grey { border-left-color: #4a5160; } body.C .chip.grey .t { color: var(--dim); }
+  body.C .pos { color: #35d691; } body.C .neg { color: #ff5c78; }
+  body.C .kpi .v { font-family: Consolas, "Cascadia Mono", monospace; font-weight: 500; }
+</style>
+</head>
+<body class="A">
+<div id="sw">
+  <button data-s="A" class="on">A · Deep Glass</button>
+  <button data-s="B">B · Clear Liquid</button>
+  <button data-s="C">C · Obsidian Mono</button>
+</div>
+
+<div class="wrap">
+  <div class="ttl"><h1>TRAINING MONITOR</h1><span>g0_C_w15_t100_s2 · USDJPY · gate srb_sig · step 184,320 / 200,000</span></div>
+  <div class="grid">
+    <div class="card s12"><h3>VERDICTS · <b>rollout 90 · step 184,320</b></h3>
+      <div class="chips">
+        <div class="chip green"><div class="t">FILTERS THE SIGNAL</div><div class="d">accepted 412 of 1,060 signal bars (39%) · 4,118 off-gate attempts ignored by the gate</div></div>
+        <div class="chip green"><div class="t">TRADE FREQUENCY OK</div><div class="d">1.0 entries per 100 bars, mean hold 5.1 bars</div></div>
+        <div class="chip green"><div class="t">AGENT-TIMED EXITS</div><div class="d">98% closed by the agent's own close action</div></div>
+        <div class="chip green"><div class="t">SELECTION HELPS</div><div class="d">fixed 4-bar rule: accepted +3.8 bp vs skipped −0.5 bp (n 412/648) · threshold &gt; +2 bp</div></div>
+        <div class="chip grey"><div class="t">EXIT TIMING ≈ RULE</div><div class="d">agent +3.1 vs rule +3.8 bp on the same entries</div></div>
+        <div class="chip amber"><div class="t">EXPLORATION STILL HIGH</div><div class="d">entropy 0.92 of max 1.39 nats at 92% of training</div></div>
+        <div class="chip green"><div class="t">TRAIN PF 1.42</div><div class="d">412 closed trades in the last 20 rollouts, mean +3.1 bp · exploring policy, in-sample</div></div>
+      </div>
+    </div>
+    <div class="card s12"><h3>LAST 20 ROLLOUTS · <b>pooled</b></h3>
+      <div class="kpis">
+        <div class="kpi"><div class="k">TRADES</div><div class="v">412</div><div class="u">412 opened · 40,960 bars</div></div>
+        <div class="kpi"><div class="k">ENTRIES / 100 BARS</div><div class="v">1.0</div><div class="u">threshold 6</div></div>
+        <div class="kpi"><div class="k">MEAN HOLD</div><div class="v">5.1</div><div class="u">bars</div></div>
+        <div class="kpi"><div class="k">PNL / TRADE</div><div class="v pos">+3.1 bp</div><div class="u">after spread + commission</div></div>
+        <div class="kpi"><div class="k">PF (TRAIN)</div><div class="v pos">1.42</div><div class="u">exploring policy</div></div>
+        <div class="kpi"><div class="k">ACCEPTANCE</div><div class="v">39%</div><div class="u">412 of 1,060 signal bars</div></div>
+        <div class="kpi"><div class="k">REWARD Σ</div><div class="v">0.48</div><div class="u">last rollout</div></div>
+      </div>
+    </div>
+    <div class="card s6"><h3>COUNTERFACTUAL · <b>same bars, fixed rule vs agent</b></h3>
+      <table><tr><th>on the signal bars of the last 20 rollouts</th><th>n</th><th>bp / trade</th></tr>
+        <tr><td>fixed rule, EVERY signal (exit after 4 bars, no stop)</td><td>1,060</td><td>+1.2</td></tr>
+        <tr><td>fixed rule on the signals the agent ACCEPTED</td><td>412</td><td class="pos">+3.8</td></tr>
+        <tr><td>fixed rule on the signals the agent SKIPPED</td><td>648</td><td class="neg">−0.5</td></tr>
+        <tr><td><b>agent's own trades (its exits)</b></td><td>412</td><td><b>+3.1</b></td></tr></table>
+      <div class="lab">selection skill = accepted − skipped · exit-timing value = agent − accepted · bp = 0.01% of price, costs included</div>
+    </div>
+    <div class="card s6"><h3>EXITS &amp; ACTIONS · <b>last 20 rollouts</b></h3>
+      <div class="lab">how trades closed</div><div class="bar"><div style="width:98%;background:#19e6ff"></div><div style="width:2%;background:#ffc53d"></div></div>
+      <div class="lab">■ signal 404 · ■ max_hold 8</div>
+      <div class="lab" style="margin-top:12px">sampled actions (exploring)</div><div class="bar"><div style="width:46%;background:#7f8fb0"></div><div style="width:18%;background:#00ffa3"></div><div style="width:16%;background:#ff2e88"></div><div style="width:20%;background:#ffc53d"></div></div>
+      <div class="lab">■ hold 18,840 · ■ buy 7,370 · ■ sell 6,550 · ■ close 8,200</div>
+    </div>
+    <div class="card s4"><h3>ENTRIES PER 100 BARS</h3><svg viewBox="0 0 320 90" height="90"><polyline fill="none" stroke="#19e6ff" stroke-width="2" points="6,20 40,34 74,30 108,48 142,52 176,60 210,58 244,66 278,70 314,72"/><text x="314" y="12" text-anchor="end" fill="#19e6ff" font-size="13" font-weight="600">1.0</text></svg></div>
+    <div class="card s4"><h3>AGENT PNL PER TRADE (BP)</h3><svg viewBox="0 0 320 90" height="90"><line x1="6" x2="314" y1="52" y2="52" stroke="#888" stroke-dasharray="3 3"/><polyline fill="none" stroke="#00ffa3" stroke-width="2" points="6,70 40,58 74,64 108,44 142,50 176,36 210,40 244,30 278,34 314,26"/><text x="314" y="12" text-anchor="end" fill="#00ffa3" font-size="13" font-weight="600">+3.1</text></svg></div>
+    <div class="card s4"><h3>ACTION ENTROPY (NATS)</h3><svg viewBox="0 0 320 90" height="90"><polyline fill="none" stroke="#b48cff" stroke-width="2" points="6,14 40,16 74,20 108,24 142,30 176,38 210,44 244,50 278,54 314,56"/><text x="314" y="12" text-anchor="end" fill="#b48cff" font-size="13" font-weight="600">0.92</text></svg></div>
+    <div class="card s12"><h3>BEHAVIOUR OVER TRAINING · <b>per evaluation · this run bold, sibling seeds thin</b></h3>
+      <div class="tl">
+        <div class="p"><div class="k">EVAL REWARD</div><svg viewBox="0 0 400 80" height="80"><line x1="6" x2="394" y1="50" y2="50" stroke="#888" stroke-dasharray="3 3"/><polyline fill="none" stroke="#19e6ff" stroke-width="2.2" points="6,60 60,52 114,54 168,40 222,36 276,30 330,26 394,22"/><polyline fill="none" stroke="#ffc53d" opacity=".55" points="6,62 60,58 114,46 168,50 222,44 276,42 330,38 394,40"/><polyline fill="none" stroke="#00ffa3" opacity=".55" points="6,58 60,64 114,60 168,56 222,48 276,52 330,46 394,44"/></svg></div>
+        <div class="p"><div class="k">TRADES ON THE SLICE</div><svg viewBox="0 0 400 80" height="80"><polyline fill="none" stroke="#19e6ff" stroke-width="2.2" points="6,70 60,66 114,60 168,50 222,46 276,40 330,36 394,30"/><polyline fill="none" stroke="#ffc53d" opacity=".55" points="6,72 60,70 114,68 168,66 222,62 276,60 330,58 394,56"/><polyline fill="none" stroke="#00ffa3" opacity=".55" points="6,68 60,60 114,52 168,44 222,38 276,30 330,24 394,18"/></svg></div>
+        <div class="p"><div class="k">ACCEPTANCE %</div><svg viewBox="0 0 400 80" height="80"><polyline fill="none" stroke="#19e6ff" stroke-width="2.2" points="6,66 60,60 114,54 168,50 222,46 276,44 330,42 394,40"/><polyline fill="none" stroke="#ffc53d" opacity=".55" points="6,70 60,68 114,66 168,64 222,62 276,62 330,60 394,60"/><polyline fill="none" stroke="#00ffa3" opacity=".55" points="6,60 60,50 114,40 168,34 222,30 276,24 330,20 394,16"/></svg></div>
+      </div>
+      <div class="lab">— g0_s2 (this run) &nbsp; — g0_s0 &nbsp; — g0_s1</div>
+    </div>
+  </div>
+</div>
+<div class="mode">mode <select><option>Monitor</option><option>Lite</option><option>Cinematic</option><option>Dashboard</option></select></div>
+<script>
+  for (const b of document.querySelectorAll("#sw button")) b.onclick = () => { document.body.className = b.dataset.s; document.querySelectorAll("#sw button").forEach(x => x.classList.toggle("on", x === b)); };
+  const q = new URLSearchParams(location.search).get("style"); if (q && "ABC".includes(q)) document.querySelector(`#sw button[data-s="${q}"]`).click();
+</script>
+</body>
+</html>

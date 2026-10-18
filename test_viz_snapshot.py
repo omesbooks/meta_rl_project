@@ -268,3 +268,52 @@ def test_live_viewer_resolves_a_viz_dir_before_the_first_eval(tmp_path):
     (viz / "rollout_meta.json").write_text("{}")                 # rollouts exist, no index.json yet
     assert lv.resolve_viz_dir(run_dir=viz) == viz.resolve()      # the GUI passes the viz folder
     assert lv.resolve_viz_dir(run_dir=run) == viz.resolve()      # or the run folder
+
+
+def test_greedy_walk_stability_rows_and_file(tmp_path):
+    """greedy_walk = argmax policy on a fresh env; stability rows keep per-bar probabilities
+    (uint8), the greedy action and the share of decisions that changed since the last eval."""
+    policy, make, cfg = _policy_and_env([16], torch.nn.Tanh, "basic_4")
+    names = snap_mod.action_names(cfg)
+    w = snap_mod.greedy_walk(policy, make(), 60)
+    assert w["probs"].shape == (60, 4) and np.allclose(w["probs"].sum(axis=1), 1, atol=1e-4)
+    assert (w["probs"].argmax(axis=1) == w["act"]).all()
+    assert len(w["bars"]["c"]) == 60 == w["stats"]["bars"] and len(w["eq"]) == 60
+    st = w["stats"]
+    assert st["trades"] == st["wins"] + int((w["tpnl"][w["tpnl"] != 0] <= 0).sum())
+    assert st["pf"] is None or st["pf"] >= 0
+    json.dumps(st)                                        # no Infinity / NaN in the index entry
+    row0 = snap_mod.stability_row(0, 10000, w, None)
+    assert row0["changed"] is None and row0["bars"] == 60 and row0["n_actions"] == 4
+    row1 = snap_mod.stability_row(1, 20000, w, w["act"])
+    assert row1["changed"] == 0.0
+    flipped = np.where(w["act"] == 0, 1, 0)               # every decision different
+    assert snap_mod.stability_row(2, 30000, w, flipped)["changed"] == 1.0
+    p = np.frombuffer(base64.b64decode(row1["p"]), dtype=np.uint8).reshape(60, 4)
+    assert np.abs(p / 255 - w["probs"]).max() < 0.01
+    for r in (row0, row1):
+        snap_mod.write_stability(tmp_path, r, bars=w["bars"], actions=names, meta={"frames": 60})
+    snap_mod.write_stability(tmp_path, dict(row1, entropy=0.5), bars=None, actions=names)   # rewrite keeps one row per eval
+    data = json.loads((tmp_path / "stability.json").read_text(encoding="utf-8"))
+    assert [e["i"] for e in data["evals"]] == [0, 1] and data["evals"][1]["entropy"] == 0.5
+    assert data["bars"]["c"] == w["bars"]["c"] and data["actions"] == names and data["frames"] == 60
+    assert "settled_since" in data and data["settled_since"] is None
+    rows = [{"i": i, "changed": c} for i, c in enumerate([None, 0.5, 0.3, 0.05, 0.02, 0.01])]
+    assert snap_mod.settled_since(rows) == 2              # evals 4..6 all changed <= 10%
+    assert snap_mod.settled_since(rows[:3]) is None
+    assert snap_mod.settled_since(rows[:4]) is None       # only one later eval below the threshold
+
+
+def test_gap_verdict_rules():
+    mk = lambda tr, va: [{"i": i, "step": (i + 1) * 10000, "train": {"return_pct": t}, "val": {"return_pct": v}}
+                         for i, (t, v) in enumerate(zip(tr, va))]
+    assert snap_mod.gap_verdict(mk([1, 2], [1, 1]))["cls"] == "grey"
+    v = snap_mod.gap_verdict(mk([0, 1, 2, 3], [1, 0.5, 0, -0.5]))
+    assert v["cls"] == "red" and "OVERFIT" in v["t"] and "+0.0% → +3.0%" in v["d"]
+    assert snap_mod.gap_verdict(mk([0, 1, 2, 3], [0, 0.5, 1, 2]))["t"] == "GENERALISING"
+    v = snap_mod.gap_verdict(mk([3, 3, 3, 3, 3, 3], [4, 2.5, 2.4, 2.3, 2.5, 2.4]))
+    assert v["cls"] == "amber" and v["t"] == "VALIDATION PEAKED AT EVAL 1" and "step 10,000" in v["d"]
+    v = snap_mod.gap_verdict(mk([8, 8, 8, 8], [-1, -1, -1, -1]))
+    assert v["t"] == "MEMORISING THE TRAIN SLICE" and "gap +9.0 pp" in v["d"]
+    assert snap_mod.gap_verdict(mk([1, 1, 1, 1], [0, 0, 0.1, 0]))["t"] == "NO CLEAR TREND"
+    assert snap_mod.gap_verdict(mk([0, 1, 2, 3, 4, 5], [0, 0, 0, 0, 1, 2]))["t"] == "GENERALISING"   # window = last 4

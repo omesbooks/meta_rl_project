@@ -624,10 +624,10 @@ def train(args, run, prepared=None):
                           if validation_df is not None else args.viz_frames)
             viz_actions = viz_snapshot.action_names(action_profile_cfg)
 
-            def make_viz_env():
+            def make_slice_env(df_slice, frames):
                 return TradingEnv(
-                    validation_df, feature_cols, window_size=args.window,
-                    max_steps=len(validation_df) - args.window - 2, random_start=False,
+                    df_slice, feature_cols, window_size=args.window,
+                    max_steps=frames, random_start=False,
                     reward_mode=args.reward_mode, reward_profile=args.reward_profile,
                     reward_overrides=reward_overrides, reward_formula=args.reward_formula,
                     action_profile=action_profile_cfg, max_hold_bars=args.max_hold,
@@ -635,12 +635,49 @@ def train(args, run, prepared=None):
                     entry_gate=ENTRY_GATE_COL if args.entry_gate else "",
                     sl_mode=args.sl_mode, sl_range=sl_range, atr_col=ATR_COL if args.sl_mode == "continuous" else "")
 
+            def make_viz_env():
+                return make_slice_env(validation_df, len(validation_df) - args.window - 2)
+
+            # Train/validation gap + decision stability: after every evaluation the policy is
+            # walked greedily over two FIXED slices of equal length — the unseen validation
+            # slice and the last bars of Train (in-sample). Same bars every time, so the
+            # evaluations are comparable and the Monitor can show when decisions settle.
+            gap_frames = min(len(validation_df) - args.window - 2, 1500) if validation_df is not None else 0
+            train_tail = train_df.tail(gap_frames + args.window + 2).copy() if gap_frames > 0 else None
+
             class VizCallback(BaseCallback):
                 """Runs right after each EvalCallback evaluation (callback_after_eval)."""
 
                 def __init__(self):
                     super().__init__()
                     self.i = 0
+                    self.gaps = []
+                    self.prev_greedy = None
+
+                def _gap_and_stability(self):
+                    """Greedy walks on the fixed train tail + validation slice -> gap stats and the
+                    verdict (index.json entry) and the per-bar decisions (stability.json)."""
+                    if not gap_frames:
+                        return None
+                    import time as _time
+                    try:
+                        t0 = _time.perf_counter()
+                        wv = viz_snapshot.greedy_walk(self.model.policy, make_slice_env(validation_df, gap_frames), gap_frames)
+                        wt = viz_snapshot.greedy_walk(self.model.policy, make_slice_env(train_tail, gap_frames), gap_frames)
+                        self.gaps.append({"i": self.i, "step": int(self.num_timesteps), "train": wt["stats"], "val": wv["stats"]})
+                        verdict = viz_snapshot.gap_verdict(self.gaps)
+                        row = viz_snapshot.stability_row(self.i, int(self.num_timesteps), wv, self.prev_greedy)
+                        self.prev_greedy = wv["act"]
+                        viz_snapshot.write_stability(
+                            viz_dir, row, bars=wv["bars"], actions=viz_actions,
+                            meta={"model": args.name, "slice": "validation", "frames": gap_frames,
+                                  "train_slice": {"start": str(train_tail["timestamp"].iloc[0]), "end": str(train_tail["timestamp"].iloc[-1])},
+                                  "val_slice": {"start": wv["bars"]["ts"][0], "end": wv["bars"]["ts"][-1]}})
+                        return {"train": wt["stats"], "val": wv["stats"], "frames": gap_frames, "verdict": verdict,
+                                "walk_s": round(_time.perf_counter() - t0, 3)}
+                    except Exception as exc:   # a visual must never stop training
+                        print(f"\n[viz] gap/stability {self.i} failed: {exc}", flush=True)
+                        return None
 
                 def _on_step(self):
                     parent = self.parent
@@ -649,12 +686,15 @@ def train(args, run, prepared=None):
                                 eval_reward=float(getattr(parent, "last_mean_reward", float("nan"))),
                                 best_reward=float(getattr(parent, "best_mean_reward", float("nan"))),
                                 symbol=Path(args.csv).name.split("_")[0].upper(), gate_name=args.entry_gate,
-                    feature_names=list(feature_cols))
+                                feature_names=list(feature_cols))
                     try:
                         snap = viz_snapshot.capture(self.model.policy, make_viz_env(), args.window,
                                                     viz_frames, action_names=viz_actions, meta=meta)
                         entry = {k: meta[k] for k in ("step", "total_steps", "eval_reward", "best_reward")}
                         entry.update(viz_snapshot.summary(snap), capture_s=snap["meta"]["capture_s"])
+                        gap = self._gap_and_stability()
+                        if gap:
+                            entry["gap"] = gap
                         path = viz_snapshot.write_live(viz_dir, self.i, snap, entry)
                         # leading newline: the tqdm progress bar leaves the cursor mid-line
                         print(f"\nVIZ_SNAPSHOT {self.i} {self.num_timesteps} {path}", flush=True)
@@ -666,6 +706,8 @@ def train(args, run, prepared=None):
             if eval_env is not None:
                 viz_cb = VizCallback()
                 print(f"[viz] live snapshots after every evaluation -> {viz_dir} ({viz_frames} bars each)")
+                print(f"[viz] train/validation gap + decision stability after every evaluation -> stability.json "
+                      f"({gap_frames} bars per slice, greedy)")
             else:
                 print("[viz] no validation slice: eval replays skipped, training rollouts only")
             # what the agent actually played: sampled actions, rewards, advantages

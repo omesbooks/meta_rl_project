@@ -34,7 +34,11 @@ const CSS = `
   #mon .empty { color: var(--dim); font-size: 13px; padding: 30px 0; text-align: center; letter-spacing: .1em; }
   #mon .tl { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
   #mon .tl .p { background: rgba(255,255,255,.025); border-radius: 8px; padding: 6px 8px; } #mon .tl .p .k { font: 600 10px/1 var(--hud); letter-spacing: .2em; color: var(--dim); margin-bottom: 4px; }
-  #mon .leg { font-size: 11px; color: var(--dim); margin-top: 6px; } #mon .leg i { display: inline-block; width: 14px; height: 3px; margin: 0 5px 2px 10px; }
+  #mon .leg { font-size: 11px; color: var(--dim); margin-top: 6px; } #mon .leg i, #mon .lab i { display: inline-block; width: 14px; height: 3px; margin: 0 5px 2px 10px; }
+  #mon canvas { display: block; width: 100%; }
+  #mon .stsel { display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; } #mon .stsel input { flex: 1; accent-color: var(--cyan); margin: 0; }
+  #mon .stsel b { font-size: 12px; color: var(--fg); white-space: nowrap; font-weight: 600; }
+  #mon .lab .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px -1px 10px; }
   /* Clear Liquid */
   body.clear #mon .mcard, body.clear #mon .tl .p { background: linear-gradient(140deg, rgba(255,255,255,.74), rgba(255,255,255,.44)); border: 1px solid rgba(255,255,255,.8);
     backdrop-filter: blur(22px) saturate(180%); box-shadow: inset 0 1px 0 rgba(255,255,255,.95), inset 0 -1px 0 rgba(15,26,43,.05), 0 14px 40px rgba(15,26,43,.12), 0 1px 2px rgba(15,26,43,.08); border-radius: 20px; }
@@ -136,6 +140,14 @@ export function createMonitor(root) {
   if (!document.getElementById("mon-css")) { const st = document.createElement("style"); st.id = "mon-css"; st.textContent = CSS; document.head.appendChild(st); }
   root.innerHTML = `<div class="mtitle"><h1>TRAINING MONITOR</h1><span id="mSub">stop or keep going? — every verdict shows the number and threshold it rests on</span></div><div class="mgrid">
     <div class="mcard s12"><h3>VERDICTS · <b id="mHdr">waiting for the first rollout</b></h3><div class="chips" id="mChips"><div class="empty">no rollout yet</div></div></div>
+    <div class="mcard s12"><h3>TRAIN vs VALIDATION · <b id="mGapHdr">greedy policy on two fixed slices of equal length, after every evaluation</b></h3>
+      <div class="chips" id="mGapChip"><div class="empty">waiting for the first evaluation</div></div><div class="tl" id="mGap" style="margin-top:10px"></div><div class="lab" id="mGapLab"></div></div>
+    <div class="mcard s12"><h3>DECISION STABILITY · <b id="mStHdr">the same validation bars at every evaluation</b></h3>
+      <div class="kpis" id="mStKpi"></div>
+      <div class="lab" id="mStHeatLab" style="margin:10px 0 4px">each row = one evaluation (oldest at the top), each column = one bar · colour = greedy action, brightness = its probability</div>
+      <canvas id="mStHeat" height="120"></canvas>
+      <div class="stsel"><span class="lab" style="margin:0">shade the price by the probabilities of</span><input type="range" id="mStSel" min="0" max="0" value="0"><b id="mStSelLab"></b></div>
+      <canvas id="mStChart" height="190"></canvas><div class="lab" id="mStChartLab"></div></div>
     <div class="mcard s12"><h3>LAST 20 ROLLOUTS · <b>pooled</b></h3><div class="kpis" id="mKpi"></div></div>
     <div class="mcard s6"><h3>COUNTERFACTUAL · <b>same bars, fixed rule vs agent</b></h3><div id="mCf"></div><div class="lab" id="mCfLab"></div></div>
     <div class="mcard s6"><h3>EXITS & ACTIONS · <b>last 20 rollouts</b></h3><div id="mExit"></div></div>
@@ -199,10 +211,123 @@ export function createMonitor(root) {
     }
   }
 
+  const tile = (k, v, u = "", col = C.fg) => `<div class="kpi"><div class="k">${k}</div><div class="v" style="color:${col}">${v}</div><div class="u">${u}</div></div>`;
+
+  // ---- train vs validation (greedy walks on two fixed slices, one pair per evaluation)
+  const pfOf = s => s && s.gross_loss_bp > 0 ? s.gross_win_bp / s.gross_loss_bp : (s && s.gross_win_bp > 0 ? Infinity : NaN);
+  const pfFmt = v => v === Infinity ? "∞" : Number.isFinite(v) ? v.toFixed(2) : "–";
+  function pairLines(el, pts, metrics) {      // small multiples with 1–2 series per panel
+    if (!pts.length) { el.innerHTML = ""; return; }
+    const w = Math.max(220, Math.floor((el.clientWidth || 900) / Math.min(3, metrics.length)) - 24), h = 84, pad = 6;
+    el.innerHTML = metrics.map(m => `<div class="p"><div class="k">${m.label}</div><svg id="gp_${m.key}" height="${h}"></svg></div>`).join("");
+    for (const m of metrics) {
+      const svg = el.querySelector("#gp_" + m.key);
+      const series = m.series.map(s => pts.map(p => [p.step, s.get(p)]).filter(q => Number.isFinite(q[1])));
+      const ys = series.flat().map(q => q[1]), xs = pts.map(p => p.step);
+      if (!ys.length) { svg.innerHTML = `<text x="8" y="48" fill="${C.dim}" font-size="12">–</text>`; continue; }
+      let lo = Math.min(...ys), hi = Math.max(...ys); if (m.zero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); } if (hi === lo) hi = lo + 1;
+      const x0 = Math.min(...xs), x1 = Math.max(...xs) || 1;
+      const X = x => pad + (x1 > x0 ? (x - x0) / (x1 - x0) : 0.5) * (w - 2 * pad), Y = y => h - pad - (y - lo) / (hi - lo) * (h - 2 * pad - 12);
+      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      let inner = m.zero ? `<line x1="${pad}" x2="${w - pad}" y1="${Y(0)}" y2="${Y(0)}" stroke="${C.dim}" stroke-dasharray="3 3"/>` : "";
+      series.forEach((s, k) => { if (s.length) inner += `<polyline points="${s.map(q => `${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join(" ")}" fill="none" stroke="${m.series[k].color}" stroke-width="${k === m.series.length - 1 ? 2.2 : 1.6}"/>`; });
+      const lastTxt = m.series.map((s, k) => { const v = series[k].length ? series[k][series[k].length - 1][1] : null; return v == null ? "" : `<tspan fill="${s.color}">${m.fmt(v)}</tspan>`; }).filter(Boolean).join(`<tspan fill="${C.dim}"> · </tspan>`);
+      inner += `<text x="${w - pad}" y="11" text-anchor="end" font-size="12" font-weight="600">${lastTxt}</text>`;
+      svg.innerHTML = inner;
+    }
+  }
+  function gapPanel(index) {
+    const pts = index.filter(e => e.gap && e.gap.train && e.gap.val).slice().sort((a, b) => a.step - b.step);
+    if (!pts.length) {
+      $("mGapChip").innerHTML = `<div class="empty">${index.length ? "no train/validation walks in this run (trained before the gap panel existed, or no validation slice)" : "waiting for the first evaluation (10,000 steps)"}</div>`;
+      $("mGap").innerHTML = ""; $("mGapLab").innerHTML = ""; return;
+    }
+    const last = pts[pts.length - 1], g = last.gap, v = g.verdict || { cls: "grey", t: "–", d: "" };
+    $("mGapChip").innerHTML = `<div class="chip ${v.cls}"><div class="t">${v.t}</div><div class="d">${v.d}</div></div>` +
+      `<div class="chip grey"><div class="t">EVAL ${last.i + 1} · STEP ${Number(last.step).toLocaleString()}</div><div class="d">` +
+      `<span style="color:${C.gold}">train</span> ${fmt(g.train.return_pct, 2, "%")} · PF ${pfFmt(pfOf(g.train))} · ${g.train.trades} trades · win ${g.train.win_rate == null ? "–" : (100 * g.train.win_rate).toFixed(0) + "%"}<br>` +
+      `<span style="color:${C.cyan}">validation</span> ${fmt(g.val.return_pct, 2, "%")} · PF ${pfFmt(pfOf(g.val))} · ${g.val.trades} trades · win ${g.val.win_rate == null ? "–" : (100 * g.val.win_rate).toFixed(0) + "%"}</div></div>`;
+    $("mGapHdr").textContent = `greedy policy on two fixed ${g.frames}-bar slices · ${pts.length} evaluations`;
+    const S = (get, color) => ({ get, color }), cap5 = x => Number.isFinite(x) ? Math.min(x, 5) : NaN;
+    pairLines($("mGap"), pts, [
+      { key: "ret", label: "SLICE RETURN %", zero: true, fmt: v => fmt(v, 2, "%"), series: [S(p => p.gap.train.return_pct, C.gold), S(p => p.gap.val.return_pct, C.cyan)] },
+      { key: "gap", label: "GAP = TRAIN − VALIDATION (PP)", zero: true, fmt: v => fmt(v, 2), series: [S(p => p.gap.train.return_pct - p.gap.val.return_pct, C.orange)] },
+      { key: "pf", label: "PROFIT FACTOR (CAPPED AT 5)", fmt: pfFmt, series: [S(p => cap5(pfOf(p.gap.train)), C.gold), S(p => cap5(pfOf(p.gap.val)), C.cyan)] },
+      { key: "wr", label: "WIN RATE %", fmt: v => fmt(v, 0, "%"), series: [S(p => p.gap.train.win_rate != null ? 100 * p.gap.train.win_rate : NaN, C.gold), S(p => p.gap.val.win_rate != null ? 100 * p.gap.val.win_rate : NaN, C.cyan)] },
+      { key: "tr", label: "TRADES ON THE SLICE", fmt: v => fmt(v, 0), series: [S(p => p.gap.train.trades, C.gold), S(p => p.gap.val.trades, C.cyan)] },
+      { key: "rpb", label: "REWARD PER BAR", zero: true, fmt: v => fmt(v, 4), series: [S(p => p.gap.train.reward_per_bar, C.gold), S(p => p.gap.val.reward_per_bar, C.cyan)] },
+    ]);
+    $("mGapLab").innerHTML = `train slice = the last ${g.frames} bars of Train (in-sample) · validation = unseen · both walked with the argmax action, costs included <i style="background:${C.gold}"></i>train <i style="background:${C.cyan}"></i>validation · the verdict looks at the last 4 evaluations`;
+  }
+
+  // ---- decision stability (the same validation bars at every evaluation)
+  let stSel = -1;
+  const ACT_COL = name => ({ hold: C.dim, buy: C.green, sell: C.mag, close: C.gold })[name] || C.purple;
+  const decodeP = e => { const u = Uint8Array.from(atob(e.p), c => c.charCodeAt(0)); return { u, na: e.n_actions || Math.max(1, Math.round(u.length / Math.max(1, e.bars))) }; };
+  function stabilityPanel(st) {
+    const evals = (st && st.evals) || [], bars = st && st.bars, acts = (st && st.actions) || [];
+    const show = evals.length && bars && bars.c && bars.c.length;
+    $("mStHeat").style.display = $("mStChart").style.display = show ? "" : "none"; $("mStSel").parentElement.style.display = show ? "" : "none";
+    if (!show) { $("mStKpi").innerHTML = `<div class="empty">no stability data yet (stability.json is written after every evaluation; runs trained before this panel existed have none)</div>`; $("mStHeatLab").textContent = ""; $("mStChartLab").textContent = ""; return; }
+    const last = evals[evals.length - 1], n = bars.c.length, th = st.settled_thresh || 0.1, settled = st.settled_since;
+    $("mStKpi").innerHTML = [
+      tile("CHANGED MIND", last.changed == null ? "–" : (100 * last.changed).toFixed(0) + "%", `of ${last.bars} greedy decisions vs the previous eval`,
+           last.changed == null ? C.fg : last.changed > 0.3 ? C.mag : last.changed > th ? C.gold : C.green),
+      tile("SETTLED SINCE", settled == null ? "not yet" : "eval " + (settled + 1), `every later eval changed ≤ ${Math.round(100 * th)}% of the decisions (needs 2 later evals)`, settled == null ? C.fg : C.green),
+      tile("CONFIDENCE", last.confidence == null ? "–" : (100 * last.confidence).toFixed(0) + "%", "mean probability of the chosen action"),
+      tile("ENTROPY", fmt(last.entropy, 2), `nats · ${Math.log(acts.length || 4).toFixed(2)} = uniform over ${acts.length || 4} actions`),
+      tile("IN A POSITION", (100 * (last.in_position || 0)).toFixed(0) + "%", `of the bars · ${last.trades} trades · ${fmt(last.return_pct, 2, "%")}`),
+    ].join("");
+    const vs = st.val_slice || {};
+    $("mStHdr").textContent = `${n} validation bars${vs.start ? " · " + String(vs.start).slice(0, 10) + " → " + String(vs.end).slice(0, 10) : ""} · ${evals.length} evaluations · greedy`;
+    // heatmap: rows = evaluations, columns = bars
+    const heat = $("mStHeat"), W = Math.max(300, heat.clientWidth || 900), rowH = Math.max(4, Math.min(14, Math.floor(240 / evals.length))), H = rowH * evals.length + 4;
+    heat.width = W; heat.height = H; heat.style.height = H + "px";
+    const g = heat.getContext("2d"); g.clearRect(0, 0, W, H);
+    const x0 = 44, colW = (W - x0 - 6) / n;
+    evals.forEach((e, r) => {
+      const { u, na } = decodeP(e);
+      g.globalAlpha = 1; g.fillStyle = C.dim; g.font = "10px sans-serif"; g.textAlign = "right"; g.fillText(String(e.i + 1), x0 - 6, r * rowH + rowH * 0.85);
+      for (let b = 0; b < e.bars && b < n; b++) {
+        const a = e.greedy[b]; g.fillStyle = ACT_COL(acts[a]); g.globalAlpha = 0.2 + 0.8 * (u[b * na + a] / 255);
+        g.fillRect(x0 + b * colW, r * rowH, Math.max(1, colW), rowH - 1);
+      }
+    });
+    g.globalAlpha = 1;
+    $("mStHeatLab").innerHTML = `each row = one evaluation (oldest at the top), each column = one bar · colour = greedy action, brightness = its probability` +
+      acts.map(a => `<span class="sw" style="background:${ACT_COL(a)}"></span>${a}`).join("");
+    const sel = $("mStSel"); sel.max = String(evals.length - 1);
+    sel.value = String(stSel >= 0 && stSel < evals.length ? stSel : evals.length - 1);
+    sel.oninput = () => { stSel = +sel.value; drawShaded(evals[stSel], bars, acts); };
+    drawShaded(evals[+sel.value], bars, acts);
+    $("mStChartLab").innerHTML = `background <span class="sw" style="background:${C.green}"></span>P(buy) <span class="sw" style="background:${C.mag}"></span>P(sell) · line = close · bottom strip = position held (long / short) · drag the slider to see how the same chart was read at earlier evaluations`;
+  }
+  function drawShaded(e, bars, acts) {
+    $("mStSelLab").textContent = `eval ${e.i + 1} · step ${Number(e.step).toLocaleString()} · changed ${e.changed == null ? "–" : (100 * e.changed).toFixed(0) + "%"}`;
+    const cv = $("mStChart"), W = Math.max(300, cv.clientWidth || 900), H = 190; cv.width = W; cv.height = H; cv.style.height = H + "px";
+    const g = cv.getContext("2d"); g.clearRect(0, 0, W, H);
+    const n = bars.c.length, x0 = 44, cw = (W - x0 - 6) / n, top = 8, bot = H - 30, stripY = H - 22;
+    const { u, na } = decodeP(e), iBuy = acts.indexOf("buy"), iSell = acts.indexOf("sell");
+    for (let b = 0; b < n && b < e.bars; b++) {
+      const pb = iBuy >= 0 ? u[b * na + iBuy] / 255 : 0, ps = iSell >= 0 ? u[b * na + iSell] / 255 : 0, x = x0 + b * cw, ww = Math.max(1, cw);
+      if (pb > 0.02) { g.fillStyle = C.green; g.globalAlpha = 0.65 * pb; g.fillRect(x, top, ww, bot - top); }
+      if (ps > 0.02) { g.fillStyle = C.mag; g.globalAlpha = 0.65 * ps; g.fillRect(x, top, ww, bot - top); }
+      const p = e.pos[b]; if (p) { g.fillStyle = p > 0 ? C.green : C.mag; g.globalAlpha = 0.9; g.fillRect(x, stripY, ww, 6); }
+    }
+    g.globalAlpha = 1;
+    const lo = Math.min(...bars.l), hi = Math.max(...bars.h), Y = v => bot - (v - lo) / (hi - lo || 1) * (bot - top);
+    g.strokeStyle = C.fg; g.lineWidth = 1.4; g.beginPath();
+    bars.c.forEach((c, b) => { const x = x0 + b * cw + cw / 2, y = Y(c); b ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+    g.fillStyle = C.dim; g.font = "10px sans-serif"; g.textAlign = "right"; g.fillText(hi.toFixed(2), x0 - 4, top + 9); g.fillText(lo.toFixed(2), x0 - 4, bot);
+    g.textAlign = "left"; g.fillText(String(bars.ts[0]).slice(0, 10), x0, H - 6); g.textAlign = "right"; g.fillText(String(bars.ts[n - 1]).slice(0, 10), W - 6, H - 6);
+  }
+
   function render(state) {
     last = state;
     themePalette();
-    const { rows = [], meta = {}, index = [], peers = [] } = state;
+    const { rows = [], meta = {}, index = [], peers = [], stability = null } = state;
+    gapPanel(index);
+    stabilityPanel(stability);
     // --- timelines (drawn even before the first rollout: evals may exist)
     const runsEval = (peers.length ? peers : [{ name: meta.model || "this run", index, rows }]).map(r => ({ name: r.name, pts: (r.index || []).slice().sort((a, b) => a.step - b.step) }));
     timelines($("mTlEval"), runsEval, [
@@ -238,7 +363,6 @@ export function createMonitor(root) {
     $("mHdr").textContent = `rollout ${lastRow.seq + 1} · step ${Number(lastRow.step).toLocaleString()}${lastRow.total_steps ? " / " + Number(lastRow.total_steps).toLocaleString() : ""}${meta.entry_gate ? " · gate " + meta.entry_gate : " · no gate"}`;
     const vs = verdicts(rows, meta);
     $("mChips").innerHTML = vs.length ? vs.map(v => `<div class="chip ${v.cls}"><div class="t">${v.t}</div><div class="d">${v.d}</div></div>`).join("") : `<div class="empty">collecting…</div>`;
-    const tile = (k, v, u = "", col = C.fg) => `<div class="kpi"><div class="k">${k}</div><div class="v" style="color:${col}">${v}</div><div class="u">${u}</div></div>`;
     $("mKpi").innerHTML = [
       tile("TRADES", P.nTr, `${P.nOp} opened · ${P.bars.toLocaleString()} bars`),
       tile("ENTRIES / 100 BARS", fmt(P.per100, 1), "", P.per100 > 6 ? C.mag : C.fg),

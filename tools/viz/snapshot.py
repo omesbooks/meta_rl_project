@@ -342,6 +342,158 @@ def write_rollout(viz_dir, snapshot, seq):
     return viz_dir / "rollout_latest.json"
 
 
+# ------------------------------------------------------------------ greedy walks: decision stability + train/validation gap
+STABILITY_FILE = "stability.json"
+STABILITY_MAX_EVALS = 400
+SETTLED_CHANGED = 0.10    # "settled" = every later evaluation changed <= 10% of the greedy decisions
+GAP_WINDOW = 4            # evaluations the trend verdict looks back over
+GAP_PP = 0.5              # percentage points of slice return that count as a move
+GAP_MEMO_PP = 5.0         # train - validation gap that counts as memorising (with validation <= 0)
+GAP_PEAK_PP = 1.0         # validation below its best by this much, >= 3 evals later = peaked
+
+
+def greedy_walk(policy, env, frames):
+    """Deterministic (argmax) walk of `frames` bars on a fresh, unwrapped TradingEnv.
+    Per bar: action probabilities, greedy action, position, equity, closed-trade pnl and
+    reward — no network capture, so it is cheap enough to run on two slices after every
+    evaluation (~1 ms per bar on CPU)."""
+    env.reset()
+    env.t = env.window_size - 1
+    env.start_t = env.t
+    obs = env._get_obs()
+    device = getattr(policy, "device", torch.device("cpu"))
+    probs, acts, pos, eq, tpnl, rew, bar_idx = [], [], [], [], [], [], []
+    for _ in range(int(frames)):
+        t = torch.as_tensor(obs[None], dtype=torch.float32, device=device)
+        with torch.no_grad():
+            p = policy.get_distribution(t).distribution.probs[0].cpu().numpy().astype(np.float32)
+        a = int(p.argmax())
+        n_tr = len(env.trades)
+        bar_idx.append(int(env.t))
+        obs, r, term, trunc, _ = env.step(a)
+        probs.append(p); acts.append(a); pos.append(int(env.position)); eq.append(float(env._curve[-1]))
+        tpnl.append(float(env.trades[-1]["pnl"]) if len(env.trades) > n_tr else 0.0); rew.append(float(r))
+        if term or trunc:
+            break
+    df = env.df
+    out = {"probs": np.stack(probs) if probs else np.zeros((0, 1), np.float32),
+           "act": np.asarray(acts, dtype=int), "pos": np.asarray(pos, dtype=int), "eq": np.asarray(eq, dtype=float),
+           "tpnl": np.asarray(tpnl, dtype=float), "reward": np.asarray(rew, dtype=float), "bar_idx": bar_idx,
+           "bars": {"ts": df["timestamp"].astype(str).iloc[bar_idx].tolist(),
+                    "o": [round(float(x), 5) for x in df["open"].iloc[bar_idx]],
+                    "h": [round(float(x), 5) for x in df["high"].iloc[bar_idx]],
+                    "l": [round(float(x), 5) for x in df["low"].iloc[bar_idx]],
+                    "c": [round(float(x), 5) for x in df["close"].iloc[bar_idx]]}}
+    out["stats"] = walk_stats(out["eq"], out["tpnl"], out["reward"], out["pos"])
+    return out
+
+
+def walk_stats(eq, tpnl, reward, pos):
+    """Slice-level facts of one greedy walk. gross_* are in bp so JS can rebuild PF (never
+    Infinity in the JSON: PF is None when there is no losing trade)."""
+    eq = np.asarray(eq, dtype=float); tpnl = np.asarray(tpnl, dtype=float); pos = np.asarray(pos, dtype=int)
+    n = len(eq)
+    closed = tpnl[tpnl != 0]
+    gw = float(closed[closed > 0].sum()); gl = float(-closed[closed < 0].sum())
+    peak = np.maximum.accumulate(eq) if n else eq
+    prev = np.r_[0, pos[:-1]] if n else pos
+    return {
+        "bars": int(n), "return_pct": round(float(eq[-1] - 1) * 100, 4) if n else 0.0,
+        "trades": int(len(closed)), "wins": int((closed > 0).sum()),
+        "win_rate": round(float((closed > 0).mean()), 4) if len(closed) else None,
+        "gross_win_bp": round(gw * 1e4, 2), "gross_loss_bp": round(gl * 1e4, 2),
+        "pf": round(gw / gl, 4) if gl > 0 else None,
+        "pnl_bp_mean": round(float(closed.mean()) * 1e4, 2) if len(closed) else None,
+        "reward_sum": round(float(np.sum(reward)), 4), "reward_per_bar": round(float(np.mean(reward)), 6) if n else 0.0,
+        "max_dd_pct": round(float(((eq - peak) / peak).min()) * 100, 4) if n else 0.0,
+        "entries": int(((prev == 0) & (pos != 0)).sum()), "in_position": round(float((pos != 0).mean()), 4) if n else 0.0,
+    }
+
+
+def stability_row(i, step, walk, prev_greedy=None):
+    """One evaluation's decisions on the fixed validation slice: probabilities (uint8),
+    greedy action and position per bar, plus how many greedy decisions changed since the
+    previous evaluation, mean confidence (max p) and entropy."""
+    P = np.asarray(walk["probs"], dtype=np.float64)
+    greedy = np.asarray(walk["act"], dtype=int)
+    n = len(greedy)
+    ent = float(-(P * np.log(P + 1e-12)).sum(axis=1).mean()) if n else 0.0
+    changed = None
+    if prev_greedy is not None and len(prev_greedy) == n and n:
+        changed = round(float((greedy != np.asarray(prev_greedy)).mean()), 4)
+    st = walk["stats"]
+    return {"i": int(i), "step": int(step), "bars": int(n),
+            "p": b64(np.round(np.clip(P, 0, 1) * 255).astype(np.uint8)), "n_actions": int(P.shape[1]) if n else 0,
+            "greedy": greedy.tolist(), "pos": [int(x) for x in walk["pos"]],
+            "changed": changed, "entropy": round(ent, 4), "confidence": round(float(P.max(axis=1).mean()), 4) if n else None,
+            "in_position": st["in_position"], "trades": st["trades"], "return_pct": st["return_pct"]}
+
+
+def settled_since(rows, thresh=SETTLED_CHANGED):
+    """Index of the evaluation after which every later evaluation changed <= `thresh` of
+    the decisions (needs at least 2 later evaluations); None when not settled."""
+    ch = [r.get("changed") for r in rows]
+    for k in range(len(rows) - 2):
+        later = ch[k + 1:]
+        if later and all(c is not None and c <= thresh for c in later):
+            return int(rows[k]["i"])
+    return None
+
+
+def write_stability(viz_dir, row, bars=None, actions=None, meta=None):
+    """Append one evaluation to stability.json (bars + action names stored once)."""
+    viz_dir = Path(viz_dir)
+    viz_dir.mkdir(parents=True, exist_ok=True)
+    path = viz_dir / STABILITY_FILE
+    try:
+        st = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        st = {"schema": SCHEMA, "evals": []}
+    if bars is not None and not st.get("bars"):
+        st["bars"] = bars
+    if actions is not None:
+        st["actions"] = list(actions)
+    st.update(meta or {})
+    st["evals"] = sorted([e for e in st.get("evals", []) if e.get("i") != row["i"]] + [row], key=lambda e: e["i"])[-STABILITY_MAX_EVALS:]
+    st["settled_since"] = settled_since(st["evals"])
+    st["settled_thresh"] = SETTLED_CHANGED
+    st["updated"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _atomic_write(path, json.dumps(st))
+    return path
+
+
+def gap_verdict(gaps):
+    """'Stop or keep going?' from the greedy returns on the fixed Train slice vs the
+    validation slice, one pair per evaluation. gaps: [{i, step, train: {return_pct}, val: {return_pct}}].
+    Returns {cls, t, d} like the Monitor chips; the text carries the numbers and thresholds."""
+    n = len(gaps)
+    if n < 3:
+        return {"cls": "grey", "t": "TRAIN vs VALIDATION: COLLECTING", "d": f"{n} evaluation(s) so far · the trend verdict needs 3"}
+    W = gaps[-GAP_WINDOW:]
+    tr = [float(g["train"]["return_pct"]) for g in W]
+    va = [float(g["val"]["return_pct"]) for g in W]
+    d_tr, d_va, gap = tr[-1] - tr[0], va[-1] - va[0], tr[-1] - va[-1]
+    all_va = [float(g["val"]["return_pct"]) for g in gaps]
+    best_i = int(np.argmax(all_va)); best = all_va[best_i]
+    k = len(W)
+    if d_tr >= GAP_PP and d_va <= -GAP_PP:
+        return {"cls": "red", "t": "GAP WIDENING — OVERFIT?",
+                "d": f"over the last {k} evals train {tr[0]:+.1f}% → {tr[-1]:+.1f}% while validation {va[0]:+.1f}% → {va[-1]:+.1f}% · "
+                     f"threshold train ≥ +{GAP_PP} pp and validation ≤ −{GAP_PP} pp · the best/ checkpoint keeps the best validation eval"}
+    if d_va >= GAP_PP:
+        return {"cls": "green", "t": "GENERALISING",
+                "d": f"validation {va[0]:+.1f}% → {va[-1]:+.1f}% over the last {k} evals · train {tr[-1]:+.1f}% · gap {gap:+.1f} pp · threshold validation ≥ +{GAP_PP} pp"}
+    if n - 1 - best_i >= 3 and best - va[-1] >= GAP_PEAK_PP:
+        return {"cls": "amber", "t": f"VALIDATION PEAKED AT EVAL {best_i + 1}",
+                "d": f"best {best:+.1f}% at step {int(gaps[best_i]['step']):,}, now {va[-1]:+.1f}% ({n - 1 - best_i} evals later) · "
+                     f"threshold ≥ 3 evals and ≥ {GAP_PEAK_PP} pp below the best · the best/ checkpoint holds that eval's policy"}
+    if gap >= GAP_MEMO_PP and va[-1] <= 0:
+        return {"cls": "amber", "t": "MEMORISING THE TRAIN SLICE",
+                "d": f"train {tr[-1]:+.1f}% vs validation {va[-1]:+.1f}% (gap {gap:+.1f} pp) · threshold gap ≥ {GAP_MEMO_PP} pp with validation ≤ 0"}
+    return {"cls": "grey", "t": "NO CLEAR TREND",
+            "d": f"train {d_tr:+.1f} pp, validation {d_va:+.1f} pp over the last {k} evals · within ±{GAP_PP} pp · train {tr[-1]:+.1f}% vs validation {va[-1]:+.1f}%"}
+
+
 def _segment(starts, n, frames, min_len=150):
     """Most recent contiguous episode stretch of the rollout, capped at
     `frames` bars (an episode reset would make the price chart jump)."""

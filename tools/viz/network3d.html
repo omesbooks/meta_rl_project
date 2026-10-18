@@ -66,6 +66,19 @@
   #banner { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); pointer-events: none;
             font: 700 16px var(--hud); letter-spacing: .3em; color: var(--gold); text-shadow: 0 0 14px var(--gold);
             opacity: 0; transition: opacity .35s; white-space: nowrap; }
+  /* ---------- 3D-mode HUD: "deep glass" (dark frosted blue, specular line). ?hud=flat disables it. */
+  body:not(.dash):not(.flat) .panel, body:not(.dash):not(.flat) #stats, body:not(.dash):not(.flat) #rstats, body:not(.dash):not(.flat) #drivers, body:not(.dash):not(.flat) #idle {
+    background: linear-gradient(135deg, rgba(25,230,255,.10), rgba(25,230,255,.02) 40%, rgba(255,255,255,.015));
+    backdrop-filter: blur(14px) saturate(170%); border: 1px solid rgba(25,230,255,.22); border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(25,230,255,.08), 0 12px 36px rgba(0,0,0,.45); }
+  body:not(.dash):not(.flat) #stats, body:not(.dash):not(.flat) #rstats { padding: 10px 16px 12px; }
+  body:not(.dash):not(.flat) #drivers { padding: 10px 12px 8px; }
+  body:not(.dash):not(.flat) .panel::before, body:not(.dash):not(.flat) #stats::before, body:not(.dash):not(.flat) #rstats::before, body:not(.dash):not(.flat) #drivers::before {
+    content: ""; position: absolute; left: 10%; right: 10%; top: 0; height: 1px; pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.7) 40%, rgba(25,230,255,.6) 60%, transparent); }
+  body:not(.dash):not(.flat) #stats .stat .k, body:not(.dash):not(.flat) #rstats .stat .k { color: #8fa0c4; }
+  body:not(.dash):not(.flat) #banner { background: linear-gradient(135deg, rgba(255,197,61,.16), rgba(255,197,61,.03)); backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,197,61,.35); border-radius: 12px; padding: 8px 18px; }
   /* ---------- theme "clear" (Clear Liquid, chosen 2026-10-18): light aurora + white glass for the
      panel modes only; the 3D scene stays dark. ?theme=dark keeps the old panels. Chart palettes are
      read by monitor.js / dashboard.js from the --c-* variables so they follow the theme. */
@@ -156,6 +169,7 @@ import { createMonitor } from "viz-monitor";
 
 const params = new URLSearchParams(location.search);
 if (params.get("theme") !== "dark") document.body.classList.add("clear");   // Clear Liquid panels (Monitor / Dashboard)
+if (params.get("hud") === "flat") document.body.classList.add("flat");         // plain HUD in the 3D modes (A/B measuring)
 const LIVE = params.has("live") && !window.SNAPSHOT;
 // Display modes (measured in WebView2, docs/viz_display_modes_2026-10-11.md):
 //   lite      ~20-25% of one core — no bloom, 4 synapses/neuron, no pulses, 1x pixels, 20 fps

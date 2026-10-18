@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RL Trading Studio — web GUI demo</title>
+<style>
+  :root { --hud: "Bahnschrift", "Segoe UI", system-ui, sans-serif; --fg: #0f1a2b; --dim: #5b6b85; --acc: #0a66ff; --line: rgba(15,26,43,.08);
+          --green: #0f7a4a; --red: #b3123c; --amber: #8a5a00; --r: 20px; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: var(--hud); color: var(--fg); background: #dfe8f6; overflow: hidden; }
+  body::before { content: ""; position: fixed; inset: -10%; z-index: 0; filter: blur(60px); opacity: .9; pointer-events: none;
+    background: radial-gradient(500px 420px at 18% 22%, #ffb86b, transparent 70%), radial-gradient(560px 460px at 80% 18%, #7cc4ff, transparent 70%),
+                radial-gradient(640px 520px at 60% 90%, #c58cff, transparent 70%), radial-gradient(420px 380px at 10% 85%, #7fffd4, transparent 70%); }
+  .glass { background: linear-gradient(140deg, rgba(255,255,255,.74), rgba(255,255,255,.44)); backdrop-filter: blur(24px) saturate(180%);
+           border: 1px solid rgba(255,255,255,.8); box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 14px 40px rgba(15,26,43,.12), 0 1px 2px rgba(15,26,43,.08); border-radius: var(--r); }
+  #app { position: relative; z-index: 1; display: grid; grid-template-columns: 236px 1fr; height: 100%; gap: 14px; padding: 14px; }
+  /* sidebar */
+  #side { display: flex; flex-direction: column; padding: 16px 12px; gap: 4px; }
+  #side .brand { padding: 6px 10px 16px; } #side .brand b { display: block; font: 700 15px/1.1 var(--hud); letter-spacing: .14em; } #side .brand span { font-size: 11px; color: var(--dim); letter-spacing: .1em; }
+  #side a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 12px; font: 600 13px var(--hud); color: var(--fg); text-decoration: none; cursor: pointer; border: 1px solid transparent; }
+  #side a:hover { background: rgba(255,255,255,.45); } #side a.on { background: rgba(255,255,255,.75); border-color: rgba(255,255,255,.9); box-shadow: 0 4px 14px rgba(15,26,43,.08); color: var(--acc); }
+  #side .sp { flex: 1; } #side .st { font-size: 11px; color: var(--dim); padding: 8px 12px; line-height: 1.5; }
+  #side .st i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #35d691; margin-right: 6px; box-shadow: 0 0 6px #35d691; }
+  /* main */
+  #main { display: flex; flex-direction: column; gap: 14px; min-width: 0; overflow-y: auto; overflow-x: hidden; padding-right: 2px; }
+  header.h { display: flex; align-items: center; gap: 14px; padding: 14px 20px; }
+  header.h h1 { margin: 0; font: 700 18px/1 var(--hud); letter-spacing: .1em; } header.h span { color: var(--dim); font-size: 12px; }
+  header.h .pills { margin-left: auto; display: flex; gap: 8px; }
+  .pill { padding: 5px 10px; border-radius: 999px; font: 600 11px var(--hud); background: rgba(255,255,255,.6); border: 1px solid rgba(255,255,255,.9); color: var(--dim); }
+  .pill b { color: var(--fg); margin-left: 4px; } .pill.ok b { color: var(--green); } .pill.warn b { color: var(--amber); } .pill.bad b { color: var(--red); }
+  .page { display: none; flex-direction: column; gap: 14px; } .page.on { display: flex; }
+  .row { display: grid; gap: 14px; } .row.c2 { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); } .row.c3 { grid-template-columns: repeat(3, 1fr); }
+  .card { padding: 16px 18px; min-width: 0; } .card h3 { margin: 0 0 12px; font: 600 10px/1 var(--hud); letter-spacing: .26em; color: var(--dim); } .card h3 b { color: var(--fg); letter-spacing: .06em; }
+  .f { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 12px; align-items: center; font-size: 13px; } .f label { color: var(--dim); font-size: 12px; letter-spacing: .04em; }
+  .f .hint { grid-column: 2; font-size: 11px; color: var(--dim); margin: -4px 0 4px; }
+  input, select { font: 13px var(--hud); color: var(--fg); background: rgba(255,255,255,.7); border: 1px solid rgba(15,26,43,.12); border-radius: 10px; padding: 7px 10px; width: 100%; box-shadow: inset 0 1px 0 #fff; }
+  input:focus, select:focus { outline: 2px solid rgba(10,102,255,.35); border-color: var(--acc); }
+  .inl { display: flex; gap: 8px; align-items: center; min-width: 0; } .inl input, .inl select { width: auto; flex: 1; min-width: 0; } .inl button { white-space: nowrap; }
+  button { font: 600 13px var(--hud); border-radius: 12px; padding: 9px 14px; border: 1px solid rgba(255,255,255,.9); background: rgba(255,255,255,.7); color: var(--fg); cursor: pointer; box-shadow: inset 0 1px 0 #fff, 0 3px 10px rgba(15,26,43,.08); }
+  button.p { background: linear-gradient(135deg, #1a7bff, #0a66ff); color: #fff; border-color: rgba(255,255,255,.4); box-shadow: 0 8px 22px rgba(10,102,255,.35), inset 0 1px 0 rgba(255,255,255,.45); }
+  button.d { color: var(--red); } button:disabled { opacity: .5; cursor: default; }
+  .chk { display: flex; align-items: center; gap: 8px; font-size: 13px; } .chk input { width: 16px; height: 16px; }
+  .term { font: 12px/1.55 Consolas, "Cascadia Mono", monospace; background: rgba(15,26,43,.9); color: #dfe8f6; border-radius: 14px; padding: 12px 14px; height: 260px; overflow: auto; white-space: pre-wrap; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+  .term .m { color: #8fe3ff; } .term .ok { color: #35d691; } .term .vz { color: #ffc446; }
+  .prog { height: 10px; border-radius: 6px; background: rgba(15,26,43,.08); overflow: hidden; } .prog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #1a7bff, #35d691); transition: width .3s; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; } th { font-size: 10px; letter-spacing: .1em; color: var(--dim); font-weight: 600; } td:first-child, th:first-child { text-align: left; }
+  tr:hover td { background: rgba(255,255,255,.35); }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(53,214,145,.2); color: var(--green); } .tag.g { background: rgba(15,26,43,.08); color: var(--dim); }
+  .empty { color: var(--dim); font-size: 13px; padding: 30px; text-align: center; }
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; } .kpi { padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.5); border: 1px solid rgba(255,255,255,.85); }
+  .kpi .k { font: 600 10px/1 var(--hud); letter-spacing: .2em; color: var(--dim); } .kpi .v { font: 600 22px/1.3 var(--hud); } .kpi .u { font-size: 11px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="side" class="glass">
+    <div class="brand"><b>RL TRADING STUDIO</b><span>web GUI demo · pywebview</span></div>
+    <a data-p="pipeline">▶ Pipeline</a><a data-p="train" class="on">🎯 Train</a><a data-p="backtest">📊 Backtest</a><a data-p="walkfwd">🔬 Walk-Forward</a>
+    <a data-p="finetune">🧪 Fine-tune</a><a data-p="analyze">🧠 Analyze</a><a data-p="regime">🌊 Regime Check</a><a data-p="models">📦 Models</a><a data-p="tools">🛠 Tools</a><a data-p="settings">⚙ Settings</a>
+    <div class="sp"></div>
+    <div class="st" id="status"><i></i>idle · Python bridge: <span id="bridge">connecting…</span></div>
+  </nav>
+  <div id="main">
+    <header class="h glass"><h1 id="pgTitle">🎯 Train New Model</h1><span id="pgSub">PPO · TradingEnv</span>
+      <div class="pills" id="pills"><span class="pill">ep_rew_mean<b>—</b></span><span class="pill">approx_kl<b>—</b></span><span class="pill">clip_fraction<b>—</b></span><span class="pill">explained_var<b>—</b></span><span class="pill">entropy<b>—</b></span><span class="pill">value_loss<b>—</b></span></div></header>
+
+    <section class="page on" id="p-train">
+      <div class="row c2">
+        <div class="card glass"><h3>DATASET · <b id="dsName">no file selected</b></h3>
+          <div class="f">
+            <label>CSV</label><div class="inl"><select id="csv"><option>loading…</option></select><button id="browse">📂 Browse</button><button>🔗 Attach .params</button></div>
+            <span class="hint" id="dsHint">select a CSV to preview rows, period and the suggested steps</span>
+            <label>Algorithm</label><select><option>PPO</option><option>A2C</option><option>DQN</option></select>
+            <label>Reward Mode</label><select><option>realized</option><option>mtm</option></select>
+            <label>Reward Profile</label><select><option>balanced</option><option>anti_overtrade</option><option>low_drawdown</option><option>trend_follower</option><option>scalper</option></select>
+            <span class="hint">preset นิสัย reward ตอน train; เปลี่ยนแล้วต้อง train model ใหม่</span>
+            <label>Action Profile</label><select><option>basic_4</option><option>manage_6</option></select>
+            <label>Entry gate</label><select id="gate"><option value="">none</option><option>srb_sig</option></select>
+            <span class="hint">buys only where the column is &gt; 0, sells only where &lt; 0 — RL filters + exits, the signal times the entry</span>
+          </div>
+        </div>
+        <div class="card glass"><h3>RECIPE</h3>
+          <div class="f">
+            <label>Model Name</label><input id="name" value="rl_prod_v1">
+            <label>Training Steps</label><div class="inl"><input id="steps" value="200000"><button id="suggest">Use suggested</button></div>
+            <span class="hint" id="sugg">Suggested: select CSV to calculate from train bars</span>
+            <label>Window Size</label><input value="15"><span class="hint">Recommended: 10 (H4) · 15 (H1)</span>
+            <label>Max Hold</label><input value="24"><span class="hint">bars — force close after</span>
+            <label>Train % (time split)</label><input value="70">
+            <label>Correlation threshold</label><input value="1.0"><span class="hint">1 = constants only · 0.95 ≈ 1.8x faster</span>
+            <label>Costs</label><div class="inl"><input value="3.8e-5" title="spread per side"><input value="0" title="commission"></div><span class="hint">spread/side · commission (fractions of price) — 3.8e-5 ≈ 1 pip round-trip on USDJPY</span>
+            <label>MC eval</label><div class="inl"><input value="1000"><input value="10"></div><span class="hint">runs · skip %</span>
+          </div>
+        </div>
+      </div>
+      <div class="row c2">
+        <div class="card glass"><h3>RUN</h3>
+          <div class="inl" style="margin-bottom:10px"><button class="p" id="start">▶ Start Training</button><button class="d" id="stop" disabled>⏹ Stop</button>
+            <label class="chk"><input type="checkbox" id="viz" checked> Live visual</label>
+            <select id="vmode" style="width:170px"><option>Monitor (verdicts)</option><option>Lite (low CPU)</option><option>Cinematic</option><option>Dashboard</option></select>
+            <button id="openviz">◉ Open Visual</button></div>
+          <div class="prog"><i id="bar"></i></div><div class="hint" id="pstat" style="margin-top:6px;font-size:12px;color:var(--dim)">Ready</div>
+          <div class="term" id="log" style="margin-top:10px">web GUI demo — the log below is streamed from Python through the pywebview bridge (window.pywebview.api)\n</div>
+        </div>
+        <div class="card glass"><h3>LIVE METRIC HEALTH · <b>from SB3 stdout</b></h3>
+          <div class="kpis" id="health">
+            <div class="kpi"><div class="k">EP REW MEAN</div><div class="v" id="h1">—</div><div class="u">rising = keep going</div></div>
+            <div class="kpi"><div class="k">APPROX KL</div><div class="v" id="h2">—</div><div class="u">&lt; 0.02 good</div></div>
+            <div class="kpi"><div class="k">CLIP FRACTION</div><div class="v" id="h3">—</div><div class="u">0.1–0.3 normal</div></div>
+            <div class="kpi"><div class="k">ENTROPY</div><div class="v" id="h4">—</div><div class="u">collapse = no exploration</div></div>
+          </div>
+          <h3 style="margin-top:16px">REWARD TREND</h3><svg id="trend" height="110" viewBox="0 0 600 110"></svg>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="p-models">
+      <div class="card glass"><h3>MODELS · <b id="mdlHdr">artifacts/models (read live through the bridge)</b></h3><div id="mdl"><div class="empty">loading…</div></div></div>
+    </section>
+    <section class="page" id="p-other"><div class="card glass"><h3 id="otherHdr">PAGE</h3><div class="empty">same layout, same bridge — each page becomes an HTML panel calling the existing CLI scripts through Python</div></div></section>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const TITLES = { pipeline: ["▶ Full Pipeline", "relabel → train → backtest → chart"], train: ["🎯 Train New Model", "PPO · TradingEnv"], backtest: ["📊 Backtest Model", "backtest_live.py"], walkfwd: ["🔬 Walk-Forward Validation", "rl_walkforward.py"], finetune: ["🧪 Fine-tune", "rl_finetune.py"], analyze: ["🧠 Analyze", "rl_analyze.py"], regime: ["🌊 Regime Check", "regime_compare.py"], models: ["📦 Models", "artifacts/models"], tools: ["🛠 Tools", "data tools"], settings: ["⚙ Settings", "branding · API keys · theme"] };
+  document.querySelectorAll("#side a").forEach(a => a.onclick = () => {
+    document.querySelectorAll("#side a").forEach(x => x.classList.toggle("on", x === a));
+    const p = a.dataset.p; $("pgTitle").textContent = TITLES[p][0]; $("pgSub").textContent = TITLES[p][1];
+    document.querySelectorAll(".page").forEach(s => s.classList.remove("on"));
+    ($("p-" + p) || $("p-other")).classList.add("on");
+    if (!$("p-" + p)) $("otherHdr").textContent = TITLES[p][0].toUpperCase();
+    if (p === "models") loadModels();
+  });
+  // ---- bridge (pywebview exposes the Python class as window.pywebview.api)
+  const api = () => window.pywebview && window.pywebview.api;
+  async function ready() { if (!api()) return setTimeout(ready, 150);
+    try { $("bridge").textContent = "ok · " + (await api().hello()); } catch (e) { $("bridge").textContent = "error: " + e; }
+    const csvs = await api().list_csvs(); $("csv").innerHTML = csvs.map(c => `<option>${c}</option>`).join("") || "<option>no CSV in the project root</option>";
+    $("csv").onchange = async () => { const info = await api().csv_info($("csv").value); $("dsName").textContent = $("csv").value; $("dsHint").textContent = info.hint; $("sugg").textContent = "Suggested: " + info.suggested.toLocaleString() + " steps (train rows × 5)"; $("suggest").onclick = () => $("steps").value = info.suggested; };
+    $("csv").onchange();
+  }
+  ready();
+  async function loadModels() {
+    const rows = await api().list_models();
+    $("mdlHdr").textContent = rows.length + " models · artifacts/models";
+    $("mdl").innerHTML = rows.length ? `<table><tr><th>model</th><th>run</th><th>steps</th><th>gate</th><th>trained</th><th>size</th></tr>` +
+      rows.map(r => `<tr><td><b>${r.name}</b></td><td>${r.run}</td><td>${(r.steps || 0).toLocaleString()}</td><td>${r.gate ? `<span class="tag">${r.gate}</span>` : `<span class="tag g">none</span>`}</td><td>${r.when}</td><td>${r.mb} MB</td></tr>`).join("") + "</table>" : `<div class="empty">none</div>`;
+  }
+  // ---- fake training stream: Python thread pushes lines through evaluate_js -> onLogLine
+  const rew = [];
+  window.onLogLine = (line, step, total, metrics) => {
+    const el = $("log"); const cls = /VIZ_/.test(line) ? "vz" : /saved|done|ok/i.test(line) ? "ok" : /ep_rew_mean|approx_kl/.test(line) ? "m" : "";
+    el.insertAdjacentHTML("beforeend", `<span class="${cls}">${line}</span>\n`); el.scrollTop = el.scrollHeight;
+    if (total) { $("bar").style.width = (100 * step / total).toFixed(1) + "%"; $("pstat").textContent = `${step.toLocaleString()} / ${total.toLocaleString()} steps`; }
+    if (metrics) { $("h1").textContent = metrics.ep_rew_mean.toFixed(3); $("h2").textContent = metrics.approx_kl.toFixed(4); $("h3").textContent = metrics.clip_fraction.toFixed(3); $("h4").textContent = metrics.entropy.toFixed(3);
+      rew.push(metrics.ep_rew_mean); const w = 600, h = 110, lo = Math.min(...rew), hi = Math.max(...rew) || 1;
+      $("trend").innerHTML = `<polyline fill="none" stroke="#0a66ff" stroke-width="2.2" points="${rew.map((v, i) => `${(6 + i * (w - 12) / Math.max(1, rew.length - 1)).toFixed(1)},${(h - 8 - (v - lo) / (hi - lo || 1) * (h - 20)).toFixed(1)}`).join(" ")}"/>`;
+      const pills = document.querySelectorAll("#pills .pill b"); pills[0].textContent = metrics.ep_rew_mean.toFixed(2); pills[1].textContent = metrics.approx_kl.toFixed(4); pills[2].textContent = metrics.clip_fraction.toFixed(2); pills[3].textContent = metrics.explained_variance.toFixed(2); pills[4].textContent = metrics.entropy.toFixed(2); pills[5].textContent = metrics.value_loss.toFixed(3);
+      document.querySelectorAll("#pills .pill")[1].className = "pill " + (metrics.approx_kl < 0.02 ? "ok" : metrics.approx_kl < 0.05 ? "warn" : "bad"); }
+  };
+  window.onDone = () => { $("start").disabled = false; $("stop").disabled = true; $("status").innerHTML = "<i></i>idle"; };
+  $("start").onclick = async () => { $("start").disabled = true; $("stop").disabled = false; rew.length = 0; $("status").innerHTML = "<i style='background:#ffc446;box-shadow:0 0 6px #ffc446'></i>training (simulated)";
+    await api().start_training({ csv: $("csv").value, name: $("name").value, steps: +$("steps").value, viz: $("viz").checked, mode: $("vmode").value, gate: $("gate").value }); };
+  $("stop").onclick = () => api().stop_training();
+  $("openviz").onclick = () => api().open_visual($("name").value, $("vmode").value);
+  $("browse").onclick = async () => { const f = await api().browse_csv(); if (f) { $("csv").insertAdjacentHTML("afterbegin", `<option selected>${f}</option>`); $("csv").onchange(); } };
+</script>
+</body>
+</html>

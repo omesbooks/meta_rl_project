@@ -66,6 +66,28 @@
   #banner { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); pointer-events: none;
             font: 700 16px var(--hud); letter-spacing: .3em; color: var(--gold); text-shadow: 0 0 14px var(--gold);
             opacity: 0; transition: opacity .35s; white-space: nowrap; }
+  /* ---------- theme "clear" (Clear Liquid, chosen 2026-10-18): light aurora + white glass for the
+     panel modes only; the 3D scene stays dark. ?theme=dark keeps the old panels. Chart palettes are
+     read by monitor.js / dashboard.js from the --c-* variables so they follow the theme. */
+  :root { --c-cyan: #19e6ff; --c-gold: #ffc53d; --c-green: #00ffa3; --c-mag: #ff2e88; --c-orange: #ff8a1f; --c-purple: #b48cff; --c-dim: #5d6b8a; --c-fg: #d9e7ff; --c-grid: #0d2a4d; }
+  body.clear.dash, body.clear.mon { --fg: #0f1a2b; --dim: #5b6b85; --cyan: #0a66ff;
+    --c-cyan: #0a8fd6; --c-gold: #c98a00; --c-green: #0f9a5a; --c-mag: #d01e52; --c-orange: #e0661a; --c-purple: #7a4de0; --c-dim: #6b7a92; --c-fg: #0f1a2b; --c-grid: #c9d4e4;
+    background: #dfe8f6; }
+  body.clear.dash::before, body.clear.mon::before { content: ""; position: fixed; inset: -10%; z-index: -1; filter: blur(60px); opacity: .9; pointer-events: none;
+    background: radial-gradient(500px 420px at 18% 22%, #ffb86b, transparent 70%), radial-gradient(560px 460px at 80% 18%, #7cc4ff, transparent 70%),
+                radial-gradient(640px 520px at 60% 90%, #c58cff, transparent 70%), radial-gradient(420px 380px at 10% 85%, #7fffd4, transparent 70%); }
+  body.clear.dash .panel, body.clear.mon .panel { background: linear-gradient(140deg, rgba(255,255,255,.78), rgba(255,255,255,.5)); border: 1px solid rgba(255,255,255,.85);
+    backdrop-filter: blur(26px) saturate(180%); box-shadow: inset 0 1px 0 #fff, 0 10px 30px rgba(15,26,43,.14); color: var(--dim); border-radius: 16px; }
+  body.clear.dash .panel button, body.clear.mon .panel button { color: #0a66ff; border-color: rgba(10,102,255,.35); } body.clear.dash .panel button.on, body.clear.mon .panel button.on { background: rgba(10,102,255,.12); }
+  body.clear.dash .panel select, body.clear.mon .panel select { background: rgba(255,255,255,.8); color: var(--fg); border-color: rgba(15,26,43,.15); }
+  body.clear.dash .panel input[type=range], body.clear.mon .panel input[type=range] { accent-color: #0a66ff; }
+  body.clear.dash #timeline .lab { color: var(--fg); }
+  /* dashboard cards */
+  body.clear.dash .dcard, body.clear.dash .kpi { background: linear-gradient(140deg, rgba(255,255,255,.74), rgba(255,255,255,.44)); border: 1px solid rgba(255,255,255,.8);
+    backdrop-filter: blur(22px) saturate(180%); box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 14px 40px rgba(15,26,43,.12), 0 1px 2px rgba(15,26,43,.08); border-radius: 18px; }
+  body.clear.dash .dcard h3, body.clear.dash .kpi .k, body.clear.dash .heat .lab { color: var(--dim); } body.clear.dash .dcard h3 b { color: var(--fg); }
+  body.clear.dash #title h1 { color: #0f1a2b; text-shadow: none; } body.clear.dash #title div { color: var(--dim); }
+  body.clear.dash .dlegend, body.clear.dash .trades td, body.clear.dash .trades th { color: var(--fg); }
 </style>
 </head>
 <body>
@@ -133,6 +155,7 @@ import { createDashboard } from "viz-dashboard";
 import { createMonitor } from "viz-monitor";
 
 const params = new URLSearchParams(location.search);
+if (params.get("theme") !== "dark") document.body.classList.add("clear");   // Clear Liquid panels (Monitor / Dashboard)
 const LIVE = params.has("live") && !window.SNAPSHOT;
 // Display modes (measured in WebView2, docs/viz_display_modes_2026-10-11.md):
 //   lite      ~20-25% of one core — no bloom, 4 synapses/neuron, no pulses, 1x pixels, 20 fps

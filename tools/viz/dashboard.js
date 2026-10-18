@@ -33,7 +33,11 @@ const CSS = `
                                .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } .heat { grid-template-columns: 1fr; } }
 `;
 
-const C = { cyan: "#19e6ff", gold: "#ffc53d", green: "#00ffa3", mag: "#ff2e88", orange: "#ff8a1f", dim: "#5d6b8a", grid: "#0d2a4d" };
+let C = { cyan: "#19e6ff", gold: "#ffc53d", green: "#00ffa3", mag: "#ff2e88", orange: "#ff8a1f", dim: "#5d6b8a", grid: "#0d2a4d" };
+function themePalette() {        // follow the page theme (--c-* on body); see network3d.html
+  const cs = getComputedStyle(document.body), g = (k, d) => (cs.getPropertyValue(k) || "").trim() || d;
+  C = { cyan: g("--c-cyan", C.cyan), gold: g("--c-gold", C.gold), green: g("--c-green", C.green), mag: g("--c-mag", C.mag), orange: g("--c-orange", C.orange), dim: g("--c-dim", C.dim), grid: g("--c-grid", C.grid) };
+}
 const fmt = (v, d = 2) => (v == null || !Number.isFinite(+v)) ? "–" : (+v).toFixed(d);
 const pct = v => (v == null || !Number.isFinite(+v)) ? "–" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -259,6 +263,7 @@ export function createDashboard(root, { colors, fetchSnapshot }) {
 
   function render(state) {
     last = state;
+    themePalette();
     const { index = [], snap: D = null, selectedI = -1 } = state;
     const entry = index.find(e => e.i === selectedI) || null;
     if (D) kpis(selectedI, D, entry);

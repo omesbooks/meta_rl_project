@@ -2,7 +2,11 @@
 // Reads run/monitor.json (one row per rollout, written by snapshot.make_rollout_callback)
 // and run/index.json (evals). Every verdict states the number it is based on and its threshold,
 // so nothing here is a black box. No render loop: redrawn only when a new row arrives.
-const C = { cyan: "#19e6ff", mag: "#ff2e88", green: "#00ffa3", gold: "#ffc53d", dim: "#5d6b8a", fg: "#d9e7ff", orange: "#ff8a1f", purple: "#b48cff" };
+let C = { cyan: "#19e6ff", mag: "#ff2e88", green: "#00ffa3", gold: "#ffc53d", dim: "#5d6b8a", fg: "#d9e7ff", orange: "#ff8a1f", purple: "#b48cff" };
+function themePalette() {        // chart colours follow the page theme (--c-* on body)
+  const cs = getComputedStyle(document.body), g = (k, d) => (cs.getPropertyValue(k) || "").trim() || d;
+  C = { cyan: g("--c-cyan", C.cyan), mag: g("--c-mag", C.mag), green: g("--c-green", C.green), gold: g("--c-gold", C.gold), dim: g("--c-dim", C.dim), fg: g("--c-fg", C.fg), orange: g("--c-orange", C.orange), purple: g("--c-purple", C.purple) };
+}
 const CSS = `
   #mon { position: fixed; inset: 0; overflow: auto; padding: 22px 24px 72px; font-family: var(--hud); color: var(--fg); }
   #mon .mtitle { max-width: 1700px; margin: 0 auto 12px; display: flex; align-items: baseline; gap: 16px; }
@@ -31,6 +35,23 @@ const CSS = `
   #mon .tl { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
   #mon .tl .p { background: rgba(255,255,255,.025); border-radius: 8px; padding: 6px 8px; } #mon .tl .p .k { font: 600 10px/1 var(--hud); letter-spacing: .2em; color: var(--dim); margin-bottom: 4px; }
   #mon .leg { font-size: 11px; color: var(--dim); margin-top: 6px; } #mon .leg i { display: inline-block; width: 14px; height: 3px; margin: 0 5px 2px 10px; }
+  /* Clear Liquid */
+  body.clear #mon .mcard, body.clear #mon .tl .p { background: linear-gradient(140deg, rgba(255,255,255,.74), rgba(255,255,255,.44)); border: 1px solid rgba(255,255,255,.8);
+    backdrop-filter: blur(22px) saturate(180%); box-shadow: inset 0 1px 0 rgba(255,255,255,.95), inset 0 -1px 0 rgba(15,26,43,.05), 0 14px 40px rgba(15,26,43,.12), 0 1px 2px rgba(15,26,43,.08); border-radius: 20px; }
+  body.clear #mon .mcard::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(115deg, rgba(255,255,255,.5) 0%, transparent 35%, transparent 70%, rgba(255,255,255,.3) 100%); }
+  body.clear #mon .mcard { position: relative; overflow: hidden; } body.clear #mon .mcard > * { position: relative; }
+  body.clear #mon .mcard h3 { color: var(--dim); } body.clear #mon .mcard h3 b { color: var(--fg); }
+  body.clear #mon .mtitle h1 { color: #0f1a2b; text-shadow: none; letter-spacing: .22em; } body.clear #mon .mtitle span { color: var(--dim); }
+  body.clear #mon .chip { background: rgba(255,255,255,.55); border: 1px solid rgba(255,255,255,.9); box-shadow: inset 0 1px 0 #fff, 0 4px 14px rgba(15,26,43,.08); border-radius: 14px; }
+  body.clear #mon .chip .d { color: #3b4a62; }
+  body.clear #mon .chip.green { background: linear-gradient(135deg, rgba(53,214,145,.35), rgba(255,255,255,.5)); } body.clear #mon .chip.green .t { color: #0f7a4a; }
+  body.clear #mon .chip.red { background: linear-gradient(135deg, rgba(255,92,120,.38), rgba(255,255,255,.5)); } body.clear #mon .chip.red .t { color: #b3123c; }
+  body.clear #mon .chip.amber { background: linear-gradient(135deg, rgba(255,196,70,.45), rgba(255,255,255,.5)); } body.clear #mon .chip.amber .t { color: #8a5a00; }
+  body.clear #mon .chip.grey .t { color: var(--dim); }
+  body.clear #mon .kpi .v { color: var(--fg); } body.clear #mon .kpi .k, body.clear #mon .kpi .u { color: var(--dim); }
+  body.clear #mon td, body.clear #mon th { border-bottom-color: rgba(15,26,43,.08); color: var(--fg); } body.clear #mon th { color: var(--dim); }
+  body.clear #mon .lab, body.clear #mon .empty, body.clear #mon .leg { color: var(--dim); }
+  body.clear #mon .tl .p { border-radius: 12px; }
 `;
 
 const fmt = (v, d = 2, suf = "") => (v == null || !Number.isFinite(v)) ? "–" : (v > 0 && suf ? "+" : "") + v.toFixed(d) + suf;
@@ -180,6 +201,7 @@ export function createMonitor(root) {
 
   function render(state) {
     last = state;
+    themePalette();
     const { rows = [], meta = {}, index = [], peers = [] } = state;
     // --- timelines (drawn even before the first rollout: evals may exist)
     const runsEval = (peers.length ? peers : [{ name: meta.model || "this run", index, rows }]).map(r => ({ name: r.name, pts: (r.index || []).slice().sort((a, b) => a.step - b.step) }));

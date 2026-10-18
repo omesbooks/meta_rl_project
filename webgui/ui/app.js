@@ -243,7 +243,7 @@ function initKeyboard() {
     a.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); a.click(); } }; });
   document.addEventListener("keydown", e => {
     const modalOn = $("modal").classList.contains("on");
-    if (e.key === "Escape" && modalOn) { e.preventDefault(); $("mCancel").click(); return; }
+    if (e.key === "Escape" && modalOn) { e.preventDefault(); $("mCancel").click(); $("modal").classList.remove("on"); return; }
     if (modalOn) return;
     if (e.altKey && !e.ctrlKey && /^[0-9]$/.test(e.key)) {
       const i = e.key === "0" ? 9 : +e.key - 1;

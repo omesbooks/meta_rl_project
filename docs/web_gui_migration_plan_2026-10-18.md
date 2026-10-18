@@ -170,3 +170,18 @@ CLI scripts, TradingEnv/recipes, artifact layout, MQL/EA export, tests of the en
   to a scratch folder (7 files). The user's regime_single_data.json / regime_single.html were backed up and
   restored around the e2e. Also fixed: the Train dataset header showed the full Windows path; header metric
   pills now show on the Train page only.
+- 2026-10-18 — **phase 6 done — migration complete**. `run_rl_app.bat` opens the web GUI by default
+  (`--classic` = rl_app.py, also `run_rl_classic.bat`; `run_rl_web.bat` kept as an alias; other arguments are
+  passed through). `rl_web.py`: Edge WebView2 check (registry) → download link + fallback to the classic app
+  (message box when there is no console), window/taskbar icon from the branding (`assets/.cache/*.ico`, own
+  AppUserModelID), `--smoke` self-test (hidden window, all 10 pages, exit code), `--classic` hand-over.
+  `tools/build/rl_studio.spec` + `rl_studio_launcher.py` build `RL Trading Studio.exe` (7 MB, windowed): it
+  starts rl_web.py with the project's `.venv\Scripts\pythonw.exe`, or runs the bat for first-time setup — the
+  ML stack is not frozen because every page runs the CLI scripts with that interpreter (`requirements-build.txt`
+  = pyinstaller, build-only). Keyboard: focusable sidebar (Enter/Space), Alt+1…0 pages, Ctrl+Enter = the page's
+  main run button, Esc closes the confirm dialog, focus-visible outlines. Settings → Open the classic app.
+  Docs: README launch table + build steps, AGENTS.md.
+  Exit test (fresh machine): `git clone` of the commit into a new folder with a space in its path, no `.venv`
+  → `run_rl_app.bat --smoke` created the venv, installed requirements.txt from scratch (10.7 min) and printed
+  `SMOKE OK - 10/10 pages opened`, exit 0. Also: exe `--smoke` exit 0 inside the project; outside the project it
+  shows the "put me in the project folder" message; keyboard shortcuts checked in a hidden window. Suite 70 passed.

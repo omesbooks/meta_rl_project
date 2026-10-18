@@ -298,6 +298,7 @@ def main():
     ap.add_argument("--sl_mode", default="none", choices=["none", "continuous"], help="rl_train --sl_mode (continuous = hybrid SL head)")
     ap.add_argument("--sl_range", default="0.5,3.0"); ap.add_argument("--sl_log_std_init", type=float, default=-0.7)
     ap.add_argument("--sl_ent_scale", type=float, default=0.1)
+    ap.add_argument("--viz", action="store_true", help="train with the live visual on (rollout/eval snapshots + monitor rows per run)")
     ap.add_argument("--mc_eval", type=int, default=0, help="quick-eval MC runs in rl_train (0 = off)")
     ap.add_argument("--mc", type=int, default=1000, help="order-shuffle MC in the OOS backtest")
     ap.add_argument("--bootstrap", type=int, default=1000)
@@ -352,6 +353,8 @@ def main():
                      "--spread_pct", str(args.spread_pct), "--commission", str(args.commission)]
         if args.entry_gate:
             train_cmd += ["--entry_gate", args.entry_gate]
+        if args.viz:
+            train_cmd += ["--viz"]
         if args.sl_mode != "none":
             train_cmd += ["--sl_mode", args.sl_mode, "--sl_range", args.sl_range,
                           "--sl_log_std_init", str(args.sl_log_std_init), "--sl_ent_scale", str(args.sl_ent_scale)]

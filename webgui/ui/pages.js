@@ -137,7 +137,8 @@ function initSettings() {
 // ------------------------------------------------------------------ router hooks (called by app.js)
 window.rlpages = {
   live: { train: "PPO · TradingEnv · rl_train.py", backtest: "backtest_live.py · stored report from the meta JSON", models: "results of every model · same table as the classic app", settings: "branding · API keys · web appearance" },
-  async show(p) { if (p === "models" && !MD.loaded) await loadModels(); if (p === "backtest" && window.rlbacktest) await window.rlbacktest.show(); },
+  async show(p) { if (p === "models" && !MD.loaded) await loadModels(); if (p === "backtest" && window.rlbacktest) await window.rlbacktest.show();
+    if (["pipeline", "walkfwd", "finetune"].includes(p) && window.rlflows) await window.rlflows.show(p); },
   async init() {
     initModels(); initSettings();
     renderSettings(await api().settings_get());

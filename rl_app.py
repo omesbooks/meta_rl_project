@@ -203,6 +203,7 @@ _load_branding_config()
 from metric_health import METRIC_INFO, classify_metric, get_recommendation  # noqa: E402  (shared with webgui)
 import model_results  # noqa: E402  (Models table rows, shared with webgui)
 import backtest_report  # noqa: E402  (Backtest report/M1/skip rules, shared with webgui)
+import pipeline_shared  # noqa: E402  (Pipeline/Walk-Forward/Fine-tune rules, shared with webgui)
 
 
 # ============================================================
@@ -1804,25 +1805,9 @@ class RLTradingStudio(ctk.CTk):
                 text_color=COLOR_YELLOW)
             return
 
-        try:
-            requested_pct = input_fraction(self.pipe_train_pct.get(), "pipe_train_pct", allow_zero=False, allow_one=True)
-        except ValueError as exc:
-            self.pipe_split_hint.configure(text=str(exc), text_color=COLOR_YELLOW)
-            return
-        train_pct = requested_pct
-        split = max(0, min(int(len(ts) * train_pct), len(ts)))
-        train_line = self._format_timestamp_range_line("Train", ts, 0, split - 1)
-        middle = split + (len(ts) - split) // 2
-        tail_line = (self._format_timestamp_range_line("Validation", ts, split, middle - 1) + "\n" +
-                     self._format_timestamp_range_line("Test", ts, middle, len(ts) - 1))
-        if split == len(ts):
-            tail_line = "No unseen Test: in-sample diagnostic only"
-        pct_note = ""
-        if abs(train_pct - requested_pct) > 1e-9:
-            pct_note = f"\nTrain pct adjusted to {train_pct * 100:.1f}%"
+        text, level = pipeline_shared.split_preview(ts, self.pipe_train_pct.get())
         self.pipe_split_hint.configure(
-            text=f"{train_line}\n{tail_line}{pct_note}",
-            text_color=COLOR_DIM)
+            text=text, text_color=COLOR_YELLOW if level == "warn" else COLOR_DIM)
 
     def _on_pipeline_train_csv_change(self):
         if not hasattr(self, "pipe_bt_csv"):
@@ -1845,18 +1830,9 @@ class RLTradingStudio(ctk.CTk):
         self._start_pipeline_row_count(train_csv)
         self._schedule_pipeline_split_hint_update(0)
 
-        train_path = Path(train_csv)
-        candidates = []
-        stem = train_path.stem
-        if stem.endswith("_train"):
-            candidates.append(train_path.with_stem(stem[:-len("_train")] + "_test").name)
-        candidates.append(train_csv)
-
-        for name in candidates:
-            if (WORK_DIR / name).exists():
-                self.pipe_bt_csv.set(name)
-                self._update_pipe_m1_hint()
-                return
+        name = pipeline_shared.backtest_csv_for(train_csv, WORK_DIR)
+        if name:
+            self.pipe_bt_csv.set(name)
         self._update_pipe_m1_hint()
 
     def _start_pipeline_row_count(self, csv_name):
@@ -2248,36 +2224,8 @@ class RLTradingStudio(ctk.CTk):
                 pass
 
     def _pipeline_train_command(self, train_csv, bt_csv, model_name, steps, window, train_pct, hparams):
-        train_cmd = [
-            sys.executable, "rl_train.py", train_csv,
-            "--steps", str(steps),
-            "--window", str(window),
-            "--name", model_name,
-            "--train_pct", str(train_pct),
-            "--algo", "ppo",
-            "--reward_mode", hparams["reward_mode"],
-            "--reward_profile", hparams["reward_profile"],
-            "--reward_overrides", hparams.get("reward_overrides", ""),
-            "--action_profile", hparams["action_profile"],
-            "--action_params", hparams.get("action_params", ""),
-            "--max_hold", hparams["max_hold"],
-            "--ep_len", hparams["ep_len"],
-            "--net_arch", hparams["net_arch"],
-            "--learning_rate", hparams["learning_rate"],
-            "--clip_range", hparams["clip_range"],
-            "--ent_coef", hparams["ent_coef"],
-            "--n_steps", hparams["n_steps"],
-            "--n_epochs", hparams["n_epochs"],
-            "--batch_size", hparams["batch_size"],
-            "--gamma", hparams["gamma"],
-            "--gae_lambda", hparams["gae_lambda"],
-            "--vf_coef", hparams["vf_coef"],
-        ]
-        if Path(bt_csv).resolve() != Path(train_csv).resolve():
-            train_cmd.extend(["--eval_csv", bt_csv])
-        if hparams.get("reward_formula"):
-            train_cmd.extend(["--reward_formula", hparams["reward_formula"]])
-        return train_cmd
+        return pipeline_shared.train_command(sys.executable, train_csv, bt_csv, model_name,
+                                             steps, window, train_pct, hparams)
 
     def _pipeline_worker(self, csv_name, bt_csv, use_relabel, use_build,
                          model_name, steps, window, conf, mode, train_pct, hparams):
@@ -2329,33 +2277,14 @@ class RLTradingStudio(ctk.CTk):
                     hparams["bt_start"] = "0"
                     self._pipeline_log("IN-SAMPLE backtest: Train 100% has no unseen Test.", "warn")
 
-            backtest_cmd = [
-                sys.executable, "backtest_live.py", model_name, bt_csv,
-                "--conf", str(conf),
-                "--risk", hparams.get("risk", "0.01"),
-                "--max_positions", hparams.get("max_positions", "1"),
-                "--max_hold", hparams["max_hold"],
-                "--atr_sl", hparams.get("atr_sl", "2.0"),
-                "--atr_tp", hparams.get("atr_tp", "4.0"),
-                "--window", str(window),
-                "--start", hparams.get("bt_start", "0"),
-                "--mode", mode,
-                "--stop_slippage", "0.0001",
-            ]
             m1_file = (hparams["resolved_backtest"]["m1_csv"] if "resolved_backtest" in hparams
                        else self._find_matching_m1(bt_csv) if hparams.get("use_m1", True) else None)
-            if m1_file:
-                backtest_cmd += ["--m1_csv", m1_file]
-            # Statistical validation — same defaults as the Backtest page
-            # (--mc 1000 is already the CLI default; baseline is opt-in on CLI)
-            backtest_cmd += ["--random_baseline", "20"]
+            backtest_cmd = pipeline_shared.backtest_command(
+                sys.executable, model_name, bt_csv, conf, mode, window, hparams, m1_file)
             self._pipeline_run_cmd(backtest_cmd, stage, "Backtest", stages_total)
             stage += 1
 
-            chart_cmd = [
-                sys.executable, "backtest_chart.py", model_name, bt_csv,
-                "--limit", "5000",
-            ]
+            chart_cmd = pipeline_shared.chart_command(sys.executable, model_name, bt_csv)
             self._pipeline_run_cmd(chart_cmd, stage, "Chart", stages_total)
 
             self.after(0, lambda: self._finish_pipeline(True, "Pipeline complete."))
@@ -6512,27 +6441,9 @@ class RLTradingStudio(ctk.CTk):
         return True
 
     def _resolve_pipeline_preview(self, recipe, context):
-        import pandas as pd
         frame = validate_frame(self._smart_read_csv(WORK_DIR / context["backtest_csv"]),
                                context["backtest_csv"])
-        if context["bt_start_auto"]:
-            period = recipe["test_period"]
-            skip = int((frame.timestamp < pd.Timestamp(period["start"])).sum()) if period else 0
-            start = skip / len(frame)
-            if int(start * len(frame)) < skip:
-                start = math.nextafter(start, 1.0)
-        else:
-            start = float(context["bt_start"])
-            skip = int(len(frame) * start)
-        if len(frame) - skip <= recipe["settings"]["window"] + 2:
-            raise ValueError("Backtest range is too short for the selected Window")
-        context["resolved_backtest"] = {
-            "start": start, "rows": len(frame) - skip,
-            "period": {"start": str(frame.timestamp.iloc[skip]), "end": str(frame.timestamp.iloc[-1])},
-            "m1_csv": self._find_matching_m1(context["backtest_csv"]) if context["use_m1"] else None,
-            "stop_slippage": 0.0001, "intrabar": "pessimistic", "random_baseline": 20,
-            "mc": 1000, "swap_long": 0, "swap_short": 0,
-        }
+        pipeline_shared.resolve_backtest(recipe, context, frame, self._find_matching_m1)
 
     def _review_training_command(self, cmd, launch, context=None):
         """Prepare in a worker, then confirm an immutable command on the Tk thread."""
@@ -7622,13 +7533,8 @@ class RLTradingStudio(ctk.CTk):
         timestamped fallback if the name was locked)."""
         if not hasattr(self, "wf_chart_label"):
             return
-        name = (self.wf_name.get() or "wf_prod").strip()
-        # engine sanitizes the name the same way before saving
-        import re as _re
-        name = _re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", name).rstrip(". ") or "wf"
-        candidates = sorted(
-            WORK_DIR.glob(f"{name}_chart*.png"),
-            key=lambda p: p.stat().st_mtime, reverse=True)
+        chart = pipeline_shared.wf_chart_path(self.wf_name.get(), WORK_DIR)
+        candidates = [chart] if chart else []
         try:
             from PIL import Image
             if candidates:
@@ -7948,42 +7854,12 @@ class RLTradingStudio(ctk.CTk):
         """Show the recipe the selected base model will hand down to fine-tune."""
         if not hasattr(self, "ft_recipe_hint"):
             return
-        base = self.ft_base.get()
-        if base in ("(none)", ""):
-            self.ft_recipe_hint.configure(
-                text="เลือก base model เพื่อดูสูตรที่จะสืบทอด (reward / action / window / max hold)")
-            return
-        try:
-            from artifact_paths import train_meta_path
-            mp = train_meta_path(base)
-            if not mp.exists():
-                self.ft_recipe_hint.configure(
-                    text=f"⚠ ไม่พบ meta ของ {base} — จะ fine-tune ด้วยค่า default "
-                         "(balanced / basic_4) ซึ่งอาจไม่ตรงกับสูตรที่ model นี้ถูกเทรนมา")
-                return
-            hp = json.loads(mp.read_text(encoding="utf-8")).get("hyperparameters", {})
-            cfg = hp.get("reward_profile_config") or {}
-            formula = (hp.get("reward_formula") or "").strip()
-            parts = [
-                f"reward: {hp.get('reward_mode', 'realized')}/{hp.get('reward_profile', 'balanced')}"
-                + (" +formula" if formula else ""),
-                f"action: {hp.get('action_profile', 'basic_4')}",
-                f"window: {hp.get('window', '?')}",
-                f"max hold: {hp.get('max_hold', '?')}",
-            ]
-            self.ft_recipe_hint.configure(
-                text="สืบทอดจาก base model → " + " · ".join(parts)
-                     + " (fine-tune ใช้สูตรเดิมเสมอ — เปลี่ยน reward/action = ต้อง retrain)")
-        except Exception as e:
-            self.ft_recipe_hint.configure(text=f"⚠ อ่าน meta ไม่ได้: {e}")
+        text, _level = pipeline_shared.ft_recipe_hint(self.ft_base.get())
+        self.ft_recipe_hint.configure(text=text)
 
     def _update_ft_mode_hint(self):
         mode = self.ft_mode.get().split()[0]
-        hints = {
-            "mixed": "mixed: ผสม data เก่าตาม ratio กันลืมของเดิม · LR ต่ำ (1e-4) คือหัวใจของ fine-tune — สูงไป = ลืมของเก่า (catastrophic forgetting)",
-            "pure": "pure: เทรนต่อด้วย data ใหม่ล้วน (Mix Ratio ไม่ถูกใช้) — เร็วแต่เสี่ยง catastrophic forgetting ที่สุด ใช้เมื่อ regime เปลี่ยนจริงเท่านั้น",
-            "replay": "replay: ใช้ old+new ทั้งหมดแบบไม่สุ่ม (Mix Ratio ไม่ถูกใช้) — กันลืมได้สุดแต่ช้าสุด และ data ใหม่มีน้ำหนักน้อยสุดเพราะโดนของเก่าท่วม",
-        }
+        hints = pipeline_shared.FT_MODE_HINTS
         self.ft_mode_hint.configure(text=hints.get(mode, hints["mixed"]))
 
     def _run_finetune(self):
@@ -9440,16 +9316,7 @@ Built with: CustomTkinter + stable-baselines3
         return None
 
     def _parse_walkforward_progress(self, line):
-        m = re.match(r'WF_PROGRESS\s+(\d[\d,]*)\s+(\d[\d,]*)(?:\s+(.*))?$', line)
-        if not m:
-            return None
-        try:
-            cur = int(m.group(1).replace(',', ''))
-            total = int(m.group(2).replace(',', ''))
-        except ValueError:
-            return None
-        label = (m.group(3) or "").strip()
-        return cur, total, label
+        return pipeline_shared.parse_wf_progress(line)
 
     def _parse_stats(self, line):
         """Parse final backtest stats"""
@@ -9556,24 +9423,13 @@ Built with: CustomTkinter + stable-baselines3
                     self.wf_progress_label.configure(
                         text=f"Progress: {pct * 100:.1f}%{suffix}",
                         text_color=COLOR_PURPLE if pct < 1.0 else COLOR_GREEN)
-            if 'MOSTLY ROBUST' in line:
-                match = re.search(r'(\d+/\d+)\s+windows', line)
-                suffix = f" ({match.group(1)} passed)" if match else ""
-                self.wf_verdict_icon.configure(text="🟡")
-                self.wf_verdict_text.configure(text="MOSTLY ROBUST", text_color=COLOR_YELLOW)
-                self.wf_verdict_sub.configure(text=f"Most windows passed{suffix} — use with caution")
-            elif 'NOT ROBUST' in line:
-                self.wf_verdict_icon.configure(text="❌")
-                self.wf_verdict_text.configure(text="NOT ROBUST", text_color=COLOR_RED)
-                self.wf_verdict_sub.configure(text="Most windows failed")
-            elif 'UNSTABLE' in line:
-                self.wf_verdict_icon.configure(text="⚠️")
-                self.wf_verdict_text.configure(text="UNSTABLE", text_color=COLOR_YELLOW)
-                self.wf_verdict_sub.configure(text="Some windows failed")
-            elif 'ROBUST' in line:
-                self.wf_verdict_icon.configure(text="✅")
-                self.wf_verdict_text.configure(text="ROBUST", text_color=COLOR_GREEN)
-                self.wf_verdict_sub.configure(text="All windows passed gate")
+            verdict = pipeline_shared.wf_verdict(line)
+            if verdict:
+                icon, title, tone, sub = verdict
+                self.wf_verdict_icon.configure(text=icon)
+                self.wf_verdict_text.configure(
+                    text=title, text_color={"good": COLOR_GREEN, "warn": COLOR_YELLOW, "bad": COLOR_RED}[tone])
+                self.wf_verdict_sub.configure(text=sub)
 
     def _update_stat(self, old_card, new_value, color=None):
         """Replace stat card content"""

@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from webgui import backtest as btform
+from webgui import pipeline as pipeform
 from webgui import commands, logparse
 from webgui.runner import Runner
 
@@ -230,9 +231,16 @@ class Api:
         token = secrets.token_hex(8)
         self._pending = {token: {"cmd": built["cmd"], "sha": sha, "steps": built["steps"], "name": built["name"],
                                  "viz_mode": form.get("viz_mode", "monitor")}}
+        summary = self._recipe_summary(recipe)
+        return {"ok": True, "token": token, "summary": summary, "existing": str(existing) if existing else "",
+                "recipe_sha256": sha, "warnings": built["warnings"], "command": " ".join(built["cmd"][1:]),
+                "recipe": json.loads(json.dumps(recipe, default=str))}
+
+    @staticmethod
+    def _recipe_summary(recipe):
         st = recipe["settings"]
         period = lambda d: f"{str(d['start'])[:16].replace('T', ' ')} → {str(d['end'])[:16].replace('T', ' ')}" if isinstance(d, dict) and d.get("start") else "none"
-        summary = [
+        return [
             ["Model", f"{st['name']} | {st['algo'].upper()}"],
             ["Features after selection", str(len(recipe["features"]))],
             ["Train / Validation / Test rows", f"{recipe['train_rows']} / {recipe['validation_rows']} / {recipe['test_rows']}"],
@@ -245,9 +253,6 @@ class Api:
             ["Evaluation", str(recipe["evaluation_role"])],
             ["Output", f"{recipe['output_root']}/<run_id>/"],
         ]
-        return {"ok": True, "token": token, "summary": summary, "existing": str(existing) if existing else "",
-                "recipe_sha256": sha, "warnings": built["warnings"], "command": " ".join(built["cmd"][1:]),
-                "recipe": json.loads(json.dumps(recipe, default=str))}
 
     def confirm_training(self, token):
         job = self._pending.pop(token, None)
@@ -285,6 +290,8 @@ class Api:
                     if ev.get("viz"):
                         self._on_viz(ev["viz"])
                     batch.append(ev)
+                elif kind in ("stage", "stage_done"):
+                    batch.append({"type": kind, "page": page, **data})
                 else:
                     batch.append({"type": "done", "page": page, **self._run_info.pop(page, {}), **data})
             if batch:
@@ -557,6 +564,136 @@ class Api:
 
     def stop_run(self):
         return self.stop_training()
+
+    # ------------------------------------------------------------------ pipeline / walk-forward / fine-tune
+    def _feature_csvs(self):
+        return sorted(p.name for p in self._root.glob("*.csv") if not p.name.endswith("_m1.csv"))
+
+    def flow_catalog(self):
+        """Dropdowns + defaults for the Pipeline, Walk-Forward and Fine-tune pages."""
+        from artifact_paths import model_names_from_artifacts
+        return {"csvs": self._feature_csvs(), "models": sorted(set(model_names_from_artifacts())),
+                "pipeline": pipeform.pipeline_defaults(), "pipe_hp": [list(x) for x in pipeform.PIPE_HP],
+                "wf": pipeform.wf_defaults(), "wf_ppo": [list(x) for x in pipeform.WF_PPO],
+                "ft": pipeform.ft_defaults(), "ft_modes": pipeform.FT_MODES,
+                "ft_mode_hints": __import__("pipeline_shared").FT_MODE_HINTS}
+
+    def pipeline_csv_info(self, csv, train_pct="85", window="10"):
+        """Rows + suggested steps, Train/Validation/Test preview, and the Backtest CSV to follow."""
+        import pipeline_shared
+        if not csv or csv == pipeform.NONE:
+            return {"ok": False, "split": "Select Train CSV to preview split", "level": ""}
+        path = self._csv_path(csv)
+        try:
+            with path.open("rb") as f:
+                rows = sum(1 for _ in f) - 1
+        except OSError as exc:
+            return {"ok": False, "error": f"Rows: unable to read {csv} | Suggested steps: -", "detail": str(exc)}
+        ts, error = self._timestamps(csv)
+        split, level = (error, "warn") if error else pipeline_shared.split_preview(ts, train_pct)
+        return {"ok": True, "rows": rows, "suggest": commands.suggest_steps(rows, train_pct, window),
+                "split": split, "level": level, "bt_csv": pipeline_shared.backtest_csv_for(csv, self._root)}
+
+    def pipeline_m1(self, bt_csv):
+        import backtest_report
+        return {"m1": backtest_report.find_matching_m1(bt_csv, self._root)}
+
+    def _read_frame(self, csv):
+        import pandas as pd
+        from training_data import validate_frame
+        path = self._csv_path(csv)
+        last = None
+        for kwargs in ({}, {"encoding": "utf-8-sig"}, {"encoding": "utf-16"}):
+            try:
+                return validate_frame(pd.read_csv(path, **kwargs), csv)
+            except UnicodeError as exc:
+                last = exc
+        raise ValueError(f"cannot read {csv}: {last}")
+
+    def review_pipeline(self, form):
+        """CTk Run full pipeline -> review: prepare the training recipe and fix the backtest range."""
+        import backtest_report
+        import pipeline_shared
+        if self._runner.is_running():
+            return {"ok": False, "error": "Another process is already running."}
+        try:
+            plan = pipeform.build_pipeline(form, self._root, python=self._python)
+        except commands.FormError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        from artifact_paths import find_model_path
+        from rl_train import build_parser, prepare_training
+        try:
+            prepared = prepare_training(build_parser().parse_args(list(plan["train_cmd"][2:])))
+            recipe, sha = prepared["recipe"], prepared["recipe_sha256"]
+            pipeline_shared.resolve_backtest(recipe, plan["context"], self._read_frame(plan["bt_csv"]),
+                                             lambda c: backtest_report.find_matching_m1(c, self._root))
+        except (Exception, SystemExit) as exc:
+            return {"ok": False, "error": f"Cannot start training: {exc}"}
+        token = secrets.token_hex(8)
+        self._pending = {token: {"plan": plan, "sha": sha}}
+        rb = plan["context"]["resolved_backtest"]
+        summary = self._recipe_summary(recipe) + [
+            ["Backtest CSV", plan["bt_csv"]],
+            ["Backtest range", f"{rb['period']['start'][:16]} → {rb['period']['end'][:16]} ({rb['rows']:,} rows, start {rb['start']:.4f})"],
+            ["Backtest", f"{plan['mode']} · conf {plan['conf']} · M1 {rb['m1_csv'] or 'none'} · random baseline 20 · MC 1000"],
+            ["Stages", "Train PPO → Backtest → Chart"],
+        ]
+        existing = find_model_path(plan["model_name"], "auto")
+        return {"ok": True, "token": token, "summary": summary, "existing": str(existing) if existing else "",
+                "recipe_sha256": sha, "warnings": [], "command": " ".join(plan["train_cmd"][1:]),
+                "recipe": json.loads(json.dumps({"training": recipe, "pipeline": plan["context"]}, default=str)),
+                "model_name": plan["model_name"]}
+
+    def confirm_pipeline(self, token):
+        job = self._pending.pop(token, None)
+        if not job or "plan" not in job:
+            return {"ok": False, "error": "review expired — review the pipeline again"}
+        plan = job["plan"]
+        confirmed = list(plan["train_cmd"]) + ["--expected_recipe_sha256", job["sha"]]
+        stages = pipeform.pipeline_stages(plan, confirmed, python=self._python)
+        if not self._runner.start_sequence(stages, "pipeline"):
+            return {"ok": False, "error": "Another process is already running."}
+        self._train_total = plan["steps"]
+        self._run_info["pipeline"] = {"kind": "pipeline", "model": plan["model_name"], "bt_csv": plan["bt_csv"]}
+        self.start_pump()
+        self._emit([{"type": "start", "page": "pipeline", "stages": [n for n, _ in stages], "total": plan["steps"],
+                     "command": " ".join(confirmed[1:]), **self._run_info["pipeline"]}])
+        return {"ok": True}
+
+    def wf_from_train(self, train_form):
+        try:
+            return {"ok": True, **pipeform.wf_from_train(train_form)}
+        except commands.FormError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+
+    def start_walkforward(self, form):
+        try:
+            built = pipeform.build_wf_command(form, python=self._python)
+        except commands.FormError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        return self._start_page_run("walkfwd", built["cmd"], {"kind": "walkforward", "name": built["name"]})
+
+    def wf_chart(self, name):
+        import pipeline_shared
+        path = pipeline_shared.wf_chart_path(name, self._root)
+        if not path:
+            return {"ok": False, "error": "(chart not found)"}
+        try:
+            return {"ok": True, "name": path.name, "url": self._png_data(path, (1800, 1200))}
+        except Exception as exc:
+            return {"ok": False, "error": f"(chart load failed: {exc})"}
+
+    def ft_recipe(self, base):
+        import pipeline_shared
+        text, level = pipeline_shared.ft_recipe_hint(base)
+        return {"text": text, "level": level}
+
+    def start_finetune(self, form):
+        try:
+            built = pipeform.build_ft_command(form, python=self._python)
+        except commands.FormError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        return self._start_page_run("finetune", built["cmd"], {"kind": "finetune", "name": built["name"]})
 
     # ------------------------------------------------------------------ settings
     def _sfile(self, name):

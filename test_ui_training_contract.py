@@ -325,6 +325,131 @@ class DashboardContractTests(unittest.TestCase):
         self.assertEqual(self.app.stat_pf.value_label.cget("text"), cards["profit_factor"][0])
         self.assertEqual(self.app.stat_ret.value_label.cget("text"), cards["return"][0])
 
+    # ---- web GUI parity (phase 4): pipeline / walk-forward / fine-tune
+    def web_pipe_form(self, **over):
+        from webgui.pipeline import pipeline_defaults
+        f = pipeline_defaults()
+        f.update(csv=str(self.csv), bt_csv=str(self.csv), model_name="ui_pipe", steps="32", window="2", conf="0",
+                 train_pct="80", risk="0.01", max_pos="1", sl="2", tp="4", bt_start="auto",
+                 lr="0.0002", clip="0.15", ent="0.02", nsteps="16", nepochs="1", batch="8", gamma="0.97", gae="0.9",
+                 vf="0.6", max_hold="12", ep_len="32", net_arch="8", use_m1=bool(self.app.pipe_use_m1.get()))
+        f.update(over)
+        return f
+
+    def ctk_pipeline(self):
+        """CTk Run full pipeline -> (review cmd, context, hparams handed to the worker, stage commands)."""
+        with patch.object(self.app, "_review_training_command") as review, \
+                patch.object(self.app, "_launch_pipeline") as launch:
+            self.app._run_full_pipeline()
+            cmd, callback = review.call_args.args
+            context = review.call_args.kwargs["context"]
+            prepared = prepare(cmd)
+            self.app._resolve_pipeline_preview(prepared["recipe"], context)
+            frozen = cmd + ["--expected_recipe_sha256", prepared["recipe_sha256"]]
+            callback(frozen)                                    # still inside the patch: nothing launches
+            args = launch.call_args.args
+        stages = []
+        with patch.object(self.app, "_pipeline_run_cmd", side_effect=lambda c, *a: stages.append(list(c))), \
+                patch.object(self.app, "_pipeline_log"), \
+                patch.object(self.app, "after", side_effect=lambda delay, fn: fn()), \
+                patch.object(self.app, "_finish_pipeline"):
+            self.app._pipeline_worker(*args)
+        return cmd, context, prepared, frozen, stages
+
+    def web_pipeline(self, form, prepared):
+        import backtest_report
+        import pipeline_shared
+        from webgui.pipeline import build_pipeline, pipeline_stages
+        plan = build_pipeline(form, self.root)
+        frame = rl_app.validate_frame(pd.read_csv(self.root / plan["bt_csv"]), plan["bt_csv"])
+        pipeline_shared.resolve_backtest(prepared["recipe"], plan["context"], frame,
+                                         lambda c: backtest_report.find_matching_m1(c, self.root))
+        return plan, pipeline_stages(plan, list(plan["train_cmd"]) + ["--expected_recipe_sha256", prepared["recipe_sha256"]])
+
+    def test_web_pipeline_equals_ctk_defaults(self):
+        cmd, context, prepared, frozen, ctk_stages = self.ctk_pipeline()
+        plan, web_stages = self.web_pipeline(self.web_pipe_form(), prepared)
+        self.assertEqual(plan["train_cmd"], cmd)
+        self.assertEqual(plan["context"], context)
+        self.assertEqual([c for _n, c in web_stages], ctk_stages)
+        self.assertEqual([n for n, _c in web_stages], ["Train PPO", "Backtest", "Chart"])
+        self.assertEqual(ctk_stages[0], frozen)
+
+    def test_web_pipeline_equals_ctk_external_and_json(self):
+        external = self.root / "later.csv"
+        frame = data(120)
+        frame.timestamp += pd.Timedelta(days=200)
+        frame.to_csv(external, index=False)
+        app = self.app
+        app.pipe_bt_csv.set(str(external))
+        set_entry(app.pipe_reward_overrides, '{"trade_penalty":0.013}')
+        set_entry(app.pipe_reward_formula, "trade_closed_pnl * 30")
+        set_entry(app.pipe_action_params, '{"trail_atr_mult":2.7}')
+        set_entry(app.pipe_bt_start, "0.25")
+        set_entry(app.pipe_conf, "0.4")
+        app.pipe_bt_mode.set("Agent + SL/TP")
+        app.pipe_action_profile.set(rl_app.ACTION_PROFILES["manage_6"]["label"])
+        try:
+            cmd, context, prepared, frozen, ctk_stages = self.ctk_pipeline()
+            plan, web_stages = self.web_pipeline(self.web_pipe_form(
+                bt_csv=str(external), reward_overrides='{"trade_penalty":0.013}', reward_formula="trade_closed_pnl * 30",
+                action_params='{"trail_atr_mult":2.7}', bt_start="0.25", conf="0.4", bt_mode="agent_sltp",
+                action_profile="manage_6"), prepared)
+        finally:
+            app.pipe_bt_mode.set("Pure Agent")
+            app.pipe_action_profile.set(rl_app.ACTION_PROFILES["basic_4"]["label"])
+        self.assertEqual(plan["train_cmd"], cmd)
+        self.assertIn("--eval_csv", cmd)
+        self.assertEqual(plan["context"], context)
+        self.assertEqual([c for _n, c in web_stages], ctk_stages)
+
+    def test_web_pipeline_rejects_what_ctk_rejects(self):
+        from webgui.commands import FormError
+        from webgui.pipeline import build_pipeline
+        for key, raw in (("steps", "1.5"), ("conf", "2"), ("bt_start", "100%"), ("batch", "64"), ("net_arch", "8,x"),
+                         ("reward_overrides", "{bad"), ("action_params", '{"nope":1}'), ("model_name", "///")):
+            with self.assertRaises(FormError, msg=key):
+                build_pipeline(self.web_pipe_form(**{key: raw}), self.root)
+
+    def test_web_walkforward_equals_ctk_after_copy_from_train(self):
+        from webgui.pipeline import build_wf_command, wf_defaults, wf_from_train
+        app = self.app
+        app.train_reward_json_overrides = {"trade_penalty": .012}
+        app._apply_train_reward_overrides_to_controls({"trade_penalty": .012})
+        app._wf_copy_from_train()
+        app.wf_csv.set(str(self.csv))
+        for k, v in (("windows", "3"), ("steps", "64"), ("name", "wf_parity")):
+            set_entry(getattr(app, "wf_" + k), v)
+        with patch.object(app, "_start_runner") as runner:
+            app._run_walkforward()
+        ctk = runner.call_args.args[0]
+        from reward_profiles import REWARD_PROFILES
+        copied = wf_from_train(self.web_form(reward_values=dict(REWARD_PROFILES["balanced"]["params"], trade_penalty=.012)))
+        form = dict(wf_defaults(), csv=str(self.csv), windows="3", steps="64", name="wf_parity",
+                    **{k: v for k, v in copied.items() if k != "hint"})
+        self.assertEqual(build_wf_command(form)["cmd"], ctk)
+
+    def test_web_finetune_equals_ctk(self):
+        from webgui.commands import FormError
+        from webgui.pipeline import build_ft_command, ft_defaults
+        app = self.app
+        app.ft_base.set("base")
+        app.ft_old.set(str(self.csv))
+        app.ft_new.set(str(self.csv))
+        app.ft_mode.set("replay (all old+new)")
+        for k, v in (("mix", "25%"), ("lr", "5e-5"), ("steps", "1,000"), ("name", "base_ft")):
+            set_entry(getattr(app, "ft_" + k), v)
+        try:
+            with patch.object(app, "_start_runner") as runner:
+                app._run_finetune()
+        finally:
+            app.ft_mode.set("mixed (old+new ⭐)")
+        form = dict(ft_defaults(), base="base", old_csv=str(self.csv), new_csv=str(self.csv), mode="replay",
+                    mix="25%", lr="5e-5", steps="1,000", name="base_ft")
+        self.assertEqual(build_ft_command(form)["cmd"], runner.call_args.args[0])
+        with self.assertRaises(FormError):
+            build_ft_command(dict(form, name="BASE"))                  # same name as the base, case-insensitive
+
     def test_pipeline_external_eval_and_overrides_metadata(self):
         external = self.root/"later.csv"
         frame = data(120)

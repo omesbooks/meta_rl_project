@@ -127,3 +127,17 @@ body.deep .term { background: rgba(3,7,16,.85); }
 .rep tr.sep td { padding: 2px; border-bottom: 2px solid var(--line); }
 .reptxt { font: 11.5px/1.5 var(--mono); background: rgba(15,26,43,.06); border-radius: 10px; padding: 10px; overflow: auto; white-space: pre; }
 body.deep .reptxt { background: rgba(0,0,0,.3); }
+
+/* ---- phase 4: Pipeline / Walk-Forward / Fine-tune ---- */
+.stages { display: flex; gap: 8px; margin: 12px 0 10px; flex-wrap: wrap; }
+.stages span { padding: 6px 14px; border-radius: 10px; font: 600 12px var(--hud); letter-spacing: .04em; color: var(--dim);
+  background: rgba(255,255,255,.5); border: 1px solid rgba(255,255,255,.85); }
+.stages span.on { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--acc) 15%, transparent); }
+.stages span.done { color: var(--green); background: color-mix(in srgb, var(--green) 12%, rgba(255,255,255,.55)); }
+.stages span.failed { color: var(--red); background: color-mix(in srgb, var(--red) 12%, rgba(255,255,255,.55)); }
+.verdict { display: flex; align-items: center; gap: 16px; margin: 14px 0; padding: 14px 18px; border-radius: 14px;
+  background: rgba(255,255,255,.5); border: 1px solid rgba(255,255,255,.85); }
+.verdict .ic { font-size: 34px; line-height: 1; } .verdict b { display: block; font: 700 18px var(--hud); letter-spacing: .06em; }
+.verdict span { font-size: 12px; color: var(--dim); }
+.verdict.good b { color: var(--green); } .verdict.warn b { color: var(--amber); } .verdict.bad b { color: var(--red); }
+body.deep .stages span, body.deep .verdict { background: rgba(255,255,255,.04); border-color: rgba(140,170,220,.14); }

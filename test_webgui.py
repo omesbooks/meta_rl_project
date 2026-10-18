@@ -237,3 +237,36 @@ def test_backtest_api_errors_name_the_field(tmp_path):
     assert api.backtest_report("zz_never_trained")["missing"] is True
     cat = Api(ROOT).backtest_catalog()
     assert cat["m1_options"][0] == "(none)" and not any(d.endswith("_m1.csv") for d in cat["datasets"])
+
+
+# ---------------------------------------------------------------- phase 4: Pipeline / Walk-Forward / Fine-tune
+def test_runner_sequence_is_gated_on_exit_code():
+    r = Runner(ROOT)
+    stages = [("A", [sys.executable, "-c", "print('a')"]), ("B", [sys.executable, "-c", "raise SystemExit(2)"]),
+              ("C", [sys.executable, "-c", "print('never')"])]
+    assert r.start_sequence(stages, "pipeline")
+    assert not r.start([sys.executable, "-c", "print(1)"], "train")            # busy for the whole sequence
+    got = []
+    for _ in range(200):
+        got += r.drain()
+        if got and got[-1][0] == "done":
+            break
+        time.sleep(0.05)
+    kinds = [(k, d.get("name") if isinstance(d, dict) else d) for k, _p, d in got]
+    assert ("stage", "A") in kinds and ("stage_done", "A") in kinds and ("stage", "B") in kinds
+    assert ("stage", "C") not in kinds and ("line", "never") not in kinds
+    assert got[-1][2] == {"rc": 2, "cancelled": False, "failed_stage": "B"} and not r.is_running()
+
+
+def test_walkforward_lines_and_flow_errors(tmp_path):
+    ev = logparse.event("WF_PROGRESS 2 4 window 1/2 test", "walkfwd")
+    assert ev["wf"] == {"progress": [2, 4, "window 1/2 test"]}
+    v = logparse.event("VERDICT: NOT ROBUST - 1/5 windows passed", "walkfwd")["wf"]["verdict"]
+    assert (v["title"], v["tone"]) == ("NOT ROBUST", "bad")
+    assert logparse.event("VERDICT: ROBUST", "walkfwd")["wf"]["verdict"]["title"] == "ROBUST"
+    assert "progress" in logparse.event("|    total_timesteps      | 2048       |", "pipeline", total=4096)
+    api = Api(tmp_path)
+    assert api.review_pipeline({"csv": ""})["field"] == "pipe_csv"
+    assert api.start_walkforward({"csv": ""})["field"] == "wf_csv"
+    assert api.start_finetune({"base": "m", "old_csv": "a.csv", "new_csv": "b.csv", "name": "M", "steps": "10", "mix": "0.3", "lr": "1e-4"})["field"] == "name"
+    assert not api.busy()

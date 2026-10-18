@@ -71,17 +71,34 @@ def viz(line):
             "step": int(m.group(3)), "path": m.group(4)}
 
 
+def walkforward(line):
+    """WF_PROGRESS + verdict (rl_walkforward.py stdout) -> {"progress": [cur, total, label]?, "verdict": {...}?}."""
+    import pipeline_shared
+    out = {}
+    prog = pipeline_shared.parse_wf_progress(line)
+    if prog:
+        out["progress"] = list(prog)
+    v = pipeline_shared.wf_verdict(line)
+    if v:
+        out["verdict"] = {"icon": v[0], "title": v[1], "tone": v[2], "sub": v[3]}
+    return out or None
+
+
 def event(line, page="train", total=None):
     """One stdout line -> event dict for the page (keys only present when they apply)."""
     ev = {"type": "line", "page": page, "line": line, "cls": classify(line)}
-    if page == "train":
-        p = progress(line, total)
+    if page == "walkfwd":
+        w = walkforward(line)
+        if w:
+            ev["wf"] = w
+    if page in ("train", "pipeline", "finetune"):
+        p = progress(line, total if page != "finetune" else None)
         if p:
             ev["progress"] = {"step": p[0], "total": p[1]}
         m = metric(line)
         if m:
             ev["metric"] = m
-        v = viz(line)
+        v = viz(line) if page == "train" else None
         if v:
             ev["viz"] = v
     return ev

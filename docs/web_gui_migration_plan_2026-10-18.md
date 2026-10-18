@@ -135,3 +135,18 @@ CLI scripts, TradingEnv/recipes, artifact layout, MQL/EA export, tests of the en
   e2e (window placed off-screen and captured with PrintWindow, so the user's screen is never touched):
   stored report, M1 auto pick, skip preview, explicit '(none)' kept, bad confidence → field marked, a real
   backtest of web_e2e_tmp3 → ✓ complete, 95 log lines, report rendered (PF 0.99, WR 53.7%).
+- 2026-10-18 — **phase 4 done**: Pipeline, Walk-Forward and Fine-tune live in the web GUI. `pipeline_shared.py`
+  (stage commands, review-time backtest range, split preview, WF progress/verdict, FT hints; moved out of
+  rl_app.py, which delegates) + `webgui/pipeline.py` (forms → commands). Runner gained `start_sequence`
+  (stage events, stops at the first failing stage, busy for the whole sequence). Pipeline page: Train/Backtest
+  CSV (backtest follows `_train`→`_test`), M1 auto, split preview, suggested steps, backtest settings, profiles,
+  PPO presets + 12 hyperparameters + JSON extras, review modal (recipe + resolved backtest range + stages),
+  stage chips, overall progress, live metric KPIs + reward trend, Open report (jumps to Backtest) / Open chart.
+  Walk-Forward: full config, ⧉ Copy settings from Train (hidden extras, cleared on a manual profile change like
+  the CTk page), progress, verdict box, chart. Fine-tune: base model + inherited-recipe hint, old/new CSV,
+  mode hint, same-name guard. Relabel is not a stage: the CTk pipeline hard-codes relabel/build off, so the
+  exit test ran Train PPO → Backtest → Chart. Parity tests: pipeline (defaults; external eval CSV + JSON
+  extras + manage_6 + SL/TP mode + fixed skip; invalid inputs), walk-forward after copy-from-train, fine-tune.
+  Suite 63 passed. Real-window e2e (off-screen + PrintWindow): pipeline on the smoke CSV → all 3 stages done,
+  290 log lines, report opened via the button; walk-forward 2 windows → UNSTABLE + chart; fine-tune → refuses
+  the base name, rejects overlapping old/new data (engine rule), completes on split old/new CSVs.

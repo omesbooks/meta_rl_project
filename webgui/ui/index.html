@@ -11,11 +11,11 @@
   <nav id="side" class="glass">
     <div class="brand"><div class="logo" id="brandLogo"></div><div><b id="brandText">RL TRADING STUDIO</b><span id="brandSub">MetaFXClub · web</span></div></div>
     <a data-p="tools">🛠️ Data Tools<span class="cl">classic</span></a>
-    <a data-p="pipeline">▶ Pipeline<span class="cl">classic</span></a>
+    <a data-p="pipeline">▶ Pipeline</a>
     <a data-p="train" class="on">🎯 Train</a>
     <a data-p="backtest">📊 Backtest</a>
-    <a data-p="walkfwd">🔬 Walk-Forward<span class="cl">classic</span></a>
-    <a data-p="finetune">🔄 Fine-tune<span class="cl">classic</span></a>
+    <a data-p="walkfwd">🔬 Walk-Forward</a>
+    <a data-p="finetune">🔄 Fine-tune</a>
     <a data-p="analyze">🔍 Analyze<span class="cl">classic</span></a>
     <a data-p="regime">🌐 Regime Check<span class="cl">classic</span></a>
     <a data-p="models">🗂️ Models</a>
@@ -107,6 +107,125 @@
         </details>
       </div>
 
+    </section>
+
+    <!-- ================================================================ PIPELINE -->
+    <section class="page" id="p-pipeline">
+      <div class="card glass"><h3>RUN ONE FLOW · <b>dataset → train PPO → OOS backtest → chart/report</b></h3>
+        <div class="row c2" style="gap:18px">
+          <div class="f">
+            <label>Train CSV</label><select id="pipe_csv"></select>
+            <span class="hint" id="pipe_data_hint">Rows: - | Suggested steps: -</span>
+            <label>Model name</label><input id="pipe_model_name">
+            <label>Backtest CSV</label><select id="pipe_bt_csv"></select>
+            <label>M1 replay</label><label class="chk"><input type="checkbox" id="pipe_use_m1"> <span id="pipe_m1_hint">M1 replay: (เลือก CSV ก่อน)</span></label>
+            <label>Train pct</label><input id="pipe_train_pct">
+            <span class="hint" id="pipe_split" style="white-space:pre-line">Select Train CSV to preview split</span>
+            <label>Train steps</label><div class="inl"><input id="pipe_steps"><button class="sm" id="pipe_use_steps" disabled>Use suggested</button></div>
+            <label>Window size</label><input id="pipe_window">
+          </div>
+          <div class="f">
+            <label>Backtest confidence</label><input id="pipe_conf">
+            <label>Backtest mode</label><select id="pipe_bt_mode"><option value="pure_agent">Pure Agent</option><option value="agent_sltp">Agent + SL/TP</option></select>
+            <label>Backtest skip %</label><input id="pipe_bt_start" placeholder="auto">
+            <span class="hint">auto = start at the recipe's unseen Test slice (fixed at review time)</span>
+            <label>Risk fraction · Max positions</label><div class="inl"><input id="pipe_risk"><input id="pipe_max_pos"></div>
+            <label>ATR SL / TP</label><div class="inl"><input id="pipe_sl"><input id="pipe_tp"></div>
+            <label>Reward Profile</label><select id="pipe_reward_profile"></select>
+            <label>Action Profile</label><select id="pipe_action_profile"></select>
+            <span class="hint">Changing Action Profile changes the model output dimension, so train a new model after changing it.</span>
+          </div>
+        </div>
+        <details id="pipeAdv"><summary>PPO HYPERPARAMETERS · REWARD / ACTION JSON</summary>
+          <div class="inl" style="margin-bottom:10px"><span class="meta">Quick presets:</span>
+            <button class="sm" data-pipe-preset="default">Default</button><button class="sm" data-pipe-preset="stable">Stable</button>
+            <button class="sm" data-pipe-preset="fast">Fast</button><button class="sm" data-pipe-preset="explore">Explore</button></div>
+          <div class="sliders" id="pipeHp"></div>
+          <div class="f" style="margin-top:12px">
+            <label>Reward mode</label><select id="pipe_reward_mode"><option value="realized">realized (recommended)</option><option value="mtm">mtm</option></select>
+            <label>Reward overrides JSON</label><input id="pipe_reward_overrides" class="mono" placeholder="e.g. {&quot;trade_penalty&quot;: 0.01}">
+            <label>Reward formula (optional)</label><input id="pipe_reward_formula" class="mono" placeholder="blank = preset reward">
+            <label>Action params JSON</label><input id="pipe_action_params" class="mono" placeholder="e.g. {&quot;trail_atr_mult&quot;: 3.0}">
+          </div>
+        </details>
+      </div>
+      <div class="row c2">
+        <div class="card glass"><h3>RUN · <b id="pipe_status_hdr">pipeline</b></h3>
+          <div class="inl"><button class="p" id="pipe_run" data-run>▶ Run full pipeline</button><button class="d" id="pipe_stop" data-stop disabled>⏹ Stop</button>
+            <span style="flex:1"></span><button class="sm" id="pipe_open_report" disabled>📊 Open report</button><button class="sm" id="pipe_open_chart" disabled>🌐 Open chart</button></div>
+          <div class="stages" id="pipe_stages"><span>Train PPO</span><span>Backtest</span><span>Chart</span></div>
+          <div class="prog"><i id="pipe_bar"></i></div>
+          <div class="meta" id="pipe_status" style="margin-top:6px">Idle</div>
+          <div class="term" id="pipe_log"></div>
+        </div>
+        <div class="card glass"><h3>LIVE METRIC HEALTH · <b>Train PPO stage</b></h3>
+          <div class="kpis" id="pipe_health"></div>
+          <h3 style="margin-top:16px">REWARD TREND · <b>ep_rew_mean per update</b></h3>
+          <svg id="pipe_trend" viewBox="0 0 600 140" height="140" style="width:100%"></svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================ WALK-FORWARD -->
+    <section class="page" id="p-walkfwd">
+      <div class="card glass"><h3>CONFIGURATION · <b>retrain per window, test OOS</b></h3>
+        <div class="meta" style="margin-bottom:12px">No model dropdown here: this page trains fresh temporary models for each window. Use Backtest + Skip % to test an existing saved model. Test slices do not overlap; rolling train slices overlap by design.</div>
+        <div class="row c2" style="gap:18px">
+          <div class="f">
+            <label>Dataset</label><select id="wf_csv"></select>
+            <label>Windows (test rounds)</label><input id="wf_windows"><span class="hint">จำนวนช่วง OOS ที่จะ retrain/test เช่น 5 = 5 รอบ</span>
+            <label>Steps / window</label><input id="wf_steps"><span class="hint">จำนวน training steps ต่อ 1 รอบ walk-forward</span>
+            <label>Window size</label><input id="wf_window"><span class="hint">จำนวนแท่งย้อนหลังที่โมเดลเห็นก่อนตัดสินใจ เช่น H4 10 = ~40 ชม.</span>
+            <label>Output name</label><input id="wf_name">
+          </div>
+          <div class="f">
+            <label>Action Profile</label><select id="wf_action_profile"></select>
+            <label>Reward mode</label><select id="wf_reward_mode"><option value="realized">realized (recommended)</option><option value="mtm">mtm</option></select>
+            <label>Reward Profile</label><select id="wf_reward_profile"></select>
+            <label>Max Hold (bars)</label><input id="wf_max_hold">
+            <label>Correlation threshold</label><input id="wf_corr" placeholder="from CSV"><span class="hint">ต้องตรงกับหน้า Train · ปล่อยว่าง = ใช้ค่าจาก .features.json ของ CSV (หรือ 1 = ไม่ตัด)</span>
+          </div>
+        </div>
+        <div class="inl" style="margin:14px 0 8px"><span class="meta">PPO Hyperparameters (ต้องตรงกับตอน Train ถึงจะ validate สูตรเดียวกัน)</span><span style="flex:1"></span><button class="sm" id="wf_copy">⧉ Copy settings from Train</button></div>
+        <div class="hint" id="wf_recipe_hint" style="margin:0 0 10px">Reward overrides / action params / formula: (none) — กด ⧉ Copy settings from Train เพื่อดึงมาพร้อมกัน</div>
+        <div class="sliders" id="wfPpo"></div>
+      </div>
+      <div class="card glass"><h3>RESULTS</h3>
+        <div class="inl"><button class="p" id="wf_run" data-run>▶ Start Walk-Forward Retrain</button><button class="d" id="wf_stop" data-stop disabled>⏹ Stop</button><span class="meta" id="wf_prog_label">Progress: 0.0%</span></div>
+        <div class="prog" style="margin-top:10px"><i id="wf_bar"></i></div>
+        <div class="verdict" id="wf_verdict"><div class="ic">—</div><div><b>Not started</b><span></span></div></div>
+        <div id="wf_chart" class="eq" style="min-height:0"></div>
+        <div class="term" id="wf_log"></div>
+      </div>
+    </section>
+
+    <!-- ================================================================ FINE-TUNE -->
+    <section class="page" id="p-finetune">
+      <div class="row c2">
+        <div class="card glass"><h3>BASE MODEL · <b>recipe is inherited</b></h3>
+          <div class="f">
+            <label>Existing model</label><select id="ft_base"></select>
+            <span class="hint" id="ft_recipe">เลือก base model เพื่อดูสูตรที่จะสืบทอด (reward / action / window / max hold)</span>
+            <label>Old data CSV</label><select id="ft_old_csv"></select>
+            <label>New data CSV</label><select id="ft_new_csv"></select>
+          </div>
+        </div>
+        <div class="card glass"><h3>SETTINGS</h3>
+          <div class="f">
+            <label>Mode</label><select id="ft_mode"></select>
+            <span class="hint" id="ft_mode_hint"></span>
+            <label>Mix ratio (old, 0-1 or %)</label><input id="ft_mix">
+            <label>Learning rate</label><input id="ft_lr">
+            <label>Steps</label><input id="ft_steps">
+            <label>New model name</label><input id="ft_name">
+          </div>
+        </div>
+      </div>
+      <div class="card glass"><h3>RUN · <b>rl_finetune.py</b></h3>
+        <div class="inl"><button class="p" id="ft_run" data-run>▶ Start Fine-tuning</button><button class="d" id="ft_stop" data-stop disabled>⏹ Stop</button><span class="meta" id="ft_status">Ready</span></div>
+        <div class="prog" style="margin-top:10px"><i id="ft_bar"></i></div>
+        <div class="term" id="ft_log"></div>
+      </div>
     </section>
 
     <!-- ================================================================ BACKTEST -->
@@ -233,5 +352,6 @@
 <script src="app.js"></script>
 <script src="pages.js"></script>
 <script src="backtest.js"></script>
+<script src="flows.js"></script>
 </body>
 </html>

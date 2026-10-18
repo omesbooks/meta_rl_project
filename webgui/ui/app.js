@@ -226,6 +226,7 @@ async function init() {
   $("openClassic").onclick = () => api().open_classic();
   await window.rlpages.init();
   if (window.rlbacktest) await window.rlbacktest.init();
+  if (window.rlflows) await window.rlflows.init();
   setBusy(await api().busy());
   window.__rlweb_ready = true;
 }

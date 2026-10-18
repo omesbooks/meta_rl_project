@@ -37,8 +37,13 @@ def resolve_viz_dir(run_dir=None, model=None):
         from artifact_paths import model_dir
         run_dir = model_dir(model)
     p = Path(run_dir).resolve()
-    if (p / "viz").is_dir() or not (p / "index.json").exists():
-        p = p / "viz"
+    # accept the run folder or its viz/ folder. Before the first evaluation only
+    # rollout_*.json / monitor.json exist (no index.json), so never descend by that test:
+    # a viz dir passed in stayed "waiting for training data" forever (seen 2026-10-18).
+    if p.name == "viz":
+        return p
+    if (p / "viz").is_dir():
+        return p / "viz"
     return p
 
 

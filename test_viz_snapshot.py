@@ -258,3 +258,13 @@ def test_attribution_is_gradient_times_input_and_lands_in_snapshots():
     assert abs(sum(snap["attr_feature"]) - 1) < 1e-3 and abs(sum(snap["attr_lag"]) + sum(snap["attr_feature"][len(FEATS):]) - 1) < 1e-3
     assert snap["attr_top"][0][0] in snap["input_names"][0].split("@")[0:1] + FEATS + ["position", "unrealized_pnl", "bars_in_position"]
     assert "top_features" in snap_mod.summary(snap)
+
+
+def test_live_viewer_resolves_a_viz_dir_before_the_first_eval(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("lv2", ROOT / "tools" / "viz" / "live_viewer.py")
+    lv = importlib.util.module_from_spec(spec); spec.loader.exec_module(lv)
+    run = tmp_path / "runs" / "r1"; viz = run / "viz"; viz.mkdir(parents=True)
+    (viz / "rollout_meta.json").write_text("{}")                 # rollouts exist, no index.json yet
+    assert lv.resolve_viz_dir(run_dir=viz) == viz.resolve()      # the GUI passes the viz folder
+    assert lv.resolve_viz_dir(run_dir=run) == viz.resolve()      # or the run folder

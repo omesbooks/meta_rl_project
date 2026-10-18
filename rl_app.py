@@ -5691,7 +5691,7 @@ class RLTradingStudio(ctk.CTk):
         self.train_viz_mode = ctk.CTkOptionMenu(
             btn_row, values=["Lite (low CPU)", "Cinematic", "Dashboard (lowest CPU)", "Monitor (verdicts)"], width=150, height=30,
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
-        self.train_viz_mode.set("Lite (low CPU)")
+        self.train_viz_mode.set("Monitor (verdicts)")
         self.train_viz_mode.pack(side="left", padx=(0, 8))
         self.train_viz_btn = ctk.CTkButton(
             btn_row, text="◉ Open Visual", command=self._open_live_visual,

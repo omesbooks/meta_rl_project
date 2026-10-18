@@ -474,25 +474,25 @@ class DashboardContractTests(unittest.TestCase):
             self.app._handle_log_line(f"  12%|#   | VIZ_SNAPSHOT 1 20000 {viz_dir / 'snap_001.json'}", page="train")
             self.assertEqual(popen.call_count, 1)
             args = popen.call_args.args[0]
-            self.assertEqual(args[1:], [str(script), "--run_dir", str(viz_dir), "--mode", "lite"])
+            self.assertEqual(args[1:], [str(script), "--run_dir", str(viz_dir), "--mode", "monitor"])
             self.assertIn("eval 2 @ 20,000", self.app.train_viz_status.cget("text"))
             self.app.train_viz_mode.set("Cinematic")
             try:
                 self.app._open_live_visual()          # reopen the current run in Cinematic
             finally:
-                self.app.train_viz_mode.set("Lite (low CPU)")
+                self.app.train_viz_mode.set("Monitor (verdicts)")
             self.assertEqual(popen.call_args.args[0][-2:], ["--mode", "cinematic"])
             self.app.train_viz_mode.set("Dashboard (lowest CPU)")
             try:
                 self.app._open_live_visual()
             finally:
-                self.app.train_viz_mode.set("Lite (low CPU)")
+                self.app.train_viz_mode.set("Monitor (verdicts)")
             self.assertEqual(popen.call_args.args[0][-2:], ["--mode", "dashboard"])
             self.app.train_viz_mode.set("Monitor (verdicts)")
             try:
                 self.app._open_live_visual()
             finally:
-                self.app.train_viz_mode.set("Lite (low CPU)")
+                self.app.train_viz_mode.set("Monitor (verdicts)")
             self.assertEqual(popen.call_args.args[0][-2:], ["--mode", "monitor"])
             self.app._close_viz_window()
             self.assertGreaterEqual(popen.return_value.terminate.call_count, 1)

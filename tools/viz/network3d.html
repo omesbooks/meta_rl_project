@@ -55,7 +55,7 @@
   body.dash #gl, body.dash #labels, body.dash #stats, body.dash #chartLbl, body.dash #pxHi,
   body.dash #pxLo, body.dash #idle, body.dash .c3d, body.dash #rstats { display: none !important; }
   #mon { display: none; } body.mon #mon { display: block; }
-  body.mon #dash, body.mon #timeline { display: none !important; }
+  body.mon #dash, body.mon #timeline, body.mon #title, body.mon #banner { display: none !important; }
   #banner { position: fixed; top: 74px; left: 50%; transform: translateX(-50%); pointer-events: none;
             font: 700 16px var(--hud); letter-spacing: .3em; color: var(--gold); text-shadow: 0 0 14px var(--gold);
             opacity: 0; transition: opacity .35s; white-space: nowrap; }
@@ -667,8 +667,10 @@ async function poll() {
   } catch (e) { /* eval-only run (older folder or DQN) */ }
   try {
     const r = await fetch(`run/monitor.json?t=${Date.now()}`, { cache: "no-store" });
-    if (r.ok) { monData = await r.json(); monUpdate(false); }
+    if (r.ok) { monData = await r.json(); }
   } catch (e) { /* no monitor rows yet */ }
+  if (mode === "monitor" && (pollN++ % 4 === 0)) await loadPeers();     // sibling seeds every ~10 s
+  monUpdate(false);
   if (last && ((follow && last.i !== loadedI) || loadedI < 0)) await loadSnap(last);
   if ((index.length || haveRollout) && $("timeline").style.display !== "flex") { $("timeline").style.display = "flex"; layoutChart(); }
   renderTimeline();
@@ -813,7 +815,7 @@ function applyMode(name) {
   $("iMode").value = name;
   document.body.classList.toggle("dash", isPanel(name));
   document.body.classList.toggle("mon", name === "monitor");
-  if (isPanel(name)) { sleep("dashboard"); dashUpdate(); monUpdate(); return; }
+  if (isPanel(name)) { sleep("dashboard"); dashUpdate(); if (name === "monitor") loadPeers().then(() => monUpdate()); else monUpdate(); return; }
   if (leavingDash && idle) { idle = false; idleReason = ""; lastT = performance.now(); lastDraw = 0; requestAnimationFrame(frame); }
   bloom.enabled = OPT.bloom; K = OPT.k; fpsCap = OPT.fps;
   renderer.setPixelRatio(Math.min(OPT.dpr, 2, devicePixelRatio || 1));
@@ -856,14 +858,28 @@ function dashUpdate(force = true) {
   dash.render({ index, snap: evalD, selectedI: loadedI });
 }
 const mon = createMonitor($("mon"));
-let monData = null, monKey = "";
+let monData = null, monKey = "", pollN = 0, peers = [];
+async function loadPeers() {
+  try {
+    const r = await fetch(`peers.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const list = (await r.json()).peers || [];
+    const out = [];
+    for (const p of list) {
+      const get = async f => { try { const q = await fetch(`peer/${p.k}/${f}?t=${Date.now()}`, { cache: "no-store" }); return q.ok ? await q.json() : null; } catch (e) { return null; } };
+      const [ix, mo] = await Promise.all([get("index.json"), get("monitor.json")]);
+      out.push({ name: p.name, index: (ix && ix.snapshots) || [], rows: (mo && mo.rows) || [] });
+    }
+    peers = out;
+  } catch (e) { /* peers are optional */ }
+}
 function monUpdate(force = true) {
-  if (mode !== "monitor" || !monData) return;
-  const rows = monData.rows || [];
-  const key = `${rows.length}:${rows.length ? rows[rows.length - 1].seq : -1}:${index.length}`;
+  if (mode !== "monitor") return;
+  const rows = (monData && monData.rows) || [];
+  const key = `${rows.length}:${rows.length ? rows[rows.length - 1].seq : -1}:${index.length}:${peers.map(p => p.index.length + "/" + p.rows.length).join(",")}`;
   if (!force && key === monKey) return;
   monKey = key;
-  mon.render({ rows, meta: monData, index });
+  mon.render({ rows, meta: monData || {}, index, peers });
 }
 let dashResize = 0;
 addEventListener("resize", () => { clearTimeout(dashResize); dashResize = setTimeout(() => { if (mode === "dashboard") dash.rerender(); if (mode === "monitor") mon.rerender(); }, 200); });

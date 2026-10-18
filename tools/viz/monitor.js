@@ -4,7 +4,10 @@
 // so nothing here is a black box. No render loop: redrawn only when a new row arrives.
 const C = { cyan: "#19e6ff", mag: "#ff2e88", green: "#00ffa3", gold: "#ffc53d", dim: "#5d6b8a", fg: "#d9e7ff", orange: "#ff8a1f", purple: "#b48cff" };
 const CSS = `
-  #mon { position: fixed; inset: 0; overflow: auto; padding: 96px 24px 72px; font-family: var(--hud); color: var(--fg); }
+  #mon { position: fixed; inset: 0; overflow: auto; padding: 22px 24px 72px; font-family: var(--hud); color: var(--fg); }
+  #mon .mtitle { max-width: 1700px; margin: 0 auto 12px; display: flex; align-items: baseline; gap: 16px; }
+  #mon .mtitle h1 { margin: 0; font: 700 20px/1 var(--hud); letter-spacing: .32em; color: var(--cyan); text-shadow: 0 0 8px var(--cyan); }
+  #mon .mtitle span { font-size: 12px; letter-spacing: .14em; color: var(--dim); }
   #mon .mgrid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; max-width: 1700px; margin: 0 auto; }
   #mon .mcard { background: rgba(6, 10, 24, .78); border: 1px solid rgba(25, 230, 255, .16); border-radius: 12px; padding: 12px 14px; min-width: 0; }
   #mon .mcard h3 { margin: 0 0 8px; font: 600 10px/1 var(--hud); letter-spacing: .26em; color: var(--dim); }
@@ -25,6 +28,9 @@ const CSS = `
   #mon th { color: var(--dim); font-weight: 600; letter-spacing: .08em; font-size: 10px; } #mon td:first-child, #mon th:first-child { text-align: left; }
   #mon svg { display: block; width: 100%; } #mon .lab { font-size: 11px; color: var(--dim); margin-top: 6px; }
   #mon .empty { color: var(--dim); font-size: 13px; padding: 30px 0; text-align: center; letter-spacing: .1em; }
+  #mon .tl { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+  #mon .tl .p { background: rgba(255,255,255,.025); border-radius: 8px; padding: 6px 8px; } #mon .tl .p .k { font: 600 10px/1 var(--hud); letter-spacing: .2em; color: var(--dim); margin-bottom: 4px; }
+  #mon .leg { font-size: 11px; color: var(--dim); margin-top: 6px; } #mon .leg i { display: inline-block; width: 14px; height: 3px; margin: 0 5px 2px 10px; }
 `;
 
 const fmt = (v, d = 2, suf = "") => (v == null || !Number.isFinite(v)) ? "–" : (v > 0 && suf ? "+" : "") + v.toFixed(d) + suf;
@@ -107,7 +113,7 @@ export function verdicts(rows, meta) {
 
 export function createMonitor(root) {
   if (!document.getElementById("mon-css")) { const st = document.createElement("style"); st.id = "mon-css"; st.textContent = CSS; document.head.appendChild(st); }
-  root.innerHTML = `<div class="mgrid">
+  root.innerHTML = `<div class="mtitle"><h1>TRAINING MONITOR</h1><span id="mSub">stop or keep going? — every verdict shows the number and threshold it rests on</span></div><div class="mgrid">
     <div class="mcard s12"><h3>VERDICTS · <b id="mHdr">waiting for the first rollout</b></h3><div class="chips" id="mChips"><div class="empty">no rollout yet</div></div></div>
     <div class="mcard s12"><h3>LAST 20 ROLLOUTS · <b>pooled</b></h3><div class="kpis" id="mKpi"></div></div>
     <div class="mcard s6"><h3>COUNTERFACTUAL · <b>same bars, fixed rule vs agent</b></h3><div id="mCf"></div><div class="lab" id="mCfLab"></div></div>
@@ -118,6 +124,8 @@ export function createMonitor(root) {
     <div class="mcard s4"><h3>AGENT PNL PER TRADE (BP)</h3><svg id="mS4" height="90"></svg></div>
     <div class="mcard s4"><h3>SELECTION EDGE (ACCEPTED − SKIPPED, BP)</h3><svg id="mS5" height="90"></svg></div>
     <div class="mcard s4"><h3>ACTION ENTROPY (NATS)</h3><svg id="mS6" height="90"></svg></div>
+    <div class="mcard s12"><h3>BEHAVIOUR OVER TRAINING · <b id="mTlHdr">per evaluation (validation, greedy) · this run bold, sibling seeds thin</b></h3><div class="tl" id="mTlEval"></div></div>
+    <div class="mcard s12"><h3>TRAINING ROLLOUTS · <b id="mTrHdr">per rollout, 5-rollout mean · this run bold, sibling seeds thin</b></h3><div class="tl" id="mTlTrain"></div></div>
     <div class="mcard s12"><h3>EVALUATIONS · <b id="mEvHdr">validation slice, greedy policy</b></h3><div id="mEv"></div></div>
   </div>`;
   const $ = id => root.querySelector("#" + id);
@@ -138,12 +146,71 @@ export function createMonitor(root) {
       `<text x="${pad}" y="12" fill="${C.dim}" font-size="10">${xs.length} rollouts</text>`;
   }
 
+  const PEER_COLORS = [C.cyan, C.gold, C.green, C.mag, C.purple, C.orange, "#7dff6b", "#9fb3d9"];
+  function roll(xs, k = 5) { return xs.map((_, i) => { const w = xs.slice(Math.max(0, i - k + 1), i + 1).filter(Number.isFinite); return w.length ? sum(w) / w.length : NaN; }); }
+  // small multiples: one panel per metric, one polyline per run (x = training step)
+  function timelines(el, runs, metrics, { zero = {} } = {}) {
+    const have = runs.filter(r => r.pts && r.pts.length);
+    if (!have.length) { el.innerHTML = `<div class="empty">nothing yet</div>`; return; }
+    const w = Math.max(220, Math.floor((el.clientWidth || 900) / Math.min(3, metrics.length)) - 24), h = 84, pad = 6;
+    el.innerHTML = metrics.map(m => `<div class="p"><div class="k">${m.label}</div><svg id="tl_${m.key}" height="${h}"></svg></div>`).join("") +
+      `<div class="leg" style="grid-column:1/-1">${have.map((r, i) => `<i style="background:${PEER_COLORS[i % 8]}"></i>${r.name}${i === 0 ? " (this run)" : ""}`).join("")}</div>`;
+    for (const m of metrics) {
+      const svg = el.querySelector("#tl_" + m.key);
+      const all = have.map(r => r.pts.map(p => [p.step, m.get(p)]).filter(q => Number.isFinite(q[1])));
+      const ys = all.flat().map(q => q[1]), xs = all.flat().map(q => q[0]);
+      if (!ys.length) { svg.innerHTML = `<text x="8" y="48" fill="${C.dim}" font-size="12">–</text>`; continue; }
+      let lo = Math.min(...ys), hi = Math.max(...ys); if (zero[m.key]) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); } if (hi === lo) hi = lo + 1;
+      const x0 = Math.min(...xs), x1 = Math.max(...xs) || 1;
+      const X = x => pad + (x1 > x0 ? (x - x0) / (x1 - x0) : 0.5) * (w - 2 * pad), Y = y => h - pad - (y - lo) / (hi - lo) * (h - 2 * pad - 12);
+      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      let inner = zero[m.key] ? `<line x1="${pad}" x2="${w - pad}" y1="${Y(0)}" y2="${Y(0)}" stroke="${C.dim}" stroke-dasharray="3 3"/>` : "";
+      all.forEach((pts, i) => {
+        if (!pts.length) return;
+        const d = pts.map(q => `${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join(" ");
+        inner += `<polyline points="${d}" fill="none" stroke="${PEER_COLORS[i % 8]}" stroke-width="${i === 0 ? 2.2 : 1}" opacity="${i === 0 ? 1 : 0.55}"/>`;
+      });
+      const lastThis = all[0].length ? all[0][all[0].length - 1][1] : null;
+      inner += `<text x="${w - pad}" y="11" text-anchor="end" fill="${PEER_COLORS[0]}" font-size="12" font-weight="600">${lastThis == null ? "" : m.fmt(lastThis)}</text>`;
+      svg.innerHTML = inner;
+    }
+  }
+
   function render(state) {
     last = state;
-    const { rows = [], meta = {}, index = [] } = state;
+    const { rows = [], meta = {}, index = [], peers = [] } = state;
+    // --- timelines (drawn even before the first rollout: evals may exist)
+    const runsEval = (peers.length ? peers : [{ name: meta.model || "this run", index, rows }]).map(r => ({ name: r.name, pts: (r.index || []).slice().sort((a, b) => a.step - b.step) }));
+    timelines($("mTlEval"), runsEval, [
+      { key: "rew", label: "EVAL REWARD", get: p => p.eval_reward, fmt: v => fmt(v, 2) },
+      { key: "eqe", label: "EQUITY END %", get: p => p.equity_end != null ? (p.equity_end - 1) * 100 : NaN, fmt: v => fmt(v, 2, "%") },
+      { key: "tr", label: "TRADES ON THE SLICE", get: p => p.trades, fmt: v => fmt(v, 0) },
+      { key: "wr", label: "WIN RATE %", get: p => p.win_rate != null ? 100 * p.win_rate : NaN, fmt: v => fmt(v, 0, "%") },
+      { key: "hold", label: "MEAN HOLD (BARS)", get: p => p.hold_mean, fmt: v => fmt(v, 1) },
+      { key: "acc", label: "ACCEPTANCE %", get: p => p.acceptance != null ? 100 * p.acceptance : NaN, fmt: v => fmt(v, 0, "%") },
+    ], { zero: { rew: true, eqe: true } });
+    const runsTrain = (peers.length ? peers : [{ name: meta.model || "this run", index, rows }]).map(r => {
+      const rr = (r.rows || []).slice().sort((a, b) => a.step - b.step);
+      const sm = (key, f = x => x) => roll(rr.map(x => f(x[key])));
+      const per100 = sm("trades_per_100"), hold = sm("hold_mean"), pnl = sm("pnl_mean_bp"), acc = sm("acceptance", v => v == null ? NaN : 100 * v), ent = sm("action_entropy");
+      const sel = roll(rr.map(x => (x.cf_accepted_bp != null && x.cf_skipped_bp != null) ? x.cf_accepted_bp - x.cf_skipped_bp : NaN));
+      return { name: r.name, pts: rr.map((x, i) => ({ step: x.step, per100: per100[i], hold: hold[i], pnl: pnl[i], acc: acc[i], ent: ent[i], sel: sel[i] })) };
+    });
+    timelines($("mTlTrain"), runsTrain, [
+      { key: "per100", label: "ENTRIES / 100 BARS", get: p => p.per100, fmt: v => fmt(v, 1) },
+      { key: "hold2", label: "MEAN HOLD (BARS)", get: p => p.hold, fmt: v => fmt(v, 1) },
+      { key: "pnl", label: "PNL / TRADE (BP)", get: p => p.pnl, fmt: v => fmt(v, 1) },
+      { key: "acc2", label: "ACCEPTANCE %", get: p => p.acc, fmt: v => fmt(v, 0, "%") },
+      { key: "sel", label: "SELECTION EDGE (BP)", get: p => p.sel, fmt: v => fmt(v, 1) },
+      { key: "ent", label: "ACTION ENTROPY", get: p => p.ent, fmt: v => fmt(v, 2) },
+    ], { zero: { pnl: true, sel: true } });
     const lastRow = rows[rows.length - 1];
-    if (!lastRow) return;
+    if (!lastRow) {
+      if (index.length) { $("mHdr").textContent = `${index.length} evaluations · no rollout rows (run trained before the Monitor existed)`; $("mChips").innerHTML = `<div class="empty">verdicts need monitor.json rows — retrain with the live visual on</div>`; renderEvals(index); }
+      return;
+    }
     const W = rows.slice(-20), P = pooled(W);
+    $("mSub").textContent = `${meta.model || ""}${meta.symbol ? " · " + meta.symbol : ""}${meta.entry_gate ? " · gate " + meta.entry_gate : ""} · step ${Number(lastRow.step).toLocaleString()}${lastRow.total_steps ? " / " + Number(lastRow.total_steps).toLocaleString() : ""}`;
     $("mHdr").textContent = `rollout ${lastRow.seq + 1} · step ${Number(lastRow.step).toLocaleString()}${lastRow.total_steps ? " / " + Number(lastRow.total_steps).toLocaleString() : ""}${meta.entry_gate ? " · gate " + meta.entry_gate : " · no gate"}`;
     const vs = verdicts(rows, meta);
     $("mChips").innerHTML = vs.length ? vs.map(v => `<div class="chip ${v.cls}"><div class="t">${v.t}</div><div class="d">${v.d}</div></div>`).join("") : `<div class="empty">collecting…</div>`;
@@ -181,6 +248,9 @@ export function createMonitor(root) {
     spark($("mS4"), rows.map(r => r.pnl_mean_bp), { color: C.green, zero: true });
     spark($("mS5"), rows.map(r => (r.cf_accepted_bp != null && r.cf_skipped_bp != null) ? r.cf_accepted_bp - r.cf_skipped_bp : NaN), { color: C.orange, zero: true });
     spark($("mS6"), rows.map(r => r.action_entropy), { color: C.purple, fmtv: v => fmt(v, 2) });
+    renderEvals(index);
+  }
+  function renderEvals(index) {
     if (index.length) {
       const tr = index.slice(-8).reverse().map(e => `<tr><td>eval ${e.i + 1}</td><td>${Number(e.step).toLocaleString()}</td><td>${fmt(e.eval_reward, 2)}</td><td>${e.trades ?? "–"}</td><td>${e.eq_curve ? fmt((e.eq_curve[e.eq_curve.length - 1] - 1) * 100, 2, "%") : "–"}</td><td>${e.max_dd != null ? fmt(e.max_dd * 100, 1, "%") : "–"}</td></tr>`).join("");
       $("mEv").innerHTML = `<table><tr><th>eval</th><th>step</th><th>reward</th><th>trades</th><th>equity</th><th>max dd</th></tr>${tr}</table>`;

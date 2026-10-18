@@ -166,13 +166,16 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None):
     df = env.df
     obs = env._get_obs()
     device = getattr(policy, "device", torch.device("cpu"))
-    rows, bar_idx, acts, pos, eq, tpnl = [], [], [], [], [], []
+    rows, bar_idx, acts, pos, eq, tpnl, gates = [], [], [], [], [], [], []
+    gate_arr = getattr(env, "_gate", None)
     for _ in range(int(frames)):
         t = torch.as_tensor(obs[None], dtype=torch.float32, device=device)
         with torch.no_grad():
             a = int(policy.get_distribution(t).distribution.probs[0].argmax())
         rows.append(obs.astype(np.float32))
         bar_idx.append(int(env.t))
+        if gate_arr is not None:
+            gates.append(float(gate_arr[env.t]))
         n_tr = len(env.trades)
         obs, _, term, trunc, _ = env.step(a)
         acts.append(a)
@@ -186,7 +189,7 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None):
             "l": df["low"].iloc[bar_idx].tolist(), "c": df["close"].iloc[bar_idx].tolist(),
             "act": acts, "pos": pos, "eq": eq, "tpnl": tpnl}
     snap = pack(policy, np.stack(rows), window, bars, k=k, names=action_names,
-                meta=dict(meta or {}, source="eval"))
+                meta=dict(meta or {}, source="eval"), extra={"gate": gates} if gates else None)
     snap["meta"]["capture_s"] = round(time.perf_counter() - t_start, 3)
     return snap
 
@@ -204,13 +207,33 @@ def summary(snap, points=120):
     counts = np.bincount(np.asarray(snap["act"], dtype=int), minlength=n_act)[:n_act]
     peak = np.maximum.accumulate(eq) if n else eq
     max_dd = float(((eq - peak) / peak).min()) if n else 0.0
-    return {
+    # behaviour: entries (flat -> position), hold bars (entry -> close), acceptance on gate bars
+    pos = np.asarray(snap["pos"], dtype=int)
+    prev = np.r_[0, pos[:-1]]
+    entries = np.where((prev == 0) & (pos != 0))[0]
+    exits = np.where(tp != 0)[0]
+    holds = []
+    for e in entries:
+        nxt = exits[exits >= e]
+        if len(nxt):
+            holds.append(int(nxt[0] - e) + 1)
+    out = {
         "eq_curve": [round(float(v), 5) for v in eq[idx]],
         "action_counts": [int(c) for c in counts],
         "trades": int(len(closed)), "wins": int((closed > 0).sum()),
         "win_rate": float((closed > 0).mean()) if len(closed) else None,
         "equity_end": float(eq[-1]) if n else 1.0, "max_dd": round(max_dd, 5),
+        "entries": int(len(entries)), "bars": int(n),
+        "hold_mean": round(float(np.mean(holds)), 2) if holds else None,
+        "pnl_bp_mean": round(float(closed.mean()) * 1e4, 2) if len(closed) else None,
     }
+    if snap.get("gate"):
+        g = np.asarray(snap["gate"], dtype=float)
+        sig = g != 0
+        acc = sig & (prev == 0) & (pos != 0) & (np.sign(pos) == np.sign(g))
+        out.update({"signal_bars": int(sig.sum()), "accepted": int(acc.sum()),
+                    "acceptance": round(float(acc.sum()) / sig.sum(), 3) if sig.sum() else None})
+    return out
 
 
 def _atomic_write(path, text):

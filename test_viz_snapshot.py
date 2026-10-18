@@ -200,3 +200,37 @@ def test_rollout_callback_writes_monitor_rows_with_gate_counterfactual(tmp_path)
     assert tot["trades_opened"] == tot["accepted"]
     closed = sum(len(r["exits"]) > 0 for r in rows)
     assert closed >= 1 and all(set(r["exits"]) <= {"signal", "max_hold", "episode_end", "sl", "managed_sl"} for r in rows)
+
+
+def test_summary_behaviour_fields_and_gate_acceptance():
+    """index.json entries carry hold/pnl/entries and, for gated envs, acceptance - the
+    per-evaluation timeline reads these without downloading snapshots."""
+    from stable_baselines3 import PPO
+    _, cfg = get_action_profile("basic_4")
+    df = _frame(n=300)
+    df["gate"] = 0.0; df.loc[np.arange(10, 290, 7), "gate"] = 1.0
+    make = lambda: TradingEnv(df, FEATS, window_size=WINDOW, random_start=False, max_steps=200, action_profile=cfg, entry_gate="gate")
+    model = PPO("MlpPolicy", make(), n_steps=64, batch_size=32, seed=0, device="cpu", policy_kwargs=dict(net_arch=[16]))
+    snap = snap_mod.capture(model.policy, make(), WINDOW, 150, k=4, action_names=snap_mod.action_names(cfg))
+    assert len(snap["gate"]) == snap["frames"]
+    s = snap_mod.summary(snap)
+    for k in ("entries", "bars", "hold_mean", "pnl_bp_mean", "signal_bars", "accepted", "acceptance"):
+        assert k in s, k
+    assert s["bars"] == snap["frames"] and s["accepted"] <= s["signal_bars"] and s["entries"] == s["accepted"]
+    if s["entries"]:
+        assert s["hold_mean"] >= 1
+
+
+def test_live_viewer_finds_sibling_seed_runs(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("lv", ROOT / "tools" / "viz" / "live_viewer.py")
+    lv = importlib.util.module_from_spec(spec); spec.loader.exec_module(lv)
+    models = tmp_path / "models"
+    for name, n_runs in (("abl_C_s0", 1), ("abl_C_s1", 2), ("abl_C_s2", 1), ("abl_C", 1), ("other_s0", 1)):
+        for i in range(n_runs):
+            viz = models / name / "runs" / f"r{i}" / "viz"; viz.mkdir(parents=True)
+            (viz / "index.json").write_text("{}")
+    peers = lv.find_peers(models / "abl_C_s0" / "runs" / "r0" / "viz")
+    names = [n for n, _ in peers]
+    assert names == ["abl_C_s0", "abl_C_s1", "abl_C_s2"]       # this run first, same stem, _s<seed> only
+    assert peers[1][1].name == "viz" and peers[1][1].parent.name == "r1"   # newest run of the sibling

@@ -14,6 +14,8 @@ Usage (repo root):
 """
 import argparse
 import http.server
+import json
+import re
 import io
 import os
 import socketserver
@@ -23,8 +25,8 @@ import urllib.parse
 import webbrowser
 from pathlib import Path
 
-if sys.stdout is not None and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if __name__ == "__main__" and sys.stdout is not None and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")   # not on import (pytest capture)
 VIZ_DIR = Path(__file__).resolve().parent
 ROOT = VIZ_DIR.parents[1]
 
@@ -40,12 +42,56 @@ def resolve_viz_dir(run_dir=None, model=None):
     return p
 
 
+def find_peers(viz_data, limit=12):
+    """Sibling runs for the overlay: models whose name is this model's name with a different
+    `_s<seed>` suffix (obs_ablation naming), each at its newest run that has a viz folder.
+    Returns [(label, viz_dir)] with this run first."""
+    p = Path(viz_data).resolve()
+    try:
+        run_dir = p.parent if p.name == "viz" else p
+        model_home = run_dir.parent.parent if run_dir.parent.name == "runs" else None
+    except Exception:
+        model_home = None
+    if model_home is None or not model_home.is_dir():
+        return [(p.parent.parent.name if p.name == "viz" else p.name, p)]
+    name = model_home.name
+    stem = re.sub(r"_s\d+$", "", name)
+    out = [(name, p)]
+    for home in sorted(model_home.parent.glob(stem + "_s*")):
+        if home == model_home or not re.fullmatch(re.escape(stem) + r"_s\d+", home.name):
+            continue
+        runs = sorted((r for r in (home / "runs").glob("*/viz") if (r / "index.json").exists() or (r / "monitor.json").exists()),
+                      key=lambda r: r.stat().st_mtime)
+        if runs:
+            out.append((home.name, runs[-1].resolve()))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def make_handler(viz_data):
     class Handler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.split("?", 1)[0] == "/peers.json":
+                peers = find_peers(viz_data)
+                body = json.dumps({"peers": [{"k": i, "name": n} for i, (n, _) in enumerate(peers)]}).encode("utf-8")
+                self.send_response(200); self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+                return
+            super().do_GET()
+
         def translate_path(self, path):
             path = urllib.parse.unquote(path.split("?", 1)[0].split("#", 1)[0])
             if path.startswith("/run/"):
                 base, rel = viz_data, path[len("/run/"):]
+            elif path.startswith("/peer/"):
+                parts = path[len("/peer/"):].split("/", 1)
+                peers = find_peers(viz_data)
+                try:
+                    base = peers[int(parts[0])][1]
+                except (ValueError, IndexError):
+                    return str(VIZ_DIR / "__forbidden__")
+                rel = parts[1] if len(parts) > 1 else ""
             else:
                 base, rel = VIZ_DIR, path.lstrip("/")
             target = (base / rel).resolve()

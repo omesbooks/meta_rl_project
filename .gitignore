@@ -113,3 +113,6 @@ gbpusd_chart_data.json
 
 # capture_snapshot.py one-off pages (regenerable)
 tools/viz/out/
+
+# Web GUI preferences (Settings page)
+web_settings.json

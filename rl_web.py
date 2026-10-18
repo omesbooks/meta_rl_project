@@ -2,8 +2,8 @@
 
     .venv/Scripts/python.exe rl_web.py          (or run_rl_web.bat)
 
-Migration in progress (docs/web_gui_migration_plan_2026-10-18.md): the Train page lives
-here; the other pages still open the classic app (rl_app.py). Backend: webgui/api.py.
+Migration in progress (docs/web_gui_migration_plan_2026-10-18.md): the Train, Models and
+Settings pages live here; the other pages still open the classic app (rl_app.py). Backend: webgui/api.py.
 """
 from __future__ import annotations
 
@@ -29,8 +29,14 @@ def main():
         if webview.windows:
             webview.windows[0].evaluate_js(f"window.rlweb && window.rlweb.onEvents({to_json(events)})")
 
-    api = Api(ROOT, emit=emit)
-    window = webview.create_window("RL Trading Studio", PAGE.as_uri(), js_api=JsBridge(api), width=1500, height=980,
+    def set_title(title):
+        if webview.windows:
+            webview.windows[0].set_title(title)
+
+    import app_settings
+    title = app_settings.effective_branding()["branding"].get("window_title") or "RL Trading Studio"
+    api = Api(ROOT, emit=emit, set_title=set_title)
+    window = webview.create_window(title, PAGE.as_uri(), js_api=JsBridge(api), width=1500, height=980,
                                    min_size=(1180, 720), background_color="#dfe8f6", text_select=True)
 
     def on_closing():

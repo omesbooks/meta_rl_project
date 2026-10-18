@@ -103,3 +103,89 @@ def test_api_review_prepares_the_recipe_without_launching(tmp_path):
     assert info["ok"] and info["rows"] == 600 and info["params"] and [s[0] for s in info["split"]] == ["Train", "Validation", "Test"]
     cat = api.catalog()
     assert {p["key"] for p in cat["reward_profiles"]} >= {"balanced", "anti_overtrade"} and "approx_kl" in cat["metrics"]
+
+
+# ---------------------------------------------------------------- phase 2: Models + Settings
+def test_models_table_equals_the_ctk_rows():
+    """Exit test of phase 2: the web listing is the classic Models table, row for row."""
+    import model_results as mr
+    import rl_app
+
+    class Fake:                                    # the CTk methods without building a window
+        _model_rows_cache_sig = None
+        _model_rows_cache = None
+        _model_results_signature = lambda self: None
+        _collect_model_rows = rl_app.RLTradingStudio._collect_model_rows
+
+    ctk_rows = Fake()._collect_model_rows()
+    web = Api(ROOT).list_models()
+    assert [r["iid"] for r in web["rows"]] == [r["iid"] for r in ctk_rows]
+    assert [r["cells"] for r in web["rows"]] == [list(mr.table_values(r, ROOT)) for r in ctk_rows]
+    assert web["headings"][7] == "Realism" and len(web["headings"]) == 10
+
+
+def test_metrics_and_env_rows_from_a_trades_file(tmp_path):
+    import model_results as mr
+    (tmp_path / "zz_webtest_trades.csv").write_text("pnl_dollars\n100\n-50\n200\n-25\n", encoding="utf-8")
+    m = mr.metrics_from_trades(tmp_path / "zz_webtest_trades.csv", 10000)
+    assert m["trades"] == 4 and m["win_rate"] == 50.0
+    assert m["profit_factor"] == pytest.approx(300 / 75) and m["return_pct"] == pytest.approx(2.25)
+    row = next(r for r in mr.collect_model_rows(tmp_path) if r["model"] == "zz_webtest")
+    assert row["source"] == "env backtest"
+    cells = mr.table_values(row, tmp_path)
+    assert cells[:7] == ("zz_webtest", "env backtest", "4", "50.0%", "4.00", "+2.25%", f"{m['max_dd']:+.2f}%")
+    assert mr.fmt_num(float("inf")) == "inf" and mr.fmt_pct(None) == "-"
+
+
+def test_settings_round_trip_and_validation(tmp_path):
+    import json
+    titles = []
+    api = Api(ROOT, settings_dir=tmp_path, set_title=titles.append)
+    st = api.settings_get()
+    assert st["saved"] is False and st["branding"]["window_title"] == "Metafxclub RL Studio"
+    form = {"branding": dict(st["branding"], window_title="My Studio"), "colors": dict(st["colors"], ACCENT="#00d4ff")}
+    bad = api.save_branding({"branding": form["branding"], "colors": dict(form["colors"], RED="red")})
+    assert bad["ok"] is False and bad["field"] == "color_RED" and not (tmp_path / "branding_config.json").exists()
+    ok = api.save_branding(form)
+    assert ok["ok"] and ok["branding"]["window_title"] == "My Studio" and ok["colors"]["ACCENT"] == "#00d4ff" and titles == ["My Studio"]
+    saved = json.loads((tmp_path / "branding_config.json").read_text(encoding="utf-8"))
+    assert set(saved) == {"branding", "colors"} and saved["colors"]["ACCENT"] == "#00d4ff"   # the CTk file format
+    assert api.reset_branding()["saved"] is False and not (tmp_path / "branding_config.json").exists()
+    assert api.save_web_settings({"theme": "deep", "brand_accent": True})["web"] == {"theme": "deep", "brand_accent": True}
+    assert api.save_web_settings({"theme": "nope"})["web"]["theme"] == "deep"
+
+
+def test_api_key_is_saved_but_never_sent_to_the_page(tmp_path):
+    from webgui.api import JsBridge, to_json
+    api = Api(ROOT, settings_dir=tmp_path)
+    key = "AIzaTESTkey0123456789abcdWXYZ"
+    assert api.save_api_key("")["field"] == "gemini_key"
+    assert api.save_api_key("has space in it 1234567890")["ok"] is False
+    r = api.save_api_key(key)
+    assert r["ok"] and r["keys"] == {"gemini": {"set": True, "tail": "WXYZ"}}
+    assert '"gemini": "' + key in (tmp_path / "api_keys.json").read_text(encoding="utf-8")
+    bridge = JsBridge(api)
+    assert key not in bridge.settings_get() and key not in to_json(r)
+    assert not any(key in str(v) for v in vars(JsBridge).values())
+    assert api.clear_api_key()["keys"]["gemini"]["set"] is False
+
+
+def test_branding_defaults_match_rl_app():
+    """app_settings.BRANDING_TEXT_DEFAULTS must equal the literals in rl_app.BRANDING."""
+    import ast
+    import app_settings
+    tree = ast.parse((ROOT / "rl_app.py").read_text(encoding="utf-8"))
+    node = next(n.value for n in tree.body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "BRANDING")
+    literals = {k.value: v.value for k, v in zip(node.keys, node.values) if isinstance(v, ast.Constant)}
+    assert {k: literals[k] for k in app_settings.BRANDING_TEXT_DEFAULTS} == app_settings.BRANDING_TEXT_DEFAULTS
+
+
+def test_report_pdf_is_written_from_any_thread(tmp_path):
+    """export_report_pdf uses Figure objects, so the web bridge thread can call it."""
+    import threading
+    import model_results as mr
+    rows = mr.collect_model_rows(ROOT)[:3]
+    out = {}
+    t = threading.Thread(target=lambda: out.setdefault("p", mr.export_report_pdf(rows, None, tmp_path)))
+    t.start(); t.join(60)
+    assert out["p"].exists() and out["p"].read_bytes()[:4] == b"%PDF" and out["p"].parent == tmp_path

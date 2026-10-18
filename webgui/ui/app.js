@@ -122,7 +122,7 @@ function drawTrend() {
 
 // ------------------------------------------------------------------ run state + events
 function setBusy(b, text) {
-  busy = b; $("start").disabled = b; $("stop").disabled = !b;
+  busy = b; $("start").disabled = b; $("stop").disabled = !b; if (b) $("pills").classList.remove("off");
   document.querySelector("#status .dot").className = "dot" + (b ? " run" : ""); $("statusText").textContent = text || (b ? "training" : "idle");
 }
 function logLine(text, cls = "") {
@@ -215,10 +215,13 @@ async function init() {
     const p = a.dataset.p; document.querySelectorAll("#side a").forEach(x => x.classList.toggle("on", x === a));
     $("pgTitle").textContent = PAGES[p];
     document.querySelectorAll(".page").forEach(s => s.classList.remove("on"));
-    if (p === "train") { $("p-train").classList.add("on"); $("pgSub").textContent = "PPO · TradingEnv · rl_train.py"; }
+    const live = window.rlpages.live;
+    $("pills").classList.toggle("off", p !== "train" && !busy);   // training pills: Train page, or while a run is live
+    if (p in live) { $("p-" + p).classList.add("on"); $("pgSub").textContent = live[p]; window.rlpages.show(p).catch(e => toast(String(e), "err")); }
     else { $("p-classic").classList.add("on"); $("clHdr").textContent = PAGES[p].toUpperCase(); $("pgSub").textContent = "not migrated yet — classic app"; }
   });
   $("openClassic").onclick = () => api().open_classic();
+  await window.rlpages.init();
   setBusy(await api().busy());
   window.__rlweb_ready = true;
 }

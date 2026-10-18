@@ -9,7 +9,7 @@
 <body>
 <div id="app">
   <nav id="side" class="glass">
-    <div class="brand"><b>RL TRADING STUDIO</b><span>MetaFXClub · web</span></div>
+    <div class="brand"><div class="logo" id="brandLogo"></div><div><b id="brandText">RL TRADING STUDIO</b><span id="brandSub">MetaFXClub · web</span></div></div>
     <a data-p="tools">🛠️ Data Tools<span class="cl">classic</span></a>
     <a data-p="pipeline">▶ Pipeline<span class="cl">classic</span></a>
     <a data-p="train" class="on">🎯 Train</a>
@@ -18,8 +18,8 @@
     <a data-p="finetune">🔄 Fine-tune<span class="cl">classic</span></a>
     <a data-p="analyze">🔍 Analyze<span class="cl">classic</span></a>
     <a data-p="regime">🌐 Regime Check<span class="cl">classic</span></a>
-    <a data-p="models">🗂️ Models<span class="cl">classic</span></a>
-    <a data-p="settings">⚙️ Settings<span class="cl">classic</span></a>
+    <a data-p="models">🗂️ Models</a>
+    <a data-p="settings">⚙️ Settings</a>
     <div class="sp"></div>
     <div class="st" id="status"><span class="dot"></span><span id="statusText">idle</span></div>
   </nav>
@@ -109,6 +109,61 @@
 
     </section>
 
+    <!-- ================================================================ MODELS -->
+    <section class="page" id="p-models">
+      <div class="card glass"><h3>MODEL COMPARISON · <b id="mdCount">–</b></h3>
+        <div class="inl" style="flex-wrap:wrap;margin-bottom:12px">
+          <input id="mdFilter" placeholder="filter by model / source …" style="flex:0 1 260px">
+          <button class="sm" id="mdRefresh">↻ Refresh table</button>
+          <button class="sm" id="mdEquity">Open equity image</button>
+          <button class="sm" id="mdChart">Open HTML chart</button>
+          <span style="flex:1"></span>
+          <button class="sm p" id="mdPdf">Export report PDF</button>
+        </div>
+        <div class="tbl"><table id="mdTable"><thead></thead><tbody></tbody></table></div>
+        <div class="meta" style="margin-top:8px">Realism = how the stored backtest resolved bars where SL and TP both fit inside one bar: <b>M1 ✓</b> replayed with M1 data · <b>ok</b> no ambiguous bars · <b>guess N%</b> share decided by the pessimistic assumption. Click a header to sort.</div>
+      </div>
+      <div class="card glass"><h3>EQUITY CURVE · <b id="eqName">select a model result</b></h3><div id="eqBox" class="eq"><div class="empty">Select a model result to preview its equity curve.</div></div></div>
+    </section>
+
+    <!-- ================================================================ SETTINGS -->
+    <section class="page" id="p-settings">
+      <div class="row c2">
+        <div class="card glass"><h3>WEB APP · <b>applies now</b></h3>
+          <div class="f">
+            <label>Theme</label><select id="webTheme"></select>
+            <span class="hint">Clear Liquid = light glass (default) · Deep Glass = dark</span>
+            <label>Accent colour</label><label class="chk"><input type="checkbox" id="webBrandAccent"> use the branding Primary colour</label>
+            <span class="hint">off = the theme's own blue</span>
+          </div>
+        </div>
+        <div class="card glass"><h3>API KEYS · <b>api_keys.json (gitignored)</b></h3>
+          <div class="f">
+            <label>🤖 Gemini API key</label><div class="inl"><input id="gemini_key" type="password" autocomplete="off" placeholder="AIza…"><label class="chk"><input type="checkbox" id="gemShow"> Show</label></div>
+            <span class="hint" id="gemStatus">no key set</span>
+            <label></label><div class="inl wrap"><button class="p sm" id="gemSave">💾 Save key</button><button class="sm d" id="gemClear">Clear saved key</button><button class="sm" id="gemGet">🔗 Get a free Gemini key</button></div>
+            <span class="hint">free 1,500 requests/day · used to auto-label events on Regime Check. The saved key is never shown again; only its last 4 characters.</span>
+          </div>
+        </div>
+      </div>
+      <div class="card glass"><h3>BRANDING · <b>branding_config.json</b></h3>
+        <div class="meta" style="margin-bottom:12px">Logo, names and colours. The web window title and sidebar update on Save; the classic app picks them up after a restart.</div>
+        <div class="f" style="margin-bottom:12px"><label>Colour preset</label><select id="brPreset"></select><span class="hint">choosing a preset fills the colour fields below (nothing is saved until Save)</span></div>
+        <div class="grid2" id="brText"></div>
+        <h3 style="margin-top:16px">COLOURS · <b>classic app</b></h3>
+        <div class="grid4" id="brColors"></div>
+        <div class="inl" style="margin-top:14px"><button class="p" id="brSave">💾 Save branding</button><button id="brReset">↩ Reset to default</button><button id="brOpen">📂 Open config file</button><span class="meta" id="brStatus"></span></div>
+      </div>
+      <div class="row c2">
+        <div class="card glass"><h3>APPLICATION</h3>
+          <div class="split" style="grid-template-columns:130px 1fr"><b>Working dir</b><span id="setWork" class="mono"></span><b>Branding file</b><span id="setCfg" class="mono"></span><b>Python</b><span id="setPy" class="mono"></span></div>
+        </div>
+        <div class="card glass"><h3>ABOUT</h3>
+          <div class="meta" style="line-height:1.7">RL Trading Studio · web GUI (pywebview, Clear Liquid)<br>Train PPO / DQN / A2C agents · realistic backtest with risk management · walk-forward validation · smart fine-tuning · confidence analysis · model library.<br>Built with pywebview + stable-baselines3. The classic CustomTkinter app (rl_app.py) stays available while pages move over.</div>
+        </div>
+      </div>
+    </section>
+
     <section class="page" id="p-classic">
       <div class="card glass"><h3 id="clHdr">PAGE</h3>
         <div class="empty">This page has not moved to the web GUI yet.<br>It is still available in the classic app.<br><br>
@@ -127,5 +182,6 @@
 </div></div>
 <div id="toast" class="glass"></div>
 <script src="app.js"></script>
+<script src="pages.js"></script>
 </body>
 </html>

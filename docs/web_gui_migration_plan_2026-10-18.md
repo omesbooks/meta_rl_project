@@ -51,7 +51,7 @@ Rules that keep this safe:
 |---|---|---:|---|
 | 0 | `webgui/` skeleton: window, router, theme tokens from the demo, `runner.py`, event protocol, `--classic` in the bat | 2 | a subprocess (`rl_train.py --help`) streams into the page; closing the window kills it |
 | 1 | **Train** page complete (all fields incl. advanced PPO, reward sliders, action JSON, gate, costs, viz) + review card + overwrite confirm + metric pills + reward trend | 4 | `test_ui_training_contract.py` ported → passes against `Api` (same commands, same recipe hash as CTk for the same inputs) |
-| 2 | **Models** (listing, Realism column, delete/rename as today) + **Settings** (branding, API keys, theme) | 2 | listing equals `_collect_model_rows()` output on the same folder |
+| 2 | **Models** (listing, Realism column, equity preview, open files, PDF export — the classic page has no delete/rename) + **Settings** (branding, API keys, theme) | 2 | listing equals `_collect_model_rows()` output on the same folder |
 | 3 | **Backtest** page + report panel + M1 auto-select logic | 3 | report renders from an existing `_live_bt.meta.json` identically (numbers compared) |
 | 4 | **Pipeline** (stage gating by exit code, health pills) + **Walk-Forward** (copy-settings-from-Train) + **Fine-tune** | 4 | pipeline runs relabel→train→backtest→chart on a smoke CSV |
 | 5 | **Analyze**, **Regime Check** (table, Gemini refresh, cutoff → Train), **Data Tools** (import, M1, clean, verify) | 4 | regime cutoff produces the same `_from_<date>.csv` as today |
@@ -104,3 +104,19 @@ CLI scripts, TradingEnv/recipes, artifact layout, MQL/EA export, tests of the en
   confirm while training. `metric_health.py` now holds METRIC_INFO / classify_metric (moved out of rl_app.py).
   Tests: `test_webgui.py` (6) + 3 parity tests in `test_ui_training_contract.py`; real-window end-to-end run
   (validation error → review → confirm → 4,096-step training → complete) passed.
+- 2026-10-18 — **phase 2 done**: Models + Settings pages are live in the web GUI.
+  Shared modules so both apps run one code path: `model_results.py` (rows, cell text, params status,
+  equity lookup, PDF export) and `app_settings.py` (colour presets, branding/api-key/web-settings files);
+  rl_app.py now delegates to them. Models page: same 10 columns + Realism, sortable headers, filter,
+  equity preview (data URL thumbnail), open equity image / HTML chart, export report PDF; a model-only row
+  shows the "not backtested yet" hint like the CTk viewer. The classic page never had delete/rename, so
+  none was added. Settings page: web theme (Clear Liquid / Deep Glass, applied live, `web_settings.json`),
+  optional brand accent, branding text + colour fields with presets and colour pickers (invalid hex is
+  rejected with the field highlighted; the classic app silently dropped it), reset, open config file,
+  Gemini key save/clear (the page only ever sees "set" + last 4 characters), working dir / python info.
+  The window title and sidebar logo/name follow the branding (title also updates on Save).
+  Exit test: `test_models_table_equals_the_ctk_rows` (65 rows, identical iid order and cells) plus a
+  one-off check that the pre-refactor rl_app code and the new module return identical rows. Tests:
+  test_webgui.py now 12; the whole UI/viz/gate suite 49 passed. Real-window e2e (temp settings folder,
+  the user's real branding/key files untouched): models table + equity preview, sort, filter, model-only
+  hint, bad colour → field marked, save → title updated, key save → "…LAST" status, Deep Glass switch.

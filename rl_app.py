@@ -143,68 +143,13 @@ NAV_ITEMS = [
 # ============================================================
 # 🎨 COLOR PRESETS — เลือกธีมสีสำเร็จได้ใน Settings page
 # ============================================================
-COLOR_PRESETS = {
-    "Default (Blue)": {
-        "ACCENT":   "#2f81f7",
-        "GREEN":    "#3fb950",
-        "RED":      "#f85149",
-        "YELLOW":   "#d29922",
-        "PURPLE":   "#a371f7",
-        "DIM":      "#8b949e",
-        "BG_CARD":  "#1c2128",
-        "BG_INPUT": "#22272e",
-        "SIDEBAR_BG": "#161b22",
-    },
-    "Warm (Orange/Red)": {
-        "ACCENT":   "#fb923c",
-        "GREEN":    "#84cc16",
-        "RED":      "#dc2626",
-        "YELLOW":   "#facc15",
-        "PURPLE":   "#ec4899",
-        "DIM":      "#a8a29e",
-        "BG_CARD":  "#1c1917",
-        "BG_INPUT": "#292524",
-        "SIDEBAR_BG": "#171513",
-    },
-    "Ocean (Cyan/Teal)": {
-        "ACCENT":   "#06b6d4",
-        "GREEN":    "#10b981",
-        "RED":      "#ef4444",
-        "YELLOW":   "#eab308",
-        "PURPLE":   "#8b5cf6",
-        "DIM":      "#94a3b8",
-        "BG_CARD":  "#0f172a",
-        "BG_INPUT": "#1e293b",
-        "SIDEBAR_BG": "#0a1428",
-    },
-    "Pure Black (Minimal)": {
-        "ACCENT":   "#ffffff",
-        "GREEN":    "#22c55e",
-        "RED":      "#dc2626",
-        "YELLOW":   "#eab308",
-        "PURPLE":   "#737373",
-        "DIM":      "#525252",
-        "BG_CARD":  "#000000",
-        "BG_INPUT": "#171717",
-        "SIDEBAR_BG": "#000000",
-    },
-    "Metafxclub (Brand)": {
-        "ACCENT":   "#00d4ff",
-        "GREEN":    "#3fb950",
-        "RED":      "#f85149",
-        "YELLOW":   "#fbbf24",
-        "PURPLE":   "#c084fc",
-        "DIM":      "#94a3b8",
-        "BG_CARD":  "#0a1628",
-        "BG_INPUT": "#0f1f37",
-        "SIDEBAR_BG": "#050d18",
-    },
-}
+from app_settings import COLOR_PRESETS  # noqa: E402  (shared with webgui)
 
 # ============================================================
 # 💾 Branding persistence — save/load to branding_config.json
 # ============================================================
-BRANDING_CONFIG_FILE = WORK_DIR / "branding_config.json"
+import app_settings  # noqa: E402
+BRANDING_CONFIG_FILE = app_settings.BRANDING_CONFIG_FILE
 
 def _load_branding_config():
     """Load saved branding from JSON file (if exists) and override BRANDING + colors"""
@@ -241,34 +186,12 @@ def _load_branding_config():
 # ============================================================
 # 🔑 API KEYS — saved separately, gitignored
 # ============================================================
-API_KEYS_FILE = Path(__file__).parent / "api_keys.json"
-
-
-def _load_api_keys() -> dict:
-    if API_KEYS_FILE.exists():
-        try:
-            return json.loads(API_KEYS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
-
-
-def _save_api_keys(keys: dict) -> None:
-    try:
-        API_KEYS_FILE.write_text(json.dumps(keys, indent=2), encoding="utf-8")
-    except Exception as e:
-        print(f"[api_keys] save failed: {e}")
+from app_settings import API_KEYS_FILE, load_api_keys as _load_api_keys, save_api_keys as _save_api_keys  # noqa: E402,F401
 
 
 def _save_branding_config(branding_overrides: dict, colors: dict):
     """Save current branding + colors to JSON file"""
-    import json
-    cfg = {
-        "branding": branding_overrides,
-        "colors":   colors,
-    }
-    BRANDING_CONFIG_FILE.write_text(
-        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    app_settings.save_branding_config(branding_overrides, colors, BRANDING_CONFIG_FILE)
 
 # Apply saved config on import (before classes/widgets created)
 _load_branding_config()
@@ -278,6 +201,7 @@ _load_branding_config()
 # Metric Health Thresholds + Recommendations
 # ============================================================
 from metric_health import METRIC_INFO, classify_metric, get_recommendation  # noqa: E402  (shared with webgui)
+import model_results  # noqa: E402  (Models table rows, shared with webgui)
 
 
 # ============================================================
@@ -2901,186 +2825,19 @@ class RLTradingStudio(ctk.CTk):
         sig = self._model_results_signature()
         if self._model_rows_cache_sig == sig and self._model_rows_cache is not None:
             return list(self._model_rows_cache)
-
-        rows = []
-        seen = set()
-        trade_files = (
-            list(WORK_DIR.glob("*_live_bt_trades.csv"))
-            + list(WORK_DIR.glob("*_trades.csv"))
-            + list(MODELS_DIR.glob("*/backtests/*_live_bt_trades.csv"))
-            + list(MODELS_DIR.glob("*/backtests/*_trades.csv"))
-            + [p for name in model_names_from_artifacts()
-               for p in backtests_dir(name).glob("*_trades.csv")]
-        )
-
-        for trades_path in sorted(trade_files, key=lambda p: p.stat().st_mtime, reverse=True):
-            if trades_path in seen:
-                continue
-            seen.add(trades_path)
-            name = trades_path.name
-            if name.endswith("_live_bt_trades.csv"):
-                model = name[:-len("_live_bt_trades.csv")]
-                source = "live backtest"
-            elif name.endswith("_trades.csv"):
-                model = name[:-len("_trades.csv")]
-                source = "env backtest"
-            else:
-                continue
-
-            meta = {}
-            if (MODELS_DIR / model / "current.json").exists() and trades_path.parent != backtests_dir(model):
-                continue
-            if source == "live backtest":
-                try:
-                    from artifact_paths import backtest_meta_path
-                    mp = backtest_meta_path(model)
-                    if mp.exists():
-                        meta = json.loads(mp.read_text(encoding="utf-8-sig"))
-                except Exception:
-                    meta = {}
-                starting_balance = float((meta.get("settings") or {}).get("balance", 10000))
-                metrics = self._metrics_from_trades(trades_path, starting_balance)
-                result = meta.get("result") or {}
-                if meta.get("status") == "complete" and result:
-                    metrics["return_pct"] = (float(result["return_pct"]) * 100
-                                             if result.get("return_pct") is not None else None)
-                    metrics["max_dd"] = (float(result["max_drawdown"]) * 100
-                                         if result.get("max_drawdown") is not None else None)
-                chart_path = find_chart_path(model)
-                equity_path = find_equity_path(model)
-            else:
-                metrics = self._metrics_from_trades(trades_path)
-                chart_path = None
-                equity_candidate = trades_path.with_name(f"{model}_equity.png")
-                equity_path = equity_candidate if equity_candidate.exists() else None
-
-            # Execution realism of the stored result: did it resolve intrabar
-            # SL/TP with M1 data, or lean on the pessimistic/optimistic guess?
-            realism = ""
-            try:
-                if source == "live backtest" and meta.get("status") == "complete":
-                    bres = meta.get("result") or {}
-                    amb = bres.get("ambiguous_share_of_sl_tp")
-                    if bres.get("m1_resolved", 0) > 0:
-                        realism = "M1 ✓"
-                        if amb:
-                            realism += f" + guess {amb:.0%}"
-                    elif amb is not None:
-                        realism = "ok" if amb == 0 else f"guess {amb:.0%}"
-            except Exception:
-                pass
-
-            rows.append({
-                "iid": str(trades_path),
-                "model": model,
-                "source": source,
-                "trades_path": trades_path,
-                "chart_path": chart_path,
-                "equity_path": equity_path,
-                "realism": realism,
-                **metrics,
-            })
-
-        model_names = {r["model"] for r in rows}
-        for model in model_names_from_artifacts():
-            if model in model_names:
-                continue
-            zip_path = find_model_path(model, "final") or legacy_final_model_path(model)
-            rows.append({
-                "iid": str(zip_path),
-                "model": model,
-                "source": "model only",
-                "trades_path": None,
-                "chart_path": None,
-                "equity_path": self._equity_path_for_model(model),
-                "trades": None,
-                "win_rate": None,
-                "profit_factor": None,
-                "return_pct": None,
-                "max_dd": None,
-            })
-
-        rows.sort(key=lambda r: (
-            r.get("return_pct") is not None,
-            r.get("return_pct") if r.get("return_pct") is not None else -1e9,
-        ), reverse=True)
+        rows = model_results.collect_model_rows(WORK_DIR)
         self._model_rows_cache_sig = sig
         self._model_rows_cache = list(rows)
         return rows
 
     def _metrics_from_trades(self, trades_path, starting_balance=10000):
-        try:
-            import numpy as np
-            import pandas as pd
-            df = pd.read_csv(trades_path)
-            if df.empty:
-                return {
-                    "trades": 0, "win_rate": None, "profit_factor": None,
-                    "return_pct": None, "max_dd": None,
-                }
-
-            if "pnl_dollars" in df.columns:
-                pnl = pd.to_numeric(df["pnl_dollars"], errors="coerce").dropna()
-                equity = starting_balance + pnl.cumsum()
-                return_pct = float(pnl.sum() / starting_balance * 100)
-            elif "pnl_pct" in df.columns:
-                pnl = pd.to_numeric(df["pnl_pct"], errors="coerce").dropna()
-                equity = (1 + pnl).cumprod()
-                return_pct = float((equity.iloc[-1] - 1) * 100) if len(equity) else None
-            elif "pnl" in df.columns:
-                pnl = pd.to_numeric(df["pnl"], errors="coerce").dropna()
-                if len(pnl) and pnl.abs().median() < 0.2:
-                    equity = (1 + pnl).cumprod()
-                    return_pct = float((equity.iloc[-1] - 1) * 100)
-                else:
-                    equity = starting_balance + pnl.cumsum()
-                    return_pct = float(pnl.sum() / starting_balance * 100)
-            else:
-                pnl = pd.Series(dtype=float)
-                equity = pd.Series(dtype=float)
-                return_pct = None
-
-            if "equity" in df.columns:
-                eq = pd.to_numeric(df["equity"], errors="coerce").dropna()
-                if len(eq):
-                    equity = eq
-                    return_pct = float((eq.iloc[-1] - starting_balance) / starting_balance * 100)
-
-            trades = int(len(pnl)) if len(pnl) else int(len(df))
-            win_rate = float((pnl > 0).mean() * 100) if len(pnl) else None
-            gross_profit = float(pnl[pnl > 0].sum()) if len(pnl) else 0.0
-            gross_loss = float(abs(pnl[pnl < 0].sum())) if len(pnl) else 0.0
-            profit_factor = float("inf") if gross_profit > 0 and gross_loss == 0 else (
-                gross_profit / gross_loss if gross_loss > 0 else None)
-
-            max_dd = None
-            if len(equity):
-                peak = equity.cummax()
-                dd = equity / peak - 1
-                max_dd = float(dd.min() * 100)
-
-            return {
-                "trades": trades,
-                "win_rate": win_rate,
-                "profit_factor": profit_factor,
-                "return_pct": return_pct,
-                "max_dd": max_dd,
-            }
-        except Exception:
-            return {
-                "trades": None, "win_rate": None, "profit_factor": None,
-                "return_pct": None, "max_dd": None,
-            }
+        return model_results.metrics_from_trades(trades_path, starting_balance)
 
     def _fmt_pct(self, value):
-        return "-" if value is None else f"{value:+.2f}%"
+        return model_results.fmt_pct(value)
 
     def _fmt_num(self, value):
-        if value is None:
-            return "-"
-        if value == float("inf"):
-            return "inf"
-        return f"{value:.2f}"
+        return model_results.fmt_num(value)
 
     def _refresh_model_comparison(self, force=False):
         if not hasattr(self, "model_tree"):
@@ -3102,40 +2859,7 @@ class RLTradingStudio(ctk.CTk):
         self.pipeline_rows = {row["iid"]: row for row in rows}
         self._model_tree_sig = sig
         for row in rows:
-            # Determine params status: sidecar JSON OR embedded helper in config.mqh
-            params_sidecar = find_params_path(row["model"])
-            config_candidates = [
-                WORK_DIR / "mt5_files" / "packages" / row["model"] / "MQL5" / "Include" / f"{row['model']}_config.mqh",
-                WORK_DIR / "mt5_files" / "MQL5" / "Include" / f"{row['model']}_config.mqh",
-            ]
-            config_mqh = next((p for p in config_candidates if p.exists()), config_candidates[0])
-            if params_sidecar and params_sidecar.exists():
-                params_label = "✓ sidecar"
-            elif config_mqh.exists():
-                try:
-                    config_text = config_mqh.read_text(encoding="utf-8", errors="ignore")
-                    if ("#define RL_PARAMS_EMBEDDED 1" in config_text or
-                            "// Embedded from" in config_text):
-                        params_label = "✓ embedded"
-                    else:
-                        params_label = "— defaults"
-                except Exception:
-                    params_label = "— defaults"
-            else:
-                params_label = "— defaults"
-
-            values = (
-                row["model"],
-                row["source"],
-                "-" if row.get("trades") is None else f"{row['trades']:,}",
-                "-" if row.get("win_rate") is None else f"{row['win_rate']:.1f}%",
-                self._fmt_num(row.get("profit_factor")),
-                self._fmt_pct(row.get("return_pct")),
-                self._fmt_pct(row.get("max_dd")),
-                row.get("realism") or "-",
-                "yes" if row.get("chart_path") else "-",
-                params_label,
-            )
+            values = model_results.table_values(row, WORK_DIR)
             self.model_tree.insert("", "end", iid=row["iid"], values=values)
 
         children = self.model_tree.get_children()
@@ -3157,16 +2881,7 @@ class RLTradingStudio(ctk.CTk):
         return getattr(self, "pipeline_rows", {}).get(iid)
 
     def _equity_path_for_model(self, model):
-        organized = find_equity_path(model)
-        if organized:
-            return organized
-        for path in [
-            WORK_DIR / f"{model}_equity.png",
-            WORK_DIR / f"{model}_filtered_equity.png",
-        ]:
-            if path.exists():
-                return path
-        return None
+        return model_results.equity_path_for_model(model, WORK_DIR)
 
     def _refresh_equity_viewer(self, event=None):
         if not hasattr(self, "pipeline_equity_label"):
@@ -3262,55 +2977,7 @@ class RLTradingStudio(ctk.CTk):
             return
 
         try:
-            import matplotlib.pyplot as plt
-            from matplotlib.backends.backend_pdf import PdfPages
-            import matplotlib.image as mpimg
-
-            out = WORK_DIR / f"pipeline_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            selected = self._selected_pipeline_row() or rows[0]
-
-            with PdfPages(out) as pdf:
-                fig, ax = plt.subplots(figsize=(11.69, 8.27))
-                ax.axis("off")
-                ax.text(0.02, 0.96, "RL Trading Pipeline Report",
-                        fontsize=20, weight="bold", transform=ax.transAxes)
-                ax.text(0.02, 0.92, f"Generated: {datetime.now():%Y-%m-%d %H:%M:%S}",
-                        fontsize=10, color="#555555", transform=ax.transAxes)
-
-                table_rows = []
-                for row in rows[:18]:
-                    table_rows.append([
-                        row["model"],
-                        row["source"],
-                        "-" if row.get("trades") is None else f"{row['trades']:,}",
-                        "-" if row.get("win_rate") is None else f"{row['win_rate']:.1f}%",
-                        self._fmt_num(row.get("profit_factor")),
-                        self._fmt_pct(row.get("return_pct")),
-                        self._fmt_pct(row.get("max_dd")),
-                    ])
-                table = ax.table(
-                    cellText=table_rows,
-                    colLabels=["Model", "Source", "Trades", "WR", "PF", "Return", "Max DD"],
-                    cellLoc="center",
-                    colLoc="center",
-                    bbox=[0.02, 0.08, 0.96, 0.78],
-                )
-                table.auto_set_font_size(False)
-                table.set_fontsize(8)
-                table.scale(1, 1.2)
-                pdf.savefig(fig, bbox_inches="tight")
-                plt.close(fig)
-
-                equity_path = selected.get("equity_path") or self._equity_path_for_model(selected["model"])
-                if equity_path and Path(equity_path).exists():
-                    fig, ax = plt.subplots(figsize=(11.69, 8.27))
-                    ax.axis("off")
-                    ax.set_title(f"Equity Curve - {selected['model']}", fontsize=16, weight="bold")
-                    img = mpimg.imread(equity_path)
-                    ax.imshow(img)
-                    pdf.savefig(fig, bbox_inches="tight")
-                    plt.close(fig)
-
+            out = model_results.export_report_pdf(rows, self._selected_pipeline_row() or rows[0], WORK_DIR)
             messagebox.showinfo("PDF exported", f"Saved report:\n{out}")
             try:
                 os.startfile(str(out))

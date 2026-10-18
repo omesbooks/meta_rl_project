@@ -26,8 +26,12 @@ class Api:
     """Exposed to pywebview: keep attributes private (leading underscore) so the bridge
     does not try to serialise the runner/threads."""
 
-    def __init__(self, root=ROOT, emit=None, python=None):
+    def __init__(self, root=ROOT, emit=None, python=None, set_title=None, settings_dir=None):
         self._root = Path(root)
+        self._set_title = set_title or (lambda title: None)
+        # where branding_config.json / api_keys.json / web_settings.json live (tests use a temp dir)
+        self._settings_dir = Path(settings_dir) if settings_dir else None
+        self._model_rows = {}
         self._emit = emit or (lambda events: None)
         self._python = python or sys.executable
         self._runner = Runner(self._root)
@@ -321,6 +325,200 @@ class Api:
             self._launch_viz(["--run_dir", str(viz)])
             return {"ok": True}
         return {"ok": False, "error": f"No visual for '{name}' yet — tick 'Live visual' before training."}
+
+    # ------------------------------------------------------------------ models
+    def list_models(self):
+        """Models table: same rows + cell text as the CTk Models page (model_results)."""
+        import model_results as mr
+        rows = mr.collect_model_rows(self._root)
+        self._model_rows = {r["iid"]: r for r in rows}
+        out = []
+        for r in rows:
+            out.append({
+                "iid": r["iid"], "model": r["model"], "source": r["source"],
+                "cells": list(mr.table_values(r, self._root)),
+                # raw numbers so the page can sort; inf/NaN become null in to_json
+                "sort": [r["model"], r["source"], r.get("trades"), r.get("win_rate"), r.get("profit_factor"),
+                         r.get("return_pct"), r.get("max_dd"), r.get("realism") or "", bool(r.get("chart_path")), None],
+                "pf_inf": r.get("profit_factor") == float("inf"),
+                "has_chart": bool(r.get("chart_path")),
+            })
+        return {"columns": list(mr.COLUMNS), "headings": [mr.HEADINGS[c] for c in mr.COLUMNS], "rows": out}
+
+    def _model_row(self, iid):
+        row = self._model_rows.get(iid)
+        if row is None:
+            self.list_models()
+            row = self._model_rows.get(iid)
+        return row
+
+    def _row_equity(self, row):
+        import model_results as mr
+        path = row.get("equity_path")
+        if not path and row.get("source") != "env backtest":
+            path = mr.equity_path_for_model(row["model"], self._root)
+        return Path(path) if path else None
+
+    def model_equity(self, iid):
+        """Equity PNG of one row as a data URL (thumbnail, like the CTk viewer)."""
+        import base64
+        import io
+        row = self._model_row(iid)
+        if not row:
+            return {"ok": False, "error": "model row not found - refresh the table"}
+        path = self._row_equity(row)
+        if not path or not path.exists():
+            if row.get("source") == "model only":
+                msg = (f"'{row['model']}' เทรนแล้วแต่ยังไม่เคย backtest - ไปหน้า Backtest เลือก model นี้ + dataset ที่เทรนมา แล้วรัน "
+                       f"(แถวที่ Result source = 'live backtest' เท่านั้นที่มี equity curve)")
+            else:
+                msg = f"No equity image found for {row['model']}. Run backtest first."
+            return {"ok": False, "missing": True, "error": msg}
+        try:
+            from PIL import Image
+            img = Image.open(path)
+            img.thumbnail((1400, 700), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.convert("RGB").save(buf, format="PNG", optimize=True)
+        except Exception as exc:
+            return {"ok": False, "error": f"Equity image: {path.name} - preview failed: {exc}"}
+        return {"ok": True, "name": path.name, "url": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")}
+
+    def _startfile(self, path):
+        import os
+        os.startfile(str(path))                            # Windows only, like rl_app
+
+    def open_model_file(self, iid, kind):
+        row = self._model_row(iid)
+        if not row:
+            return {"ok": False, "error": "Select a model result first."}
+        if kind == "equity":
+            path = self._row_equity(row)
+            if not path:
+                return {"ok": False, "error": f"No equity image found for {row['model']}."}
+        elif kind == "chart":
+            path = row.get("chart_path")
+            if not path:
+                return {"ok": False, "error": f"No HTML chart found for {row['model']}."}
+        else:
+            return {"ok": False, "error": f"unknown file kind {kind!r}"}
+        self._startfile(path)
+        return {"ok": True, "path": str(path)}
+
+    def export_models_pdf(self, iid=""):
+        import model_results as mr
+        rows = mr.collect_model_rows(self._root)
+        if not rows:
+            return {"ok": False, "error": "No model/backtest results found to export."}
+        selected = next((r for r in rows if r["iid"] == iid), rows[0])
+        out = mr.export_report_pdf(rows, selected, self._root)
+        try:
+            self._startfile(out)
+        except Exception:
+            pass
+        return {"ok": True, "path": str(out)}
+
+    # ------------------------------------------------------------------ settings
+    def _sfile(self, name):
+        import app_settings as s
+        default = {"branding": s.BRANDING_CONFIG_FILE, "keys": s.API_KEYS_FILE, "web": s.WEB_SETTINGS_FILE}[name]
+        return (self._settings_dir / default.name) if self._settings_dir else default
+
+    def _keys(self):
+        import app_settings as s
+        return s.load_api_keys(self._sfile("keys"))
+
+    def _key_status(self):
+        key = str(self._keys().get("gemini") or "")
+        return {"gemini": {"set": bool(key), "tail": key[-4:] if len(key) >= 8 else ""}}
+
+    def settings_get(self):
+        """Never returns a stored key - only whether one is set and its last 4 characters."""
+        import app_settings as s
+        eff = s.effective_branding(self._sfile("branding"))
+        return {
+            "branding": eff["branding"], "colors": eff["colors"], "saved": eff["saved"],
+            "text_fields": [list(f) for f in s.BRANDING_TEXT_FIELDS],
+            "color_fields": [list(f) for f in s.COLOR_FIELDS],
+            "presets": s.COLOR_PRESETS,
+            "web": s.load_web_settings(self._sfile("web")), "web_themes": s.WEB_THEMES,
+            "keys": self._key_status(),
+            "work_dir": str(self._root), "config_path": str(self._sfile("branding")),
+            "python": sys.version.split()[0], "logo": self._logo_data(eff["branding"].get("logo_image", "")),
+        }
+
+    def _logo_data(self, rel):
+        """Sidebar logo as a small data URL ('' when unset or unreadable), path relative to the root like rl_app."""
+        if not rel:
+            return ""
+        path = Path(rel) if Path(rel).is_absolute() else self._root / rel
+        try:
+            import base64
+            import io
+            from PIL import Image
+            img = Image.open(path)
+            img.thumbnail((96, 96))
+            buf = io.BytesIO()
+            img.convert("RGBA").save(buf, format="PNG")
+            return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+        except Exception:
+            return ""
+
+    def save_branding(self, form):
+        """form = {"branding": {key: text}, "colors": {KEY: "#hex"}} - the CTk Save button."""
+        import app_settings as s
+        branding = {k: str((form.get("branding") or {}).get(k, "")).strip() for k, _l, _h in s.BRANDING_TEXT_FIELDS}
+        colors = {}
+        for key, label, _h in s.COLOR_FIELDS:
+            val = str((form.get("colors") or {}).get(key, "")).strip()
+            if not s.is_hex_color(val):
+                return {"ok": False, "field": f"color_{key}", "error": f"{label} colour must be #rgb or #rrggbb (got {val!r})"}
+            colors[key] = val
+        s.save_branding_config(branding, colors, self._sfile("branding"))
+        if branding.get("window_title"):
+            self._set_title(branding["window_title"])
+        return {"ok": True, "path": str(self._sfile("branding")), **self.settings_get()}
+
+    def reset_branding(self):
+        path = self._sfile("branding")
+        if path.exists():
+            path.unlink()
+        return {"ok": True, **self.settings_get()}
+
+    def open_branding_config(self):
+        path = self._sfile("branding")
+        if not path.exists():
+            return {"ok": False, "error": "ยังไม่มีไฟล์ config - กด Save ก่อน เพื่อสร้างไฟล์"}
+        self._startfile(path)
+        return {"ok": True}
+
+    def save_api_key(self, value):
+        import app_settings as s
+        value = str(value or "").strip()
+        if not value:
+            return {"ok": False, "field": "gemini_key", "error": "Paste a key first (use Clear to remove the saved one)."}
+        if any(c.isspace() for c in value) or len(value) < 20:
+            return {"ok": False, "field": "gemini_key", "error": "That does not look like an API key (no spaces, 20+ characters)."}
+        keys = self._keys()
+        keys["gemini"] = value
+        s.save_api_keys(keys, self._sfile("keys"))
+        return {"ok": True, "keys": self._key_status()}
+
+    def clear_api_key(self):
+        import app_settings as s
+        keys = self._keys()
+        keys["gemini"] = ""
+        s.save_api_keys(keys, self._sfile("keys"))
+        return {"ok": True, "keys": self._key_status()}
+
+    def open_gemini_page(self):
+        import webbrowser
+        webbrowser.open("https://aistudio.google.com/app/apikey")
+        return {"ok": True}
+
+    def save_web_settings(self, values):
+        import app_settings as s
+        return {"ok": True, "web": s.save_web_settings(values or {}, self._sfile("web"))}
 
     # ------------------------------------------------------------------ app
     def open_classic(self, page=""):

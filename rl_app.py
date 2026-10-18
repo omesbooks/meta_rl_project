@@ -202,6 +202,7 @@ _load_branding_config()
 # ============================================================
 from metric_health import METRIC_INFO, classify_metric, get_recommendation  # noqa: E402  (shared with webgui)
 import model_results  # noqa: E402  (Models table rows, shared with webgui)
+import backtest_report  # noqa: E402  (Backtest report/M1/skip rules, shared with webgui)
 
 
 # ============================================================
@@ -810,36 +811,8 @@ class RLTradingStudio(ctk.CTk):
             pass
 
     def _find_matching_m1(self, csv_name):
-        """Find the companion _m1.csv for a dataset, if one exists in the project.
-
-        Derived datasets (date-split _train/_test, _relabeled, _clean, regime
-        _from_<date>, built training_data_<stem>) inherit the ORIGINAL
-        collector's M1 file: M1Resolver slices by timestamp, so the full M1
-        covers any time-subset — no need to split/copy the (huge) M1 file.
-        Walks the name ancestry until an <ancestor>_m1.csv is found."""
-        if not csv_name or csv_name == "(none)":
-            return None
-        import re
-        seen = set()
-        queue = [Path(csv_name).stem]
-        while queue:
-            s = queue.pop(0)
-            if not s or s in seen:
-                continue
-            seen.add(s)
-            cand = WORK_DIR / f"{s}_m1.csv"
-            if cand.exists():
-                return cand.name
-            # ancestors: strip known derived-name decorations
-            if s.startswith("training_data_"):
-                queue.append(s[len("training_data_"):])
-            for suf in ("_train", "_test", "_relabeled", "_clean", "_enriched"):
-                if s.endswith(suf):
-                    queue.append(s[:-len(suf)])
-            m = re.match(r"^(.*)_from_\d{4}-\d{2}-\d{2}$", s)
-            if m:
-                queue.append(m.group(1))
-        return None
+        """Companion _m1.csv for a dataset (walks the derived-name ancestry); see backtest_report."""
+        return backtest_report.find_matching_m1(csv_name, WORK_DIR)
 
     def _csv_row_count(self, csv_name):
         path = WORK_DIR / csv_name
@@ -6296,31 +6269,10 @@ class RLTradingStudio(ctk.CTk):
             delay_ms, self._update_train_split_hint)
 
     def _format_split_timestamp(self, value):
-        try:
-            if hasattr(value, "to_pydatetime"):
-                value = value.to_pydatetime()
-            if isinstance(value, datetime):
-                if value.hour or value.minute or value.second:
-                    return value.strftime("%Y-%m-%d %H:%M")
-                return value.strftime("%Y-%m-%d")
-        except Exception:
-            pass
-        text = str(value)
-        return text[:16] if len(text) > 16 else text
+        return backtest_report.format_split_timestamp(value)
 
     def _format_timestamp_range_line(self, label, ts, start_idx, end_idx):
-        if ts is None or len(ts) == 0:
-            return f"{label}: - (0 rows)"
-        start_idx = max(0, int(start_idx))
-        end_idx = min(len(ts) - 1, int(end_idx))
-        if start_idx > end_idx or start_idx >= len(ts) or end_idx < 0:
-            return f"{label}: - (0 rows)"
-        rows = end_idx - start_idx + 1
-        return (
-            f"{label}: {self._format_split_timestamp(ts.iloc[start_idx])} -> "
-            f"{self._format_split_timestamp(ts.iloc[end_idx])} "
-            f"({rows:,} rows)"
-        )
+        return backtest_report.format_range_line(label, ts, start_idx, end_idx)
 
     def _read_train_timestamps(self, path):
         import pandas as pd
@@ -7151,18 +7103,14 @@ class RLTradingStudio(ctk.CTk):
         try:
             current = self.bt_m1_csv.get().strip()
             previous_auto = getattr(self, "_bt_m1_auto_value", None)
-            if current not in ("", "(none)") and current != previous_auto:
-                return  # preserve an explicit user choice
-            m1 = self._find_matching_m1(self.bt_csv.get().strip())
-            if m1:
+            value, self._bt_m1_auto_value = backtest_report.auto_select_m1(
+                self.bt_csv.get(), current, previous_auto, WORK_DIR)
+            if value and value != "(none)":
                 values = list(getattr(self.bt_m1_csv, "_values", []) or [])
-                if m1 not in values:
-                    self.bt_m1_csv.configure(values=values + [m1])
-                self.bt_m1_csv.set(m1)
-                self._bt_m1_auto_value = m1
-            else:
-                self.bt_m1_csv.set("(none)")
-                self._bt_m1_auto_value = None
+                if value not in values:
+                    self.bt_m1_csv.configure(values=values + [value])
+            if value:
+                self.bt_m1_csv.set(value)
         except Exception:
             pass
 
@@ -7180,22 +7128,17 @@ class RLTradingStudio(ctk.CTk):
         s = meta.get("settings", {})
         res = meta.get("result", {}) or {}
 
-        def pc(v, d=2):
-            return f"{v*100:.{d}f}%" if isinstance(v, (int, float)) else "—"
-
         # Stat cards from meta (exact values, no log-regex guessing)
-        if res.get("total_trades"):
-            self._update_stat(self.stat_wr, pc(res.get("win_rate"), 1))
-            pf = res.get("profit_factor", 0)
-            self._update_stat(self.stat_pf, f"{pf:.2f}",
-                              COLOR_GREEN if pf and pf > 1 else COLOR_RED)
-            ret = res.get("return_pct", 0)
-            self._update_stat(self.stat_ret, pc(ret),
-                              COLOR_GREEN if ret > 0 else COLOR_RED)
-            self._update_stat(self.stat_dd, pc(res.get("max_drawdown")), COLOR_RED)
-        else:
-            for card in (self.stat_wr, self.stat_pf, self.stat_ret, self.stat_dd):
-                self._update_stat(card, "—", COLOR_DIM)
+        tones = {"good": COLOR_GREEN, "bad": COLOR_RED, "dim": COLOR_DIM, "": None}
+        cards = backtest_report.stat_cards(meta)
+        for card, key in ((self.stat_wr, "win_rate"), (self.stat_pf, "profit_factor"),
+                          (self.stat_ret, "return"), (self.stat_dd, "max_dd")):
+            text, tone = cards[key]
+            if tones[tone]:
+                self._update_stat(card, text, tones[tone])
+            else:
+                self._update_stat(card, text)
+        if not res.get("total_trades"):
             self._bt_equity_imgref = None
             self.bt_equity_label.configure(
                 image=None, text="0 trades — no equity chart", text_color=COLOR_DIM)
@@ -7233,98 +7176,7 @@ class RLTradingStudio(ctk.CTk):
             pass
 
         # Full report text
-        L = []
-        L.append(f"Model {meta.get('model','?')}  ·  {meta.get('data_csv','?')}  ·  "
-                 f"{meta.get('backtest_rows',0):,} rows  ·  "
-                 f"{(meta.get('backtest_period') or {}).get('start','?')} -> "
-                 f"{(meta.get('backtest_period') or {}).get('end','?')}")
-        L.append(f"Settings   model={s.get('model_source','final')}  mode={s.get('mode')}  "
-                 f"conf={s.get('conf')}  risk={pc(s.get('risk'))}  "
-                 f"maxpos={s.get('max_positions')}  "
-                 f"SL/TP={s.get('atr_sl')}/{s.get('atr_tp')} ATR")
-        L.append(f"Realism    intrabar={s.get('intrabar')}  slip={pc(s.get('stop_slippage'),3)}  "
-                 f"swap L/S={pc(s.get('swap_long'),4)}/{pc(s.get('swap_short'),4)}  "
-                 f"M1={'yes' if s.get('m1_csv') else 'no'}")
-        L.append("-" * 100)
-        L.append(f"Trades     {res.get('total_trades',0):,} "
-                 f"(L {res.get('long_trades',0):,} / S {res.get('short_trades',0):,})  ·  "
-                 f"WR {pc(res.get('win_rate'),1)}  ·  PF {res.get('profit_factor',0):.2f}  ·  "
-                 f"avg win {pc(res.get('avg_win'))} / loss {pc(res.get('avg_loss'))}")
-        sharpe_val = res.get('sharpe')
-        sharpe_txt = (f"{sharpe_val:.2f} [{res.get('sharpe_timeframe', 'unknown')} bars]"
-                      if sharpe_val is not None else "n/a (no timestamps)")
-        L.append(f"P&L        return {pc(res.get('return_pct'))}  ·  "
-                 f"final ${res.get('final_balance',0):,.0f}  ·  "
-                 f"max DD {pc(res.get('max_drawdown'))}  ·  "
-                 f"sharpe(ann) {sharpe_txt}")
-        def num(v, d=2):
-            return f"{v:.{d}f}" if isinstance(v, (int, float)) else "—"
-        if any(res.get(k) is not None for k in
-               ("sortino", "calmar", "ulcer_index", "equity_r2")):
-            L.append(f"Risk-adj   sortino {num(res.get('sortino'))}  ·  "
-                     f"calmar {num(res.get('calmar'))}  ·  "
-                     f"ulcer {num(res.get('ulcer_index'))}  ·  "
-                     f"UPI {num(res.get('upi'))}  ·  "
-                     f"equity R2 {num(res.get('equity_r2'), 3)}")
-        L.append(f"Streaks    max {res.get('max_consecutive_wins',0)} wins / "
-                 f"{res.get('max_consecutive_losses',0)} losses in a row  ·  "
-                 f"avg bars held {num(res.get('avg_trade_bars'), 1)} "
-                 f"(W {num(res.get('avg_winning_trade_bars'), 1)} / "
-                 f"L {num(res.get('avg_losing_trade_bars'), 1)})")
-        if res.get("largest_win_pct") is not None:
-            L.append(f"Extremes   largest win {pc(res.get('largest_win_pct'), 3)} "
-                     f"({num(res.get('largest_win_bars'), 0)} bars)  ·  "
-                     f"largest loss {pc(res.get('largest_loss_pct'), 3)} "
-                     f"({num(res.get('largest_loss_bars'), 0)} bars)  ·  "
-                     f"annual vol {pc(res.get('annual_volatility'), 1)}")
-        amb = res.get('ambiguous_share_of_sl_tp')
-        L.append(f"Execution  ambiguous(SL+TP same bar) {res.get('ambiguous_bars',0)}  ·  "
-                 f"M1-resolved {res.get('m1_resolved',0)}  ·  "
-                 f"by-assumption {pc(amb,1)}  ·  "
-                 f"swap {res.get('swap_rollovers',0)} rollovers ({pc(res.get('swap_net_impact'),3)})")
-        rb = res.get("random_baseline")
-        if rb:
-            L.append(f"Baseline   beats {rb.get('beats')}/{rb.get('runs')} random agents "
-                     f"({pc(rb.get('percentile'),0)})  ·  random median {pc(rb.get('random_return_median'))}")
-            L.append(f"           -> {rb.get('verdict','')}")
-        mc = res.get("monte_carlo")
-        if mc:
-            L.append(f"MonteCarlo DD median {pc(mc.get('dd_median'))}  ·  "
-                     f"95% worst {pc(mc.get('dd_p95_worst_case'))}  ·  "
-                     f"worst {pc(mc.get('dd_worst'))}  ·  "
-                     f"P(hard stop) {pc(mc.get('p_hit_hard_dd'),1)}")
-        sig = res.get("significance")
-        if sig:
-            L.append(f"Stats      mean/trade {pc(sig.get('mean_per_trade'),4)}  ·  "
-                     f"t {sig.get('t_stat',0):.2f}  ·  p {sig.get('p_value_one_sided',0):.3f}  ·  "
-                     f"PSR {pc(sig.get('psr'),1)}")
-            L.append(f"           -> {sig.get('verdict','')}")
-        bs = res.get("bootstrap")
-        if bs:
-            pf_b = bs.get("profit_factor") or {}
-            sh_b = bs.get("sharpe_per_trade") or {}
-            dd_b = bs.get("max_dd_conf") or {}
-            parts = []
-            if pf_b.get("ci95"):
-                parts.append(f"PF {pf_b.get('point', 0):.2f} "
-                             f"95% CI [{pf_b['ci95'][0]:.2f}, {pf_b['ci95'][1]:.2f}]")
-            if sh_b.get("ci95"):
-                parts.append(f"Sharpe/trade CI [{sh_b['ci95'][0]:.3f}, "
-                             f"{sh_b['ci95'][1]:.3f}]")
-            if dd_b.get("0.95") is not None:
-                parts.append(f"DD 95% worst {pc(dd_b.get('0.95'))}")
-            if parts:
-                L.append("Bootstrap  " + "  ·  ".join(parts))
-            if bs.get("verdict"):
-                L.append(f"           -> {bs['verdict']}")
-        ea = res.get("equity_analytics") or {}
-        if ea:
-            neg = sum(1 for v in (ea.get('monthly_returns') or {}).values() if v < 0)
-            tot = len(ea.get('monthly_returns') or {})
-            L.append(f"Analytics  underwater {ea.get('longest_underwater_bars',0):,} bars  ·  "
-                     f"winners MAE {pc(ea.get('winners_avg_mae'),2)}  ·  "
-                     f"losers MFE {pc(ea.get('losers_avg_mfe'),2)}  ·  "
-                     f"months neg {neg}/{tot}")
+        L = backtest_report.report_lines(meta)
 
         self.bt_report_box.configure(state="normal")
         self.bt_report_box.delete("1.0", "end")
@@ -7379,19 +7231,9 @@ class RLTradingStudio(ctk.CTk):
                 text_color=COLOR_YELLOW)
             return
 
-        try:
-            skip_pct = input_fraction(self.bt_start.get(), "bt_start", allow_zero=True, allow_one=False)
-        except ValueError as exc:
-            self.bt_start_hint.configure(text=str(exc), text_color=COLOR_YELLOW)
-            return
-        skip_pct = min(max(skip_pct, 0.0), 1.0)
-        start_idx = max(0, min(int(len(ts) * skip_pct), len(ts)))
-        skipped_line = self._format_timestamp_range_line("Skipped", ts, 0, start_idx - 1)
-        backtest_line = self._format_timestamp_range_line("Backtest", ts, start_idx, len(ts) - 1)
-        color = COLOR_YELLOW if start_idx >= len(ts) else COLOR_DIM
+        text, level = backtest_report.skip_preview(ts, self.bt_start.get())
         self.bt_start_hint.configure(
-            text=f"{skipped_line}\n{backtest_line}",
-            text_color=color)
+            text=text, text_color=COLOR_YELLOW if level == "warn" else COLOR_DIM)
 
     def _generate_chart(self):
         """Generate backtest chart"""

@@ -122,33 +122,36 @@ function drawTrend() {
 
 // ------------------------------------------------------------------ run state + events
 function setBusy(b, text) {
-  busy = b; $("start").disabled = b; $("stop").disabled = !b; if (b) $("pills").classList.remove("off");
+  busy = b; if (b) $("pills").classList.remove("off");
+  // one subprocess at a time across pages (same as the CTk ProcessRunner): every run button waits
+  document.querySelectorAll("[data-run]").forEach(x => x.disabled = b); document.querySelectorAll("[data-stop]").forEach(x => x.disabled = !b);
   document.querySelector("#status .dot").className = "dot" + (b ? " run" : ""); $("statusText").textContent = text || (b ? "training" : "idle");
 }
-function logLine(text, cls = "") {
-  const el = $("log"), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
+function logLine(text, cls = "", id = "log") {
+  const el = $(id), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 30;
   const span = document.createElement("span"); span.className = cls; span.textContent = text + "\n"; el.appendChild(span);
   while (el.childNodes.length > MAX_LOG) el.removeChild(el.firstChild);
   if (atEnd) el.scrollTop = el.scrollHeight;
 }
+function onTrainEvent(ev) {
+  if (ev.type === "start") { setBusy(true); rewards.length = 0; drawTrend(); logLine("$ " + ev.command, "cmd"); $("runStatus").textContent = "Starting…"; $("bar").style.width = "0"; }
+  else if (ev.type === "line") {
+    logLine(ev.line, ev.cls);
+    if (ev.progress) { const p = Math.min(1, ev.progress.step / ev.progress.total); $("bar").style.width = (100 * p).toFixed(1) + "%"; $("runStatus").textContent = `Step ${ev.progress.step.toLocaleString()} / ${ev.progress.total.toLocaleString()}  (${(100 * p).toFixed(1)}%)`; }
+    if (ev.metric) onMetric(ev.metric);
+    if (ev.viz) $("statusText").textContent = `training · visual: ${ev.viz.kind === "rollout" ? "training rollout" : "eval"} ${ev.viz.index + 1} @ ${ev.viz.step.toLocaleString()}`;
+  } else if (ev.type === "done") {
+    setBusy(false);
+    const ok = ev.rc === 0;
+    $("runStatus").textContent = ev.cancelled ? "Stopped" : ok ? "✓ Training complete" : `✗ Training failed (exit ${ev.rc})`;
+    logLine(ev.cancelled ? "[stop] training cancelled" : ok ? "[done] training complete" : `[error] exit code ${ev.rc}`, ok ? "success" : "error");
+    if (ok) $("bar").style.width = "100%";
+  }
+}
+// Python pushes event batches here; each event goes to the page that started the run (owner page)
 window.rlweb = {
-  onEvents(events) {
-    for (const ev of events) {
-      if (ev.type === "start") { setBusy(true); rewards.length = 0; drawTrend(); logLine("$ " + ev.command, "cmd"); $("runStatus").textContent = "Starting…"; $("bar").style.width = "0"; }
-      else if (ev.type === "line") {
-        logLine(ev.line, ev.cls);
-        if (ev.progress) { const p = Math.min(1, ev.progress.step / ev.progress.total); $("bar").style.width = (100 * p).toFixed(1) + "%"; $("runStatus").textContent = `Step ${ev.progress.step.toLocaleString()} / ${ev.progress.total.toLocaleString()}  (${(100 * p).toFixed(1)}%)`; }
-        if (ev.metric) onMetric(ev.metric);
-        if (ev.viz) $("statusText").textContent = `training · visual: ${ev.viz.kind === "rollout" ? "training rollout" : "eval"} ${ev.viz.index + 1} @ ${ev.viz.step.toLocaleString()}`;
-      } else if (ev.type === "done") {
-        setBusy(false);
-        const ok = ev.rc === 0;
-        $("runStatus").textContent = ev.cancelled ? "Stopped" : ok ? "✓ Training complete" : `✗ Training failed (exit ${ev.rc})`;
-        logLine(ev.cancelled ? "[stop] training cancelled" : ok ? "[done] training complete" : `[error] exit code ${ev.rc}`, ok ? "success" : "error");
-        if (ok) $("bar").style.width = "100%";
-      }
-    }
-  },
+  handlers: { train: onTrainEvent },
+  onEvents(events) { for (const ev of events) (this.handlers[ev.page] || onTrainEvent)(ev); },
 };
 
 // ------------------------------------------------------------------ actions
@@ -209,7 +212,7 @@ async function init() {
   $("browse").onclick = async () => { const p = await api().browse_csv(); if (p) { $("csv").insertAdjacentHTML("afterbegin", `<option value="${p}">${p.split(/[\\/]/).pop()} (browsed)</option>`); $("csv").value = p; refreshCsv(); } };
   $("attach").onclick = async () => { const r = await api().attach_params($("csv").value); if (r.ok) { toast("Attached " + r.path, "ok"); refreshCsv(); } else if (!r.cancelled) toast(r.error, "err"); };
   $("start").onclick = startTraining;
-  $("stop").onclick = async () => { logLine("Stopping…", "warn"); await api().stop_training(); };
+  $("stop").onclick = async () => { logLine("Stopping…", "warn"); await api().stop_run(); };
   $("openViz").onclick = async () => { const r = await api().open_visual($("name").value, $("viz_mode").value); if (!r.ok) toast(r.error, "err"); };
   document.querySelectorAll("#side a").forEach(a => a.onclick = () => {
     const p = a.dataset.p; document.querySelectorAll("#side a").forEach(x => x.classList.toggle("on", x === a));
@@ -222,6 +225,7 @@ async function init() {
   });
   $("openClassic").onclick = () => api().open_classic();
   await window.rlpages.init();
+  if (window.rlbacktest) await window.rlbacktest.init();
   setBusy(await api().busy());
   window.__rlweb_ready = true;
 }

@@ -13,7 +13,7 @@
     <a data-p="tools">🛠️ Data Tools<span class="cl">classic</span></a>
     <a data-p="pipeline">▶ Pipeline<span class="cl">classic</span></a>
     <a data-p="train" class="on">🎯 Train</a>
-    <a data-p="backtest">📊 Backtest<span class="cl">classic</span></a>
+    <a data-p="backtest">📊 Backtest</a>
     <a data-p="walkfwd">🔬 Walk-Forward<span class="cl">classic</span></a>
     <a data-p="finetune">🔄 Fine-tune<span class="cl">classic</span></a>
     <a data-p="analyze">🔍 Analyze<span class="cl">classic</span></a>
@@ -72,7 +72,7 @@
       <div class="row c2">
         <div class="card glass"><h3>RUN</h3>
           <div class="inl" style="flex-wrap:wrap">
-            <button class="p" id="start">▶ Start Training</button><button class="d" id="stop" disabled>⏹ Stop</button>
+            <button class="p" id="start" data-run>▶ Start Training</button><button class="d" id="stop" data-stop disabled>⏹ Stop</button>
             <label class="chk"><input type="checkbox" id="viz"> Live visual</label>
             <select id="viz_mode" style="width:190px;flex:none"></select>
             <button id="openViz">◉ Open Visual</button>
@@ -107,6 +107,55 @@
         </details>
       </div>
 
+    </section>
+
+    <!-- ================================================================ BACKTEST -->
+    <section class="page" id="p-backtest">
+      <div class="row c2">
+        <div class="card glass"><h3>SETUP · <b>backtest_live.py</b></h3>
+          <div class="f">
+            <label>Model</label><div class="inl"><select id="bt_model"></select><select id="bt_source" style="flex:0 0 190px"></select></div>
+            <span class="hint">Final = the saved .zip · Best = the EvalCallback pick (the pre-overfit snapshot the training diagnosis recommends)</span>
+            <label>Test dataset</label><select id="bt_csv"></select>
+            <label>M1 data</label><div class="inl"><select id="bt_m1"></select><button class="sm" id="bt_m1_browse">📂</button></div>
+            <span class="hint" id="bt_m1_hint">optional: resolves SL/TP order inside a bar with real M1 data · auto-picked when the dataset has a companion _m1.csv</span>
+            <label>Confidence threshold</label><input id="bt_conf">
+            <label>Skip %</label><input id="bt_start" placeholder="0 (= test on all data)">
+            <span class="hint" id="bt_range" style="white-space:pre-line">Select dataset to preview backtest range</span>
+            <label>Backtest mode</label><select id="bt_mode"></select>
+            <span class="hint">Pure = ตรงกับ env ตอน train · SL/TP = สำหรับ live broker</span>
+          </div>
+        </div>
+        <div class="card glass"><h3>RISK MANAGEMENT · <b>execution realism · validation</b></h3>
+          <div class="f">
+            <label>Risk · Max positions</label><div class="inl"><input id="bt_risk"><input id="bt_max_pos"></div>
+            <label class="sltp">ATR × SL · ATR × TP</label><div class="inl sltp"><input id="bt_sl"><input id="bt_tp"></div>
+            <label class="sltp">Intrabar fill</label><select id="bt_intrabar" class="sltp"></select>
+            <label>Stop slippage %</label><input id="bt_stop_slip">
+            <span class="hint" id="bt_realism_hint"></span>
+            <label>Swap long · short %/night</label><div class="inl"><input id="bt_swap_long"><input id="bt_swap_short"></div>
+            <span class="hint">ติดลบ = โดนเก็บ · บวก = ได้ carry · คืนวันพุธคิด 3 เท่า (T+2)</span>
+            <label>Random baseline · MC runs</label><div class="inl"><input id="bt_random_baseline"><input id="bt_mc"></div>
+            <span class="hint">Baseline: model ต้องชนะ agent สุ่ม ≥95% ถึงถือว่ามี edge จริง · MC: กระจาย DD จากการสลับลำดับ trade</span>
+            <label>Window size</label><input id="bt_window" placeholder="auto (from model)">
+            <span class="hint">auto = read from the model's observation shape</span>
+          </div>
+        </div>
+      </div>
+      <div class="card glass"><h3>RUN</h3>
+        <div class="inl" style="flex-wrap:wrap">
+          <button class="p" id="bt_run" data-run>▶ Run Backtest</button><button id="bt_chart" data-run>📊 Generate Chart</button><button id="bt_open_chart">🌐 Open Chart</button>
+          <button class="d" id="bt_stop" data-stop disabled>⏹ Stop</button><span class="meta" id="bt_status">Ready</span>
+        </div>
+        <div class="term" id="bt_log" style="height:220px"></div>
+      </div>
+      <div class="card glass"><h3>RESULTS · <b id="bt_rep_name">select a model</b><span class="r meta" id="bt_rep_src"></span></h3>
+        <div class="kpis kpi4" id="bt_cards"></div>
+        <div id="bt_equity" class="eq" style="margin-top:12px"></div>
+        <div id="bt_mcimg" class="eq" style="margin-top:12px;min-height:0"></div>
+        <div class="rep" id="bt_report"></div>
+        <details style="margin-top:10px"><summary>REPORT AS TEXT (same as the classic app)</summary><pre class="reptxt" id="bt_report_txt"></pre></details>
+      </div>
     </section>
 
     <!-- ================================================================ MODELS -->
@@ -183,5 +232,6 @@
 <div id="toast" class="glass"></div>
 <script src="app.js"></script>
 <script src="pages.js"></script>
+<script src="backtest.js"></script>
 </body>
 </html>

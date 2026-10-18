@@ -117,3 +117,13 @@ body.deep .tbl { background: rgba(0,0,0,.18); border-color: rgba(140,170,220,.14
 body.deep .tbl tbody tr:hover { background: rgba(255,255,255,.05); } body.deep .tbl tbody tr.on { background: rgba(76,157,255,.16); }
 body.deep .prog { background: rgba(255,255,255,.08); } body.deep #modal pre { background: rgba(0,0,0,.3); }
 body.deep .term { background: rgba(3,7,16,.85); }
+
+/* ---- phase 3: Backtest ---- */
+.kpis.kpi4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.rep table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.rep td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.rep td:first-child { width: 110px; color: var(--dim); font: 600 11px var(--hud); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.rep tr.verdict td:last-child { color: var(--fg); font-weight: 600; } .rep tr.verdict td { border-bottom-style: dashed; }
+.rep tr.sep td { padding: 2px; border-bottom: 2px solid var(--line); }
+.reptxt { font: 11.5px/1.5 var(--mono); background: rgba(15,26,43,.06); border-radius: 10px; padding: 10px; overflow: auto; white-space: pre; }
+body.deep .reptxt { background: rgba(0,0,0,.3); }

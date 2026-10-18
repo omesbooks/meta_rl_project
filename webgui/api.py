@@ -15,6 +15,7 @@ import threading
 import time
 from pathlib import Path
 
+from webgui import backtest as btform
 from webgui import commands, logparse
 from webgui.runner import Runner
 
@@ -32,6 +33,8 @@ class Api:
         # where branding_config.json / api_keys.json / web_settings.json live (tests use a temp dir)
         self._settings_dir = Path(settings_dir) if settings_dir else None
         self._model_rows = {}
+        self._run_info = {}                   # page -> {kind, model} of the run in flight
+        self._ts_cache = {}
         self._emit = emit or (lambda events: None)
         self._python = python or sys.executable
         self._runner = Runner(self._root)
@@ -283,7 +286,7 @@ class Api:
                         self._on_viz(ev["viz"])
                     batch.append(ev)
                 else:
-                    batch.append({"type": "done", "page": page, **data})
+                    batch.append({"type": "done", "page": page, **self._run_info.pop(page, {}), **data})
             if batch:
                 try:
                     self._emit(batch)
@@ -361,8 +364,6 @@ class Api:
 
     def model_equity(self, iid):
         """Equity PNG of one row as a data URL (thumbnail, like the CTk viewer)."""
-        import base64
-        import io
         row = self._model_row(iid)
         if not row:
             return {"ok": False, "error": "model row not found - refresh the table"}
@@ -375,14 +376,21 @@ class Api:
                 msg = f"No equity image found for {row['model']}. Run backtest first."
             return {"ok": False, "missing": True, "error": msg}
         try:
-            from PIL import Image
-            img = Image.open(path)
-            img.thumbnail((1400, 700), Image.LANCZOS)
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, format="PNG", optimize=True)
+            url = self._png_data(path)
         except Exception as exc:
             return {"ok": False, "error": f"Equity image: {path.name} - preview failed: {exc}"}
-        return {"ok": True, "name": path.name, "url": "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")}
+        return {"ok": True, "name": path.name, "url": url}
+
+    @staticmethod
+    def _png_data(path, box=(1400, 700)):
+        import base64
+        import io
+        from PIL import Image
+        img = Image.open(path)
+        img.thumbnail(box, Image.LANCZOS)
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, format="PNG", optimize=True)
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
 
     def _startfile(self, path):
         import os
@@ -417,6 +425,138 @@ class Api:
         except Exception:
             pass
         return {"ok": True, "path": str(out)}
+
+    # ------------------------------------------------------------------ backtest
+    def backtest_catalog(self):
+        """Dropdown contents of the Backtest page (same lists as the CTk dropdowns)."""
+        from artifact_paths import model_names_from_artifacts
+        csvs = sorted(p.name for p in self._root.glob("*.csv"))
+        m1_first = [c for c in csvs if c.endswith("_m1.csv")]
+        others = [c for c in csvs if not c.endswith("_m1.csv")]
+        return {"models": sorted(set(model_names_from_artifacts())), "datasets": others,
+                "m1_options": [btform.NONE] + m1_first + others, "defaults": btform.form_defaults(),
+                "modes": btform.MODES, "intrabar": btform.INTRABAR, "sources": btform.SOURCES}
+
+    def backtest_m1(self, csv, current="", previous_auto=None):
+        """The CTk M1 auto-select rule -> {"value": new dropdown value or None (keep), "auto"}."""
+        import backtest_report
+        value, auto = backtest_report.auto_select_m1(csv, current, previous_auto, self._root)
+        return {"value": value, "auto": auto}
+
+    def _timestamps(self, csv):
+        import pandas as pd
+        path = self._csv_path(csv)
+        try:
+            st = path.stat()
+        except OSError:
+            return None, f"CSV not found: {path.name}"
+        key = (str(path), st.st_mtime_ns, st.st_size)
+        if key not in self._ts_cache:
+            last = None
+            for kwargs in ({}, {"encoding": "utf-8-sig"}, {"encoding": "utf-16"}, {"encoding": "utf-16-le"}, {"encoding": "cp1252"}):
+                try:
+                    df = pd.read_csv(path, usecols=["timestamp"], **kwargs)
+                    ts = pd.to_datetime(df["timestamp"], errors="coerce").dropna().sort_values().reset_index(drop=True)
+                    self._ts_cache = {key: ts}
+                    break
+                except ValueError as exc:
+                    if "Usecols do not match" in str(exc) or "columns expected" in str(exc):
+                        return None, "No timestamp column for date range"
+                    last = exc
+                except UnicodeError as exc:
+                    last = exc
+                except Exception as exc:
+                    last = exc
+                    break
+            else:
+                return None, f"Cannot read timestamps: {last}"
+            if key not in self._ts_cache:
+                return None, f"Cannot read timestamps: {last}"
+        return self._ts_cache[key], None
+
+    def backtest_range(self, csv, skip):
+        """The 'Skip %' preview: Skipped / Backtest date ranges (CTk _update_backtest_skip_hint)."""
+        import backtest_report
+        if not csv or csv == btform.NONE:
+            return {"text": "Select dataset to preview backtest range", "level": ""}
+        ts, error = self._timestamps(csv)
+        if error:
+            return {"text": error, "level": "warn"}
+        text, level = backtest_report.skip_preview(ts, skip)
+        return {"text": text, "level": level}
+
+    def backtest_report(self, model):
+        """Stored report of one model: stat cards, the CTk report lines, equity + Monte Carlo PNGs."""
+        import backtest_report
+        from artifact_paths import backtest_meta_path, find_equity_path, mc_chart_path
+        model = str(model or "").strip()
+        if not model:
+            return {"ok": False, "error": "select a model"}
+        try:
+            meta = backtest_report.load_meta(model)
+        except Exception as exc:
+            return {"ok": False, "error": f"cannot read the report: {exc}"}
+        if meta is None:
+            return {"ok": False, "missing": True, "error": f"No stored backtest for {model} yet - run one."}
+        lines = backtest_report.report_lines(meta)
+        out = {"ok": True, "model": model, "status": meta.get("status", ""), "cards": backtest_report.stat_cards(meta),
+               "lines": lines, "rows": backtest_report.report_rows(lines), "meta_path": str(backtest_meta_path(model)),
+               "zero_trades": not (meta.get("result") or {}).get("total_trades"), "equity": "", "mc": ""}
+        if not out["zero_trades"]:
+            for key, path in (("equity", find_equity_path(model)), ("mc", mc_chart_path(model))):
+                try:
+                    if path and Path(path).exists():
+                        out[key] = self._png_data(path, (1800, 900))
+                except Exception:
+                    pass
+        return out
+
+    def browse_m1(self):
+        return self._open_dialog(self._root, ("CSV files (*.csv)", "All files (*.*)"))
+
+    def _start_page_run(self, page, cmd, info):
+        if self._runner.is_running():
+            return {"ok": False, "error": "Another task running"}
+        self._train_total = None
+        if not self._runner.start(cmd, page):
+            return {"ok": False, "error": "Another task running"}
+        self._run_info[page] = info
+        self.start_pump()
+        self._emit([{"type": "start", "page": page, "command": " ".join(cmd[1:]), **info}])
+        return {"ok": True, **info}
+
+    def start_backtest(self, form):
+        try:
+            built = btform.build_backtest_command(form, python=self._python)
+        except commands.FormError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        r = self._start_page_run("backtest", built["cmd"], {"kind": "backtest", "model": built["model"]})
+        if r["ok"]:
+            notes = [f"[settings] max_hold={built['max_hold']} ({built['max_hold_source']})"] + built["warnings"]
+            self._emit([{"type": "line", "page": "backtest", "line": n, "cls": "warn" if n.startswith("[warn]") else "info"} for n in notes])
+        return r
+
+    def generate_chart(self, form):
+        try:
+            built = btform.build_chart_command(form, python=self._python)
+        except commands.FormError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        return self._start_page_run("backtest", built["cmd"], {"kind": "chart", "model": built["model"]})
+
+    def open_chart(self, model):
+        import webbrowser
+        from artifact_paths import find_chart_path
+        model = str(model or "").strip()
+        if not model:
+            return {"ok": False, "error": "Please select model"}
+        path = find_chart_path(model)
+        if not path:
+            return {"ok": False, "error": f"ไม่พบไฟล์ {model}_backtest_chart.html - กรุณา 'Generate Chart' ก่อน"}
+        webbrowser.open(Path(path).as_uri())
+        return {"ok": True, "path": str(path)}
+
+    def stop_run(self):
+        return self.stop_training()
 
     # ------------------------------------------------------------------ settings
     def _sfile(self, name):

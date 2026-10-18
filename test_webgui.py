@@ -189,3 +189,51 @@ def test_report_pdf_is_written_from_any_thread(tmp_path):
     t = threading.Thread(target=lambda: out.setdefault("p", mr.export_report_pdf(rows, None, tmp_path)))
     t.start(); t.join(60)
     assert out["p"].exists() and out["p"].read_bytes()[:4] == b"%PDF" and out["p"].parent == tmp_path
+
+
+# ---------------------------------------------------------------- phase 3: Backtest
+def test_m1_auto_select_follows_the_ctk_rule(tmp_path):
+    import backtest_report as br
+    (tmp_path / "eu_h4_m1.csv").write_text("x\n", encoding="utf-8")
+    # derived names inherit the original collector's M1 file
+    for derived in ("eu_h4.csv", "eu_h4_train.csv", "training_data_eu_h4_clean.csv", "eu_h4_from_2020-01-01.csv"):
+        assert br.find_matching_m1(derived, tmp_path) == "eu_h4_m1.csv", derived
+    assert br.find_matching_m1("gu_h4.csv", tmp_path) is None
+    assert br.auto_select_m1("eu_h4.csv", "(none)", None, tmp_path) == ("eu_h4_m1.csv", "eu_h4_m1.csv")
+    assert br.auto_select_m1("gu_h4.csv", "eu_h4_m1.csv", "eu_h4_m1.csv", tmp_path) == ("(none)", None)   # stale auto pick is reset
+    assert br.auto_select_m1("gu_h4.csv", "my_m1.csv", None, tmp_path) == (None, None)                    # explicit choice kept
+    api = Api(tmp_path)
+    assert api.backtest_m1("eu_h4.csv", "", None) == {"value": "eu_h4_m1.csv", "auto": "eu_h4_m1.csv"}
+
+
+def test_skip_preview_and_report_rows(tmp_path):
+    import backtest_report as br
+    import pandas as pd
+    ts = pd.Series(pd.date_range("2024-01-01", periods=100, freq="4h"))
+    text, level = br.skip_preview(ts, "80")
+    assert text == "Skipped: 2024-01-01 -> 2024-01-14 04:00 (80 rows)\nBacktest: 2024-01-14 08:00 -> 2024-01-17 12:00 (20 rows)" and level == ""
+    assert br.skip_preview(ts, "100%")[1] == "warn"
+    (tmp_path / "d.csv").write_text("timestamp,close\n" + "\n".join(f"{t},1" for t in ts), encoding="utf-8")
+    assert Api(tmp_path).backtest_range("d.csv", "80")["text"] == text
+    meta = {"model": "m", "data_csv": "d.csv", "backtest_rows": 20, "settings": {"mode": "pure_agent"},
+            "result": {"total_trades": 3, "win_rate": 2 / 3, "profit_factor": 2.5, "return_pct": 0.031, "max_drawdown": -0.012,
+                       "random_baseline": {"beats": 19, "runs": 20, "percentile": 0.95, "verdict": "EDGE"},
+                       "monte_carlo": {"dd_median": -0.02}}}
+    lines = br.report_lines(meta)
+    rows = br.report_rows(lines)
+    assert rows[0][0] == "Run" and ["", ""] in rows
+    assert ["Baseline", "beats 19/20 random agents (95%)  ·  random median —"] in rows and ["", "-> EDGE"] in rows
+    assert any(r[0] == "MonteCarlo" and r[1].startswith("DD median -2.00%") for r in rows)
+    assert br.stat_cards(meta) == {"win_rate": ("66.7%", ""), "profit_factor": ("2.50", "good"), "return": ("3.10%", "good"), "max_dd": ("-1.20%", "bad")}
+    assert br.stat_cards({"result": {"total_trades": 0}})["return"] == ("—", "dim")
+
+
+def test_backtest_api_errors_name_the_field(tmp_path):
+    api = Api(tmp_path)
+    assert api.start_backtest({"model": "", "csv": "x.csv"})["field"] == "bt_model"
+    r = api.start_backtest({"model": "m", "csv": "x.csv", "max_pos": "0"})
+    assert r["ok"] is False and r["field"] == "max_pos" and not api.busy()
+    assert api.generate_chart({"model": "zz_never_trained", "csv": "x.csv"})["field"] == "bt_model"
+    assert api.backtest_report("zz_never_trained")["missing"] is True
+    cat = Api(ROOT).backtest_catalog()
+    assert cat["m1_options"][0] == "(none)" and not any(d.endswith("_m1.csv") for d in cat["datasets"])

@@ -258,6 +258,73 @@ class DashboardContractTests(unittest.TestCase):
         self.assertEqual(out["cmd"], ctk_cmd)
         self.assertTrue(out["warnings"])
 
+    # ---- web GUI parity (phase 3): webgui.backtest must build the CTk backtest command
+    def ctk_backtest(self, model="bt_probe", **widgets):
+        app = self.app
+        app.bt_model.set(model)
+        app.bt_csv.set(str(self.csv))
+        app.bt_m1_csv.set(widgets.pop("m1", "(none)"))
+        app.bt_mode.set(widgets.pop("mode", "Pure Agent (matches training) ⭐"))
+        app.bt_intrabar.set(widgets.pop("intrabar", "pessimistic (SL first) ⭐"))
+        app.bt_model_source.set(widgets.pop("source", "Final ⭐"))
+        values = {"conf": "0", "start": "0", "risk": "0.01", "max_pos": "1", "sl": "2.0", "tp": "4.0",
+                  "stop_slip": "0.01", "swap_long": "0", "swap_short": "0", "random_baseline": "20",
+                  "mc": "1000", "window": "auto"}
+        values.update(widgets)
+        for key, val in values.items():
+            set_entry(getattr(app, "bt_" + key), val)
+        with patch.object(app, "_start_runner") as start:
+            app._run_backtest()
+        self.assertEqual(start.call_count, 1)
+        return start.call_args.args[0]
+
+    def test_web_backtest_command_equals_ctk_defaults(self):
+        from webgui.backtest import build_backtest_command, form_defaults
+        form = dict(form_defaults(), model="bt_probe", csv=str(self.csv))
+        self.assertEqual(build_backtest_command(form)["cmd"], self.ctk_backtest())
+
+    def test_web_backtest_command_equals_ctk_full(self):
+        from webgui.backtest import build_backtest_command, form_defaults
+        meta = paths.train_meta_path("bt_meta")                     # max_hold must come from the model meta
+        meta.parent.mkdir(parents=True, exist_ok=True)
+        meta.write_text(json.dumps({"hyperparameters": {"max_hold": 17}}), encoding="utf-8")
+        m1 = self.root / "raw_m1.csv"
+        m1.write_text("timestamp,open,high,low,close\n", encoding="utf-8")
+        widgets = {"conf": "0.35", "start": "85", "risk": "0.02", "max_pos": "1", "sl": "1.5", "tp": "3",
+                   "stop_slip": "0.02", "swap_long": "-0.005", "swap_short": "0.001", "random_baseline": "5",
+                   "mc": "0", "window": "15"}
+        ctk = self.ctk_backtest("bt_meta", m1=str(m1), mode="Agent + SL/TP (live-realistic)",
+                                intrabar="optimistic (TP first)", source="Best (pre-overfit)", **widgets)
+        form = dict(form_defaults(), model="bt_meta", csv=str(self.csv), m1_csv=str(m1), mode="agent_sltp",
+                    intrabar="optimistic", source="best", **widgets)
+        out = build_backtest_command(form)
+        self.assertEqual(out["cmd"], ctk)
+        self.assertEqual((out["max_hold"], out["max_hold_source"]), (17, "model meta"))
+        self.assertIn("--m1_csv", ctk)
+
+    def test_web_backtest_rejects_what_ctk_rejects(self):
+        from webgui.backtest import build_backtest_command, form_defaults
+        from webgui.commands import FormError
+        for key, raw in (("start", "100%"), ("window", ""), ("conf", "nan"), ("swap_long", "bad"), ("max_pos", "1.5"), ("mc", "-1")):
+            with self.assertRaises(FormError) as cm:
+                build_backtest_command(dict(form_defaults(), model="bt_probe", csv=str(self.csv), **{key: raw}))
+            self.assertEqual(cm.exception.field, key)
+
+    def test_ctk_report_text_equals_backtest_report(self):
+        """The CTk report panel and the web report come from the same lines (stored meta copied in)."""
+        import backtest_report
+        src = sorted(Path(ROOT, "artifacts", "models").glob("*/backtests/*_live_bt.meta.json"))
+        self.assertTrue(src, "needs at least one stored live-backtest meta in artifacts/models")
+        meta = json.loads(src[0].read_text(encoding="utf-8-sig"))
+        dst = paths.backtest_meta_path("bt_report_probe")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(json.dumps(meta), encoding="utf-8")
+        self.app._load_backtest_report("bt_report_probe")
+        self.assertEqual(self.app.bt_report_box.get("1.0", "end-1c"), "\n".join(backtest_report.report_lines(meta)))
+        cards = backtest_report.stat_cards(meta)
+        self.assertEqual(self.app.stat_pf.value_label.cget("text"), cards["profit_factor"][0])
+        self.assertEqual(self.app.stat_ret.value_label.cget("text"), cards["return"][0])
+
     def test_pipeline_external_eval_and_overrides_metadata(self):
         external = self.root/"later.csv"
         frame = data(120)

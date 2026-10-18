@@ -120,3 +120,18 @@ CLI scripts, TradingEnv/recipes, artifact layout, MQL/EA export, tests of the en
   test_webgui.py now 12; the whole UI/viz/gate suite 49 passed. Real-window e2e (temp settings folder,
   the user's real branding/key files untouched): models table + equity preview, sort, filter, model-only
   hint, bad colour → field marked, save → title updated, key save → "…LAST" status, Deep Glass switch.
+- 2026-10-18 — **phase 3 done**: Backtest page live in the web GUI. `backtest_report.py` holds the report
+  text, stat cards, companion-M1 lookup, M1 auto-select rule and Skip-% preview (moved out of rl_app.py,
+  which now delegates); `webgui/backtest.py` builds the `backtest_live.py` / `backtest_chart.py` commands.
+  Page: model + Final/Best checkpoint, dataset, M1 (auto-picked companion file, explicit choice kept until
+  the dataset changes, browse), confidence, Skip % with the Skipped/Backtest date preview, Pure vs SL/TP mode
+  (SL/TP + intrabar fields hidden in Pure like the CTk page), risk, slippage, swaps, random baseline, MC,
+  window; Run / Generate Chart / Open Chart / Stop; live log; results = 4 stat cards, equity PNG, Monte Carlo
+  fan chart, the report as a table (same lines split into section + text) and as raw text. Choosing a model
+  shows its stored report; after a run the report of the run's model is shown even if the dropdown changed.
+  Exit test: the pre-refactor CTk report code and the new module produce identical text and stat cards for
+  all 48 stored reports in artifacts/models; command parity tests (defaults; Agent+SL/TP + optimistic +
+  Best + M1 + swaps + window + meta max_hold) and invalid-input parity pass. Suite: 56 passed. Real-window
+  e2e (window placed off-screen and captured with PrintWindow, so the user's screen is never touched):
+  stored report, M1 auto pick, skip preview, explicit '(none)' kept, bad confidence → field marked, a real
+  backtest of web_e2e_tmp3 → ✓ complete, 95 log lines, report rendered (PF 0.99, WR 53.7%).

@@ -90,3 +90,17 @@ Page → Python: plain `Api` methods returning JSON; long work always goes throu
 ## 6. Not in scope (unchanged)
 
 CLI scripts, TradingEnv/recipes, artifact layout, MQL/EA export, tests of the engine.
+
+## Status
+
+- 2026-10-18 — **phase 0 + 1 done**: `rl_web.py`, `webgui/{commands,logparse,runner,api}.py`, `webgui/ui/`,
+  `run_rl_web.bat` (the classic `run_rl_app.bat` is unchanged; the bat swap happens in phase 6).
+  Train page: dataset (CSV list, browse, attach .params, rows/params status, split preview, gate column
+  suggestions), recipe (steps + suggested, window, max hold, train %, corr threshold, MC, costs, seed),
+  PPO hyperparameters + presets, reward sliders in display units + reward JSON load/save + developer
+  formula (validated), action params + action JSON, review modal (same summary as CTk, overwrite warning,
+  command + recipe sha256 + full recipe), live log (2,000-line cap), progress, 6 metric pills/KPIs with
+  health colours, reward trend, live visual auto-open on the first VIZ line + Open Visual, close-window
+  confirm while training. `metric_health.py` now holds METRIC_INFO / classify_metric (moved out of rl_app.py).
+  Tests: `test_webgui.py` (6) + 3 parity tests in `test_ui_training_contract.py`; real-window end-to-end run
+  (validation error → review → confirm → 4,096-step training → complete) passed.

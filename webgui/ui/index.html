@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RL Trading Studio</title>
+<link rel="stylesheet" href="theme.css">
+</head>
+<body>
+<div id="app">
+  <nav id="side" class="glass">
+    <div class="brand"><b>RL TRADING STUDIO</b><span>MetaFXClub · web</span></div>
+    <a data-p="tools">🛠️ Data Tools<span class="cl">classic</span></a>
+    <a data-p="pipeline">▶ Pipeline<span class="cl">classic</span></a>
+    <a data-p="train" class="on">🎯 Train</a>
+    <a data-p="backtest">📊 Backtest<span class="cl">classic</span></a>
+    <a data-p="walkfwd">🔬 Walk-Forward<span class="cl">classic</span></a>
+    <a data-p="finetune">🔄 Fine-tune<span class="cl">classic</span></a>
+    <a data-p="analyze">🔍 Analyze<span class="cl">classic</span></a>
+    <a data-p="regime">🌐 Regime Check<span class="cl">classic</span></a>
+    <a data-p="models">🗂️ Models<span class="cl">classic</span></a>
+    <a data-p="settings">⚙️ Settings<span class="cl">classic</span></a>
+    <div class="sp"></div>
+    <div class="st" id="status"><span class="dot"></span><span id="statusText">idle</span></div>
+  </nav>
+
+  <div id="main">
+    <header class="h glass">
+      <h1 id="pgTitle">🎯 Train New Model</h1><span class="sub" id="pgSub">PPO · TradingEnv · rl_train.py</span>
+      <div class="pills" id="pills"></div>
+    </header>
+
+    <!-- ================================================================ TRAIN -->
+    <section class="page on" id="p-train">
+      <div class="row c2">
+        <div class="card glass"><h3>DATASET · <b id="dsName">no file selected</b></h3>
+          <div class="f">
+            <label>CSV</label>
+            <div class="inl"><select id="csv"></select><button id="browse">📂 Browse</button><button id="attach">🔗 Attach .params</button></div>
+            <span class="hint" id="dsMeta">select a CSV</span>
+            <label>Split preview</label><div class="split" id="dsSplit"><span class="meta">–</span></div>
+            <label>Algorithm</label><select id="algo"></select>
+            <label>Reward Mode</label><select id="reward_mode"></select>
+            <span class="hint" id="rmHint"></span>
+            <label>Reward Profile</label><select id="reward_profile"></select>
+            <span class="hint">reward behaviour while training; changing it means training a new model</span>
+            <label>Action Profile</label><select id="action_profile"></select>
+            <span class="hint">action space of the model; changing it changes the output size — retrain required</span>
+            <label>Entry gate</label><div class="inl"><input id="entry_gate" list="gateList" placeholder="none"><datalist id="gateList"></datalist></div>
+            <span class="hint">optional column (e.g. srb_sig): buys only where &gt; 0, sells only where &lt; 0 — the signal times entries, RL filters and exits</span>
+          </div>
+        </div>
+
+        <div class="card glass"><h3>RECIPE</h3>
+          <div class="f">
+            <label>Model Name</label><input id="name">
+            <label>Training Steps</label><div class="inl"><input id="steps"><button id="useSuggest" disabled>Use suggested</button></div>
+            <span class="hint" id="suggestHint">Suggested: select CSV to calculate from train bars</span>
+            <label>Window Size</label><input id="window"><span class="hint">recommended: 10 bars (H4) · 15 (H1)</span>
+            <label>Max Hold</label><input id="max_hold"><span class="hint">force-close after N bars · recommended 30 (~5 H4 days)</span>
+            <label>Train % (time split)</label><input id="train_pct"><span class="hint">the rest is split half Validation / half Test</span>
+            <label>Correlation threshold</label><input id="corr_threshold"><span class="hint">drop features with |r| above this (Train rows only) · 1 = constants only · 0.95 ≈ 1.8x faster</span>
+            <label>MC Eval Runs · Skip %</label><div class="inl"><input id="mc_eval"><input id="mc_skip"></div>
+            <span class="hint">after the quick eval: shuffle-DD + skip-trades retention (0 runs = off)</span>
+            <label>Costs (spread · comm.)</label><div class="inl"><input id="spread_pct"><input id="commission"></div>
+            <span class="hint">fraction of price · spread per side, commission per trade · 3.8e-5 ≈ 1 pip round-trip on USDJPY · defaults 0.0002 / 0.0001</span>
+            <label>Seed</label><input id="seed" placeholder="none (not reproducible)">
+          </div>
+        </div>
+      </div>
+
+      <div class="row c2">
+        <div class="card glass"><h3>RUN</h3>
+          <div class="inl" style="flex-wrap:wrap">
+            <button class="p" id="start">▶ Start Training</button><button class="d" id="stop" disabled>⏹ Stop</button>
+            <label class="chk"><input type="checkbox" id="viz"> Live visual</label>
+            <select id="viz_mode" style="width:190px;flex:none"></select>
+            <button id="openViz">◉ Open Visual</button>
+          </div>
+          <div style="margin-top:12px" class="prog"><i id="bar"></i></div>
+          <div class="meta" id="runStatus" style="margin-top:6px">Ready</div>
+          <div class="term" id="log"></div>
+        </div>
+        <div class="card glass"><h3>LIVE METRIC HEALTH · <b>from SB3 stdout</b></h3>
+          <div class="kpis" id="health"></div>
+          <h3 style="margin-top:16px">REWARD TREND · <b id="trendHdr">ep_rew_mean per update</b></h3>
+          <svg id="trend" viewBox="0 0 600 140" height="140" style="width:100%"></svg>
+        </div>
+      </div>
+      <div class="card glass"><h3>ADVANCED · <b>PPO hyperparameters, reward shaping, action management</b></h3>
+        <details id="advPPO"><summary>PPO HYPERPARAMETERS</summary>
+          <div class="inl" style="margin-bottom:10px"><span class="meta">Quick presets:</span>
+            <button class="sm" data-preset="default">🔄 Default</button><button class="sm" data-preset="stable">🛡️ Stable (low lr)</button>
+            <button class="sm" data-preset="fast">🚀 Fast (high lr)</button><button class="sm" data-preset="explore">🔍 Explorer</button></div>
+          <div class="sliders" id="ppoFields"></div>
+        </details>
+        <details id="advReward"><summary>REWARD SLIDERS · <span id="rwJsonHint" class="meta">no reward JSON</span></summary>
+          <div class="inl" style="margin-bottom:10px"><button class="sm" id="rwReset">Reset to profile</button><button class="sm" id="rwLoad">Load JSON</button><button class="sm" id="rwSave">Save JSON</button></div>
+          <div class="sliders" id="rewardSliders"></div>
+          <div style="margin-top:12px"><label class="chk"><input type="checkbox" id="formula_on"> Developer Mode: custom reward formula</label>
+            <div id="formulaBox" style="display:none;margin-top:8px"><textarea id="formula"></textarea>
+              <div class="hint" id="formulaHint" style="margin:6px 0 0">Safe expression only. Allowed helpers: abs, min, max, round, sqrt, log, exp, tanh, clip, sign. Validated before training.</div></div></div>
+        </details>
+        <details id="advAction"><summary>ACTION MANAGEMENT · <span id="acJsonHint" class="meta">no action JSON</span></summary>
+          <div class="inl" style="margin-bottom:10px"><button class="sm" id="acReset">Reset to profile</button><button class="sm" id="acLoad">Load JSON</button><button class="sm" id="acSave">Save JSON</button></div>
+          <div class="sliders" id="actionSliders"></div>
+        </details>
+      </div>
+
+    </section>
+
+    <section class="page" id="p-classic">
+      <div class="card glass"><h3 id="clHdr">PAGE</h3>
+        <div class="empty">This page has not moved to the web GUI yet.<br>It is still available in the classic app.<br><br>
+          <button class="p" id="openClassic">Open the classic app</button></div></div>
+    </section>
+  </div>
+</div>
+
+<div id="modal"><div class="box glass">
+  <h2>Confirm training</h2>
+  <div id="mWarn"></div>
+  <table id="mSummary"></table>
+  <details style="margin-top:12px"><summary>COMMAND</summary><pre id="mCmd"></pre></details>
+  <details><summary>FULL RECIPE (JSON)</summary><pre id="mRecipe"></pre></details>
+  <div class="btns"><button id="mCancel">Cancel</button><button class="p" id="mOk">Start training</button></div>
+</div></div>
+<div id="toast" class="glass"></div>
+<script src="app.js"></script>
+</body>
+</html>

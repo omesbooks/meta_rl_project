@@ -202,6 +202,62 @@ class DashboardContractTests(unittest.TestCase):
         self.assertEqual(prepared["recipe"]["reward_formula"], "")
         self.run_confirmed(cmd, prepared)
 
+    # ---- web GUI parity: webgui.commands must build the CTk command for the same inputs
+    def web_form(self, **over):
+        from webgui.commands import form_defaults
+        f = form_defaults()
+        f.update(csv=str(self.csv), name="ui_model", steps="32", window="2", max_hold="12", train_pct="80",
+                 mc_eval="0", mc_skip="10", lr="0.0002", clip="0.15", ent="0.02", nsteps="16", nepochs="1",
+                 batch="8", gamma="0.97", gae="0.9", vf="0.6", viz=False)
+        f.update(over)
+        return f
+
+    def test_web_command_equals_ctk_command_defaults(self):
+        from webgui.commands import build_train_command
+        self.assertEqual(build_train_command(self.web_form())["cmd"], self.capture_train())
+
+    def test_web_command_equals_ctk_command_with_json_and_sliders(self):
+        from webgui.commands import build_train_command
+        from reward_profiles import REWARD_PROFILES
+        from action_profiles import ACTION_PROFILES
+        reward = self.root/"reward.json"
+        reward.write_text(json.dumps({"schema":"metafxclub.reward_profile.v1", "base_profile":"balanced",
+                                     "overrides":{"trade_penalty":.012},
+                                     "developer_mode":{"enabled":True,"formula":"trade_closed_pnl * 40"}}))
+        action = self.root/"action.json"
+        action.write_text(json.dumps({"schema":"metafxclub.action_profile.v1", "base_profile":"manage_6",
+                                     "params":{"trail_atr_mult":3.5}}))
+        with patch.object(rl_app.filedialog, "askopenfilename", return_value=str(reward)):
+            self.app._load_train_reward_json()
+        with patch.object(rl_app.filedialog, "askopenfilename", return_value=str(action)):
+            self.app._load_train_action_json()
+        self.app._apply_train_reward_overrides_to_controls({"trade_penalty":.015})
+        ctk_cmd = self.capture_train()
+        rv = dict(REWARD_PROFILES["balanced"]["params"], trade_penalty=.015)
+        av = dict(ACTION_PROFILES["manage_6"]["params"], trail_atr_mult=3.5)
+        web = self.web_form(reward_profile="balanced", action_profile="manage_6", reward_values=rv, action_values=av,
+                            reward_formula_enabled=True, reward_formula="trade_closed_pnl * 40",
+                            reward_json={"path": str(reward), "overrides": {"trade_penalty": .012}, "has_formula": True},
+                            action_json={"path": str(action), "params": {"trail_atr_mult": 3.5}})
+        self.assertEqual(build_train_command(web)["cmd"], ctk_cmd)
+
+    def test_web_command_equals_ctk_command_developer_off(self):
+        from webgui.commands import build_train_command
+        from reward_profiles import REWARD_PROFILES
+        path = self.root/"reward.json"
+        path.write_text(json.dumps({"base_profile":"balanced", "overrides":{"trade_penalty":.014},
+                                   "developer_mode":{"enabled":True,"formula":"trade_closed_pnl * 40"}}))
+        with patch.object(rl_app.filedialog, "askopenfilename", return_value=str(path)):
+            self.app._load_train_reward_json()
+        self.app.reward_formula_enabled.set(False)
+        ctk_cmd = self.capture_train()
+        web = self.web_form(reward_values=dict(REWARD_PROFILES["balanced"]["params"], trade_penalty=.014),
+                            reward_formula_enabled=False,
+                            reward_json={"path": str(path), "overrides": {"trade_penalty": .014}, "has_formula": True})
+        out = build_train_command(web)
+        self.assertEqual(out["cmd"], ctk_cmd)
+        self.assertTrue(out["warnings"])
+
     def test_pipeline_external_eval_and_overrides_metadata(self):
         external = self.root/"later.csv"
         frame = data(120)

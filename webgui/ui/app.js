@@ -169,7 +169,7 @@ async function startTraining() {
   $("mOk").textContent = r.existing ? "Overwrite & start training" : "Start training";
   $("mCmd").textContent = r.command + "\n\nrecipe sha256: " + r.recipe_sha256;
   $("mRecipe").textContent = JSON.stringify(r.recipe, null, 2);
-  $("modal").classList.add("on");
+  $("modal").classList.add("on"); setTimeout(() => $("mOk").focus(), 0);
   $("mOk").onclick = async () => { $("modal").classList.remove("on"); const c = await api().confirm_training(r.token); if (!c.ok) toast(c.error, "err"); };
   $("mCancel").onclick = () => { $("modal").classList.remove("on"); $("runStatus").textContent = "Ready"; };
 }
@@ -224,12 +224,35 @@ async function init() {
     else { $("p-classic").classList.add("on"); $("clHdr").textContent = PAGES[p].toUpperCase(); $("pgSub").textContent = "not migrated yet — classic app"; }
   });
   $("openClassic").onclick = () => api().open_classic();
+  initKeyboard();
   await window.rlpages.init();
   if (window.rlbacktest) await window.rlbacktest.init();
   if (window.rlflows) await window.rlflows.init();
   if (window.rltools) await window.rltools.init();
   setBusy(await api().busy());
   window.__rlweb_ready = true;
+}
+
+// ------------------------------------------------------------------ keyboard
+// Tab reaches every control; sidebar items act like buttons (Enter / Space);
+// Alt+1..9, Alt+0 = the 10 pages in sidebar order; Ctrl+Enter = the page's main run button;
+// Esc = cancel the confirm dialog.
+function initKeyboard() {
+  const nav = [...document.querySelectorAll("#side a[data-p]")];
+  nav.forEach(a => { a.tabIndex = 0; a.setAttribute("role", "button");
+    a.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); a.click(); } }; });
+  document.addEventListener("keydown", e => {
+    const modalOn = $("modal").classList.contains("on");
+    if (e.key === "Escape" && modalOn) { e.preventDefault(); $("mCancel").click(); return; }
+    if (modalOn) return;
+    if (e.altKey && !e.ctrlKey && /^[0-9]$/.test(e.key)) {
+      const i = e.key === "0" ? 9 : +e.key - 1;
+      if (nav[i]) { e.preventDefault(); nav[i].click(); nav[i].focus(); }
+    } else if (e.ctrlKey && e.key === "Enter") {
+      const b = document.querySelector(".page.on [data-run].p:not(:disabled)");
+      if (b) { e.preventDefault(); b.click(); }
+    }
+  });
 }
 
 (function waitBridge() { if (_raw() && _raw().catalog) init().catch(e => toast("init failed: " + e, "err")); else setTimeout(waitBridge, 100); })();

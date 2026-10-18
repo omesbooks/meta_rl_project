@@ -21,6 +21,7 @@
     <a data-p="models">🗂️ Models</a>
     <a data-p="settings">⚙️ Settings</a>
     <div class="sp"></div>
+    <div class="keys">Alt+1…0 pages · Ctrl+Enter run · Esc cancel</div>
     <div class="st" id="status"><span class="dot"></span><span id="statusText">idle</span></div>
   </nav>
 
@@ -419,6 +420,7 @@
       <div class="row c2">
         <div class="card glass"><h3>APPLICATION</h3>
           <div class="split" style="grid-template-columns:130px 1fr"><b>Working dir</b><span id="setWork" class="mono"></span><b>Branding file</b><span id="setCfg" class="mono"></span><b>Python</b><span id="setPy" class="mono"></span></div>
+          <div class="inl" style="margin-top:12px"><button class="sm" id="setClassic">Open the classic app</button><span class="meta">rl_app.py (CustomTkinter) · also <span class="mono">run_rl_app.bat --classic</span></span></div>
         </div>
         <div class="card glass"><h3>ABOUT</h3>
           <div class="meta" style="line-height:1.7">RL Trading Studio · web GUI (pywebview, Clear Liquid)<br>Train PPO / DQN / A2C agents · realistic backtest with risk management · walk-forward validation · smart fine-tuning · confidence analysis · model library.<br>Built with pywebview + stable-baselines3. The classic CustomTkinter app (rl_app.py) stays available while pages move over.</div>
@@ -434,7 +436,7 @@
   </div>
 </div>
 
-<div id="modal"><div class="box glass">
+<div id="modal" role="dialog" aria-modal="true" aria-label="Confirm"><div class="box glass">
   <h2>Confirm training</h2>
   <div id="mWarn"></div>
   <table id="mSummary"></table>
@@ -442,7 +444,7 @@
   <details><summary>FULL RECIPE (JSON)</summary><pre id="mRecipe"></pre></details>
   <div class="btns"><button id="mCancel">Cancel</button><button class="p" id="mOk">Start training</button></div>
 </div></div>
-<div id="toast" class="glass"></div>
+<div id="toast" class="glass" role="status" aria-live="polite"></div>
 <script src="app.js"></script>
 <script src="pages.js"></script>
 <script src="backtest.js"></script>

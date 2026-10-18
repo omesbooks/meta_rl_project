@@ -26,7 +26,7 @@ function showReview(r, okLabel, onConfirm, onCancel) {
   $("mOk").textContent = r.existing ? "Overwrite & " + okLabel.toLowerCase() : okLabel;
   $("mCmd").textContent = r.command + "\n\nrecipe sha256: " + r.recipe_sha256;
   $("mRecipe").textContent = JSON.stringify(r.recipe, null, 2);
-  $("modal").classList.add("on");
+  $("modal").classList.add("on"); setTimeout(() => $("mOk").focus(), 0);
   $("mOk").onclick = () => { $("modal").classList.remove("on"); onConfirm(); };
   $("mCancel").onclick = () => { $("modal").classList.remove("on"); onCancel && onCancel(); };
 }

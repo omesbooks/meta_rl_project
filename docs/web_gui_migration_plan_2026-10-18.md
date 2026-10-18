@@ -8,7 +8,7 @@ same launcher, same window behaviour, no browser. Demo: `tools/viz/gui_demo.py`.
 ## 1. Target architecture
 
 ```
-run_rl_app.bat  ──▶  rl_web.py  (pywebview window, native title bar, icon, close hook)
+run_rl_app.bat  ──▶  rl_web.py  (pywebview window, native title bar, icon, close hook)   [default since phase 6]
                          │  window.pywebview.api  (JSON in / JSON out, one process)
                          ▼
                      webgui/api.py        Api class: one method per user action

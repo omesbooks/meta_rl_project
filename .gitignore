@@ -116,3 +116,11 @@ tools/viz/out/
 
 # Web GUI preferences (Settings page)
 web_settings.json
+
+# Generated window icon (rl_web.py converts the branding logo to .ico)
+assets/.cache/
+
+# PyInstaller launcher build (tools/build/rl_studio.spec)
+/dist/
+/build/
+RL Trading Studio.exe

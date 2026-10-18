@@ -148,3 +148,10 @@ body.deep .stages span, body.deep .verdict { background: rgba(255,255,255,.04); 
 .radio input { margin: 0; } .radio b { font: 600 13px var(--hud); } .radio span { grid-column: 2; font-size: 11px; color: var(--dim); line-height: 1.4; }
 .goodc { color: var(--green) !important; } .warnc { color: var(--amber) !important; }
 #tool_notice.ok { color: var(--green); } #tool_notice.warn { color: var(--amber); } #tool_notice.err { color: var(--red); }
+
+/* ---- phase 6: keyboard focus ---- */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+#side a:focus-visible { outline-offset: -2px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 45%, transparent); outline-offset: 0; }
+#side .keys { font-size: 10px; color: var(--dim); padding: 0 12px 4px; letter-spacing: .02em; line-height: 1.5; }

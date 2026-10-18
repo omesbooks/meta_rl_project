@@ -18,8 +18,12 @@ End-to-end **Reinforcement Learning (PPO)** trading system for forex/gold. Datas
 active use: EUR/USD, GBP/USD (GU), USD/JPY (UJ), AUD/USD (AU) — mostly H4 — plus XAUUSD.
 Pipeline: MT5 historical data → train RL agent → backtest → deploy to MetaTrader 5.
 
-The active system is **`rl_app.py`** (class `RLTradingStudio`) — a CustomTkinter GUI
-that orchestrates the whole workflow through subprocess calls to CLI scripts.
+The active system is the **web GUI `rl_web.py` + `webgui/`** (pywebview native window, all 10 pages,
+default since 2026-10-18) on top of the same CLI scripts. The classic **`rl_app.py`** (class
+`RLTradingStudio`, CustomTkinter) is kept and shares every rule through the shared modules
+(`model_results`, `app_settings`, `backtest_report`, `pipeline_shared`, `data_tools`, `regime_tools`,
+`metric_health`): `run_rl_app.bat --classic`. Rule of thumb: put behaviour in a shared module or in
+`webgui/*.py`, never in the page JavaScript, and keep the CTk parity tests passing.
 
 > **Legacy note:** `legacy/pycaret/app.py` (`TrainerApp`) is an older **PyCaret supervised**
 > trainer. It is NOT part of the RL workflow. Everything under `legacy/` (old PyCaret
@@ -38,7 +42,7 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 | Item | Value |
 |------|-------|
 | Python interpreter | `.venv/Scripts/python.exe` (Windows) — **ALWAYS use this**, not bare `python` |
-| Launch GUI | `run_rl_app.bat` (auto-creates venv + checks `requirements.txt` before launching) |
+| Launch GUI | `run_rl_app.bat` (auto-creates venv + checks `requirements.txt` before launching) — opens the web GUI; `--classic` = rl_app.py, `--smoke` = self-test (exit 0 = all pages open), `--debug` = dev tools. `RL Trading Studio.exe` (built from `tools/build/rl_studio.spec`, sits in the project folder) does the same with no console. |
 | Requirements | `requirements.txt` (RL stack, GUI, ONNX, regime detection, Gemini labeler, MT5 Python API, doc/slide generators) |
 | Working dir | All scripts assume CWD = project root (`WORK_DIR = Path(__file__).parent`) |
 | OS | Windows (paths, `.bat` launcher, MT5 integration) |
@@ -49,8 +53,8 @@ that orchestrates the whole workflow through subprocess calls to CLI scripts.
 
 | Task | Command |
 |------|---------|
-| Launch GUI | `run_rl_app.bat` or `.venv/Scripts/python.exe rl_app.py` |
-| Launch web GUI (preview, migration in progress) | `run_rl_web.bat` or `.venv/Scripts/python.exe rl_web.py [--debug]` — native pywebview window, Clear Liquid theme. all 10 pages (phases 0–5 of `docs/web_gui_migration_plan_2026-10-18.md`); the classic app stays available until phase 6 swaps the launcher. Settings has a Clear Liquid / Deep Glass theme switch (`web_settings.json`, gitignored). |
+| Launch GUI | `run_rl_app.bat` · `.venv/Scripts/python.exe rl_web.py [--debug|--smoke|--classic]` · classic: `run_rl_classic.bat` or `.venv/Scripts/python.exe rl_app.py` |
+| Web GUI notes | Native pywebview window, Clear Liquid theme (Settings: Clear Liquid / Deep Glass, `web_settings.json`). Needs the Edge WebView2 runtime: when it is missing `rl_web.py` prints/shows the download link and opens the classic app. Window/taskbar icon = branding `window_icon`, else the logo converted to `assets/.cache/*.ico`. Keys: Alt+1…0 pages, Ctrl+Enter run, Esc cancel. Migration record: `docs/web_gui_migration_plan_2026-10-18.md`. |
 | Train PPO | `python rl_train.py <csv> --steps N --window 10 --name <model> [--seed N] [--corr_threshold 0.95] [--reward_profile balanced] [--action_profile basic_4] [--mc_eval 1000 --mc_skip_frac 0.10] [--eval_csv <csv>]` |
 | Backtest (live logic) | `python backtest_live.py <model> <csv> --conf 0 --window 10 --mode pure_agent [--intrabar {pessimistic,optimistic}] [--stop_slippage 0.0001] [--m1_csv <m1.csv>] [--swap_long -0.00005 --swap_short -0.00003] [--random_baseline 20] [--mc 1000]` |
 | Backtest chart | `python backtest_chart.py <model> <csv> --limit 5000` |

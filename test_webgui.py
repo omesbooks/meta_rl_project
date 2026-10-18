@@ -338,3 +338,25 @@ def test_tool_job_streams_log_notice_and_done(tmp_path):
     assert api.tools_correlation({"csv": "d.csv", "threshold": "0", "train_pct": "85"})["field"] == "tool_feat_thr"
     assert api.start_analyze({"model": "", "csv": "d.csv"})["field"] == "an_model"
     api.shutdown()
+
+
+# ---------------------------------------------------------------- phase 6: launcher + startup helpers
+def test_launcher_finds_the_project_and_startup_helpers(tmp_path, monkeypatch):
+    import importlib.util
+    import rl_web
+    spec = importlib.util.spec_from_file_location("rl_studio_launcher", ROOT / "tools" / "build" / "rl_studio_launcher.py")
+    launcher = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(launcher)
+    assert launcher.project_root() == ROOT                         # walks up from tools/build/
+    assert isinstance(rl_web.webview2_installed(), bool)
+    ico = rl_web.window_icon_file()
+    assert ico is None or ico.suffix == ".ico"
+    calls = []
+    monkeypatch.setattr(rl_web.subprocess, "call", lambda cmd, cwd=None: calls.append(cmd) or 0)
+    assert rl_web.main(["--classic"]) == 0 and calls[0][-1].endswith("rl_app.py")
+    monkeypatch.setattr(rl_web, "webview2_installed", lambda: False)
+    assert rl_web.main(["--smoke"]) == 2                             # no WebView2: smoke fails, no window
+    calls.clear()
+    assert rl_web.main([]) == 0 and calls and calls[0][-1].endswith("rl_app.py")   # ...and the app falls back
+    bat = (ROOT / "run_rl_app.bat").read_text(encoding="ascii")
+    assert 'set "APP=rl_web.py"' in bat and "--classic" in bat and "\r\n" in (ROOT / "run_rl_app.bat").read_bytes().decode("ascii")

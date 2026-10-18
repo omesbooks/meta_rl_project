@@ -2,7 +2,10 @@
 
 End-to-end Reinforcement Learning trading studio for MT5 data collection, PPO training, backtesting, walk-forward validation, and MT5 export.
 
-The active application is `rl_app.py` through the Windows launcher `run_rl_app.bat`.
+The active application is the **web GUI** `rl_web.py` (a native pywebview window, not a browser), opened by
+the Windows launcher `run_rl_app.bat` or by `RL Trading Studio.exe`. The classic CustomTkinter app `rl_app.py`
+is still available: `run_rl_app.bat --classic` (or `run_rl_classic.bat`, or Settings → Open the classic app).
+Both apps share the same engine, files and rules (migration record: `docs/web_gui_migration_plan_2026-10-18.md`).
 
 ## Training Safety Update (2026-09-05)
 
@@ -30,7 +33,32 @@ cd meta_rl_project
 .\run_rl_app.bat
 ```
 
-`run_rl_app.bat` is the recommended path on Windows. It creates `.venv` when missing, checks `requirements.txt` before launch, and then opens the dashboard.
+`run_rl_app.bat` is the recommended path on Windows. It creates `.venv` when missing, checks `requirements.txt` before launch, and then opens the dashboard (web GUI).
+
+| Launch | What opens |
+| --- | --- |
+| `run_rl_app.bat` | Web GUI (default) |
+| `run_rl_app.bat --classic` / `run_rl_classic.bat` | Classic CustomTkinter app |
+| `run_rl_app.bat --smoke` | Self-test: hidden window, every page opened once, prints `SMOKE OK`, exit code 0 |
+| `run_rl_app.bat --debug` | Web GUI with the WebView2 dev tools |
+| `RL Trading Studio.exe` | Double-click launcher (no console). Build it once, see below |
+
+The web GUI needs the Microsoft Edge **WebView2** runtime (built into Windows 10/11). If it is missing, the app says
+so with the download link (https://developer.microsoft.com/microsoft-edge/webview2/) and opens the classic app instead.
+
+Keyboard: Alt+1…9 / Alt+0 switch pages in sidebar order, Ctrl+Enter starts the page's main run button, Esc cancels
+the confirm dialog, Tab reaches every control.
+
+Double-click launcher (optional): `RL Trading Studio.exe` starts the app with the project's `.venv` (the ML stack is
+not frozen into it; every page runs the CLI scripts with that interpreter). Build it once:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv\Scripts\python.exe -m PyInstaller tools\build\rl_studio.spec --distpath dist --workpath build\pyinstaller --noconfirm
+copy "dist\RL Trading Studio.exe" .
+```
+
+The exe must sit in the project folder. With no `.venv` yet it runs `run_rl_app.bat` in a console window for setup.
 
 If you already have a `.venv` and later pull new dependency changes, refresh the environment before launching:
 
@@ -42,7 +70,8 @@ If you already have a `.venv` and later pull new dependency changes, refresh the
 If the virtual environment already exists, you can also run:
 
 ```powershell
-.\.venv\Scripts\python.exe rl_app.py
+.\.venv\Scripts\python.exe rl_web.py          # web GUI
+.\.venv\Scripts\python.exe rl_app.py          # classic app
 ```
 
 ## Using With Codex
@@ -161,8 +190,10 @@ docs\explainers
 
 | Path | Purpose |
 | --- | --- |
-| `rl_app.py` | Main CustomTkinter dashboard |
-| `run_rl_app.bat` | Windows launcher and setup path |
+| `rl_web.py` + `webgui/` | Main dashboard: web GUI in a native pywebview window (all pages) |
+| `rl_app.py` | Classic CustomTkinter dashboard (same engine; `--classic`) |
+| `run_rl_app.bat` | Windows launcher and setup path (web GUI by default) |
+| `tools/build/rl_studio.spec` | PyInstaller spec for the `RL Trading Studio.exe` launcher |
 | `trading_env.py` | Gymnasium trading environment and reward behavior |
 | `rl_train.py` | PPO training CLI |
 | `backtest_live.py` | Production-style backtest |

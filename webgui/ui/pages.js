@@ -132,6 +132,7 @@ function initSettings() {
     const r = await api().clear_api_key(); keyStatus(r.keys); toast("Gemini API key cleared", "ok");
   };
   $("gemGet").onclick = () => api().open_gemini_page();
+  $("setClassic").onclick = () => { api().open_classic(); toast("Opening the classic app…"); };
 }
 
 // ------------------------------------------------------------------ router hooks (called by app.js)

@@ -1,0 +1,2 @@
+# Build-only tools (not needed to run the app)
+pyinstaller>=6.0

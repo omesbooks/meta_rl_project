@@ -204,6 +204,8 @@ from metric_health import METRIC_INFO, classify_metric, get_recommendation  # no
 import model_results  # noqa: E402  (Models table rows, shared with webgui)
 import backtest_report  # noqa: E402  (Backtest report/M1/skip rules, shared with webgui)
 import pipeline_shared  # noqa: E402  (Pipeline/Walk-Forward/Fine-tune rules, shared with webgui)
+import data_tools  # noqa: E402  (Data Tools work, shared with webgui)
+import regime_tools  # noqa: E402  (Regime Check rules, shared with webgui)
 
 
 # ============================================================
@@ -3234,21 +3236,11 @@ class RLTradingStudio(ctk.CTk):
     # --------------------------------------------------------
     def _common_files_dir(self):
         """MT5 Common\\Files folder (where DataCollector_RL writes)."""
-        return Path.home() / "AppData" / "Roaming" / "MetaQuotes" / "Terminal" \
-               / "Common" / "Files"
+        return data_tools.common_files_dir()
 
     def _refresh_collector_sources(self):
         """List CSV files in Common\\Files for the import dropdown."""
-        d = self._common_files_dir()
-        files = []
-        try:
-            if d.exists():
-                # _m1.csv is companion execution data — imported automatically
-                # alongside its dataset, never picked as the source itself
-                files = sorted([p.name for p in d.glob("*.csv")
-                                if not p.name.endswith("_m1.csv")])
-        except Exception:
-            pass
+        files = data_tools.collector_sources(self._common_files_dir())
         values = files or ["(none)"]
         try:
             self.tool_collector_src.configure(values=values)
@@ -3265,7 +3257,7 @@ class RLTradingStudio(ctk.CTk):
         """Keep the output basename in sync until the user customizes it."""
         if choice in ("", "(none)") or not hasattr(self, "tool_collector_out"):
             return
-        default = f"training_data_{Path(choice).stem}.csv"
+        default = data_tools.collector_out_default(choice)
         current = self.tool_collector_out.get().strip()
         previous_auto = getattr(self, "_collector_out_auto", None)
         if not current or current == previous_auto:
@@ -3313,56 +3305,12 @@ class RLTradingStudio(ctk.CTk):
         ).start()
 
     def _import_from_collector_worker(self, src_csv, src_params, out_name, want_m1):
-        import shutil
         try:
             self.after(0, lambda: self.status_label.configure(
                 text="Importing", text_color=COLOR_YELLOW))
-
-            # 1) Copy raw CSV
-            dst_csv = WORK_DIR / Path(out_name).with_suffix(".csv").name
-            raw_copy = dst_csv
-            csv_existed = raw_copy.exists()
-            shutil.copy(src_csv, raw_copy)
-            self.after(0, lambda p=raw_copy: self._log(
-                self.tools_log, f"[copy] CSV  -> {p.name}", "success"))
-
-            # 2) Copy params.json (if exists)
-            copied_paths = [raw_copy]
-
-            # 2b) Copy <base>_m1.csv (if collector dumped M1 execution data
-            #     and the user left the "Import M1" checkbox on)
-            src_m1 = src_csv.parent / f"{src_csv.stem}_m1.csv"
-            if want_m1 and src_m1.exists():
-                dst_m1 = WORK_DIR / f"{raw_copy.stem}_m1.csv"
-                shutil.copy(src_m1, dst_m1)
-                copied_paths.append(dst_m1)
-                self.after(0, lambda p=dst_m1: self._log(
-                    self.tools_log,
-                    f"[copy] M1   -> {p.name} (ใช้ในช่อง M1 Data ของหน้า Backtest)",
-                    "success"))
-
-            if src_params.exists():
-                dst_params = raw_copy.with_suffix(".params.json")
-                params_existed = dst_params.exists()
-                shutil.copy(src_params, dst_params)
-                copied_paths.append(dst_params)
-                self.after(0, lambda p=dst_params: self._log(
-                    self.tools_log, f"[copy] params -> {p.name}", "success"))
-            else:
-                params_existed = False
-                self.after(0, lambda: self._log(self.tools_log,
-                    "[warn] no params.json sidecar — EA will use RL_Indicators defaults",
-                    "warn"))
-
+            data_tools.import_collector(src_csv, src_params, out_name, want_m1, WORK_DIR,
+                                        log=lambda text, tag='info': self.after(0, lambda text=text, tag=tag: self._log(self.tools_log, text, tag)), notice=self._tools_file_notice)
             self.after(0, lambda: self._refresh_project_csv_dropdowns(log=False))
-            self.after(0, lambda: self._log(self.tools_log,
-                "[done] collector files imported", "success"))
-            action = "Updated existing import" if (csv_existed or params_existed) else "Created import files"
-            self._tools_file_notice(
-                action,
-                "Collector CSV/params copied into the project folder.",
-                copied_paths,
-            )
         except Exception as e:
             self.after(0, lambda err=e: self._log(
                 self.tools_log, f"[error] {err}", "error"))
@@ -3592,178 +3540,13 @@ class RLTradingStudio(ctk.CTk):
 
     def _split_csv_worker(self, settings):
         try:
-            csv = settings["csv"]
-            if csv in ("(none)", ""):
-                self._log(self.tools_log, "Please select a CSV", "error")
-                return
-
-            split_date = settings["split_date"]
-            if not split_date:
-                self._log(self.tools_log, "Please enter split date", "error")
-                return
-
-            train_suffix = settings["train_suffix"]
-            test_suffix = settings["test_suffix"]
-
-            self._log(self.tools_log, f"Loading {csv}...", "info")
-            import pandas as pd
-            df = self._smart_read_csv(WORK_DIR / csv)
-
-            if 'timestamp' not in df.columns:
-                self._log(self.tools_log, "No 'timestamp' column found", "error")
-                return
-
-            df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-            df = df.dropna(subset=['timestamp']).sort_values('timestamp').reset_index(drop=True)
-            if df.empty:
-                self._log(self.tools_log, "No valid timestamp rows after parsing", "error")
-                return
-
-            split_dt = pd.to_datetime(split_date)
-
-            train_df = df[df['timestamp'] < split_dt]
-            test_df = df[df['timestamp'] >= split_dt]
-
-            if train_df.empty or test_df.empty:
-                first_date = df['timestamp'].min().date()
-                last_date = df['timestamp'].max().date()
-                self._log(self.tools_log,
-                    "Split aborted: train/test would be empty.", "error")
-                self._log(self.tools_log,
-                    f"  Data range : {first_date} -> {last_date}", "metric")
-                self._log(self.tools_log,
-                    f"  Train rows : {len(train_df):,}",
-                    "error" if train_df.empty else "metric")
-                self._log(self.tools_log,
-                    f"  Test rows  : {len(test_df):,}",
-                    "error" if test_df.empty else "metric")
-                self._log(self.tools_log,
-                    "Choose a split date inside the data range.", "warn")
-                return
-
-            self._log(self.tools_log,
-                f"Total: {len(df):,} rows | Split at {split_date}", "info")
-            self._log(self.tools_log,
-                f"  Train: {len(train_df):,} rows ({df['timestamp'].min().date()} → {(split_dt - pd.Timedelta(days=1)).date()})",
-                "metric")
-            self._log(self.tools_log,
-                f"  Test : {len(test_df):,} rows ({split_dt.date()} → {df['timestamp'].max().date()})",
-                "metric")
-
-            # Save
-            base = Path(csv).stem
-            train_path = WORK_DIR / f"{base}{train_suffix}.csv"
-            test_path  = WORK_DIR / f"{base}{test_suffix}.csv"
-            train_existed = train_path.exists()
-            test_existed = test_path.exists()
-            auto_cleaned = False
-            auto_clean_dropped = 0
-
-            train_df.to_csv(train_path, index=False)
-            test_df.to_csv(test_path, index=False)
-
-            copied_sidecars = []
-            for output_path in (train_path, test_path):
-                copied, err = self._copy_csv_params_sidecar(WORK_DIR / csv, output_path)
-                if copied:
-                    copied_sidecars.append(copied)
-                    self._log(self.tools_log, f"+ forwarded {copied.name}", "success")
-                elif err:
-                    self._log(self.tools_log,
-                              f"[warn] could not forward params for {output_path.name}: {err}",
-                              "warn")
-                else:
-                    self._log(self.tools_log,
-                              f"[warn] no params.json sidecar found for {csv}", "warn")
-
-            self._log(self.tools_log, f"✓ Saved: {train_path.name}", "success")
-            self._log(self.tools_log, f"✓ Saved: {test_path.name}", "success")
-
-            # ⭐ Auto-clean redundant features if checkbox is checked
-            if settings["clean_after"]:
-                try:
-                    threshold = float(settings["clean_threshold"])
-                except ValueError:
-                    threshold = 0.99
-
-                self._log(self.tools_log,
-                    f"\n=== Auto-cleaning redundant features (corr > {threshold}) ===",
-                    "info")
-
-                # Compute kept features from TRAIN file (use same selection for both)
-                train_features = self._get_feature_columns(train_df)
-                kept, dropped, reasons = self._greedy_correlation_prune(
-                    train_df, train_features, threshold)
-
-                if dropped:
-                    blocked, min_keep, keep_ratio = self._is_prune_too_aggressive(
-                        len(train_features), len(kept))
-                    if blocked:
-                        self._log(self.tools_log,
-                            f"  ⚠ Auto-clean skipped: would keep only {len(kept)}/{len(train_features)} "
-                            f"features ({keep_ratio:.0%}); minimum safe keep is {min_keep}. "
-                            "Raise threshold closer to 0.99.",
-                            "error")
-                        self._tools_file_notice(
-                            "Auto-clean skipped",
-                            "Redundant-feature cleanup was too aggressive, so split CSV files were left unchanged.",
-                            level="warn",
-                            popup=False,
-                        )
-                        dropped = []
-                    else:
-                        self._log(self.tools_log,
-                            f"  Dropped {len(dropped)} features  (kept {len(kept)})",
-                            "warn")
-                        for col in dropped[:10]:
-                            kept_col, r = reasons[col]
-                            if kept_col is None:
-                                self._log(self.tools_log,
-                                    f"    - {col:25s}  (constant / no variance)",
-                                    "warn")
-                            else:
-                                self._log(self.tools_log,
-                                    f"    - {col:25s}  (r={r:.3f} with {kept_col})",
-                                    "warn")
-                        if len(dropped) > 10:
-                            self._log(self.tools_log,
-                                f"    ... +{len(dropped) - 10} more", "warn")
-
-                        # Apply same column selection to both files
-                        non_feat_train = [c for c in train_df.columns if c not in train_features]
-                        out_cols_train = non_feat_train + kept
-
-                        non_feat_test  = [c for c in test_df.columns if c not in train_features]
-                        # filter: only kept that exist in test (should be all)
-                        kept_in_test = [c for c in kept if c in test_df.columns]
-                        out_cols_test = non_feat_test + kept_in_test
-
-                        train_df[out_cols_train].to_csv(train_path, index=False)
-                        test_df[out_cols_test].to_csv(test_path, index=False)
-                        auto_cleaned = True
-                        auto_clean_dropped = len(dropped)
-
-                        self._log(self.tools_log,
-                            f"  ✓ Re-saved: {train_path.name} ({len(out_cols_train)} cols)",
-                            "success")
-                        self._log(self.tools_log,
-                            f"  ✓ Re-saved: {test_path.name} ({len(out_cols_test)} cols)",
-                            "success")
-                else:
-                    self._log(self.tools_log,
-                        "  No redundant features found — files unchanged",
-                        "info")
-
-            self.after(0, self._refresh_dropdowns)
-            self.after(0, self._refresh_tools_dropdowns)
-            title = "Updated split files" if (train_existed or test_existed) else "Created split files"
-            detail = (f"Train/test split saved: {len(train_df):,} train rows, "
-                      f"{len(test_df):,} test rows.")
-            if auto_cleaned:
-                detail += f" Auto-clean re-saved both files after dropping {auto_clean_dropped} features."
-            self._tools_file_notice(
-                title, detail, [train_path, test_path, *copied_sidecars])
-
+            written = data_tools.split_csv(settings, WORK_DIR, log=lambda text, tag='info': self._log(self.tools_log, text, tag),
+                                           notice=self._tools_file_notice,
+                                           read_csv=self._smart_read_csv,
+                                           prune=self._greedy_correlation_prune)
+            if written:
+                self.after(0, self._refresh_dropdowns)
+                self.after(0, self._refresh_tools_dropdowns)
         except Exception as e:
             import traceback
             self._log(self.tools_log, f"Error: {e}", "error")
@@ -3971,9 +3754,7 @@ class RLTradingStudio(ctk.CTk):
                     self.tool_export_name, model_name, "Deploy name") is None:
                 return
         deploy_name = self.tool_export_name.get().strip() or model_name
-        clean_deploy_name = re.sub(r"[^A-Za-z0-9_]+", "_", deploy_name).strip("_")
-        if clean_deploy_name and clean_deploy_name[0].isdigit():
-            clean_deploy_name = "m_" + clean_deploy_name
+        clean_deploy_name = data_tools.clean_deploy_name(deploy_name)
         if not clean_deploy_name:
             messagebox.showerror("Invalid deploy name",
                                  "Deploy name needs at least one ASCII letter or digit.")
@@ -3993,43 +3774,17 @@ class RLTradingStudio(ctk.CTk):
             if model_name in ("(none)", ""):
                 self._log(self.tools_log, "Please select a source model", "error")
                 return
-
-            if source_text.startswith("Best"):
-                source_key = "best"
-            elif source_text.startswith("Auto"):
-                source_key = "auto"
-            else:
-                source_key = "final"
-            legacy_outdir = str(WORK_DIR / "mt5_files" / "MQL5")
-            use_auto_package = not outdir
-            if outdir:
-                try:
-                    use_auto_package = Path(outdir).resolve() == Path(legacy_outdir).resolve()
-                except Exception:
-                    use_auto_package = outdir.rstrip("\\/") == legacy_outdir.rstrip("\\/")
-            if use_auto_package:
-                outdir = ""
-
+            plan = data_tools.export_plan(model_name, deploy_name, outdir, source_text, WORK_DIR, sys.executable)
             self._log(self.tools_log,
                 f"\n=== Exporting {model_name} -> {deploy_name} ===", "info")
             self._log(self.tools_log, f"Model file: {source_text}", "info")
-            if outdir:
-                display_outdir = Path(outdir)
-                self._log(self.tools_log, f"Output: {outdir}", "info")
+            if plan["outdir"]:
+                self._log(self.tools_log, f"Output: {plan['outdir']}", "info")
             else:
-                display_outdir = WORK_DIR / "mt5_files" / "packages" / deploy_name / "MQL5"
-                self._log(self.tools_log, f"Output: {display_outdir} (auto package)", "info")
-            expected_export_paths = [
-                display_outdir / "Files" / f"{deploy_name}.onnx",
-                display_outdir / "Include" / f"{deploy_name}_config.mqh",
-                display_outdir / "Include" / "RL_Indicators.mqh",
-                display_outdir / "Indicators" / "CandlePatterns.mq5",
-                display_outdir / "Experts" / f"{deploy_name}_EA.mq5",
-            ]
-            export_had_existing = any(p.exists() for p in expected_export_paths)
+                self._log(self.tools_log, f"Output: {plan['display_outdir']} (auto package)", "info")
 
             # Verify model exists
-            model_path = find_model_path(model_name, source_key)
+            model_path = find_model_path(model_name, plan["source_key"])
             if model_path is None:
                 self._log(self.tools_log,
                     f"Model not found for {source_text}: {model_name}", "error")
@@ -4041,56 +3796,26 @@ class RLTradingStudio(ctk.CTk):
             self._log(self.tools_log, f"Found model: {shown_model_path}", "info")
 
             # Run export script as subprocess (so it inherits clean python env)
-            cmd = [
-                sys.executable, "export_to_onnx.py",
-                model_name,
-                "--name", deploy_name,
-                "--source", source_key,
-            ]
-            if outdir:
-                cmd += ["--output_dir", outdir]
+            cmd = plan["cmd"]
             self._log(self.tools_log, f"$ {' '.join(cmd)}", "info")
-
             import subprocess
             proc = subprocess.Popen(cmd,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 cwd=str(WORK_DIR), text=True,
                 bufsize=1, encoding='utf-8', errors='replace')
-
             for line in proc.stdout:
                 line = line.rstrip()
-                tag = "info"
-                if "✅" in line or "[ok]" in line.lower(): tag = "success"
-                elif "❌" in line or "error" in line.lower(): tag = "error"
-                elif "⚠️" in line or "warn" in line.lower(): tag = "warn"
-                elif "[" in line and "]" in line: tag = "metric"
-                self._log(self.tools_log, line, tag)
-
+                self._log(self.tools_log, line, data_tools.export_line_tag(line))
             proc.wait()
 
             if proc.returncode == 0:
-                # Show files generated
-                out_path = display_outdir
-                self._log(self.tools_log,
-                    f"\n✅ Export complete! Files in {out_path}", "success")
-                self._log(self.tools_log,
-                    f"  Files/{deploy_name}.onnx", "metric")
-                self._log(self.tools_log,
-                    f"  Include/{deploy_name}_config.mqh", "metric")
-                self._log(self.tools_log,
-                    f"  Include/RL_Indicators.mqh", "metric")
-                self._log(self.tools_log,
-                    f"  Indicators/CandlePatterns.mq5", "metric")
-                self._log(self.tools_log,
-                    f"  Experts/{deploy_name}_EA.mq5", "metric")
-                self._log(self.tools_log,
-                    f"\n📋 Next: copy {out_path}/* to MT5's MQL5/ folder",
-                    "info")
-                title = "Updated MT5 export package" if export_had_existing else "Created MT5 export package"
+                for text, tag in data_tools.export_done_lines(deploy_name, plan["display_outdir"]):
+                    self._log(self.tools_log, text, tag)
+                title = "Updated MT5 export package" if plan["existed"] else "Created MT5 export package"
                 self._tools_file_notice(
                     title,
                     f"ONNX/EA package generated for {deploy_name}.",
-                    expected_export_paths,
+                    plan["expected_paths"],
                 )
             else:
                 self._log(self.tools_log,
@@ -4106,109 +3831,27 @@ class RLTradingStudio(ctk.CTk):
     # ⭐ Smart CSV reader — auto-detect UTF-16 / UTF-8
     # --------------------------------------------------------
     def _smart_read_csv(self, path, **kwargs):
-        """Read CSV with auto encoding detection.
-        Handles raw MT4/MT5 UTF-16 LE files transparently.
-        If file is UTF-16, converts in-place and saves as UTF-8."""
-        import pandas as pd
-        path = Path(path)
-        try:
-            # Try UTF-8 first (fast path)
-            return pd.read_csv(path, **kwargs)
-        except UnicodeDecodeError:
-            pass
-
-        # Check encoding
-        with open(path, 'rb') as f:
-            magic = f.read(2)
-
-        if magic == b'\xff\xfe':
-            encoding = 'utf-16-le'
-        elif magic == b'\xfe\xff':
-            encoding = 'utf-16-be'
-        else:
-            # Last-resort try cp1252 / latin-1
-            encoding = 'cp1252'
-
-        self._log(self.tools_log,
-            f"⚠️  {path.name} is {encoding} — converting to UTF-8...",
-            "warn")
-
-        # Read raw bytes, decode, strip BOM
-        text = path.read_bytes().decode(encoding, errors='replace').lstrip('﻿')
-
-        # Save as UTF-8 (overwrite)
-        backup = path.with_suffix(path.suffix + '.utf16_backup')
-        if not backup.exists():
-            path.rename(backup)
-            self._log(self.tools_log,
-                f"  Original backed up as: {backup.name}", "info")
-        path.write_text(text, encoding='utf-8')
-        self._log(self.tools_log,
-            f"  ✓ Converted to UTF-8 ({path.stat().st_size / 1024 / 1024:.1f} MB)",
-            "success")
-        self._tools_file_notice(
-            "Modified CSV encoding",
-            "Converted the source CSV to UTF-8 and kept the original backup.",
-            [path, backup],
-            popup=False,
-        )
-
-        # Read again
-        return pd.read_csv(path, **kwargs)
+        """Read CSV with auto encoding detection (UTF-16 MT4/MT5 dumps are converted in place)."""
+        return data_tools.smart_read_csv(path, lambda text, tag='info': self._log(self.tools_log, text, tag), self._tools_file_notice, **kwargs)
 
     def _find_csv_params_sidecar(self, csv_path):
-        csv_path = Path(csv_path)
-        candidates = [
-            csv_path.with_suffix(".params.json"),
-            csv_path.parent / (csv_path.stem + ".params.json"),
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-        return None
+        return data_tools.find_params_sidecar(csv_path)
 
     def _copy_csv_params_sidecar(self, src_csv, dst_csv):
-        src_params = self._find_csv_params_sidecar(src_csv)
-        if not src_params:
-            return None, None
-        dst_csv = Path(dst_csv)
-        dst_params = dst_csv.with_suffix(".params.json")
-        try:
-            import shutil
-            shutil.copy(src_params, dst_params)
-            return dst_params, None
-        except Exception as e:
-            return None, e
+        return data_tools.copy_params_sidecar(src_csv, dst_csv)
 
     # --------------------------------------------------------
     # ⭐ Feature analysis helpers
     # --------------------------------------------------------
     def _get_feature_columns(self, df):
         """Get numeric feature columns (skip OHLCV + leaky)"""
-        import pandas as pd
-        skip = {"timestamp", "symbol", "ticker", "open", "high", "low",
-                "close", "volume"}
-        leaky_kw = ("future_", "forward_", "next_", "target")
-        return [c for c in df.columns
-                if c not in skip
-                and not any(k in c.lower() for k in leaky_kw)
-                and pd.api.types.is_numeric_dtype(df[c])]
+        return data_tools.get_feature_columns(df)
 
     def _greedy_correlation_prune(self, df, features, threshold):
         return prune_features(df, features, threshold)
 
     def _is_prune_too_aggressive(self, total_features, kept_features):
-        """Safety guard for broad period-feature datasets.
-
-        Correlation pruning can delete entire indicator period ladders when the
-        threshold is too low. Block writes when the result keeps too little.
-        """
-        import math
-        if total_features <= 0:
-            return False, 0, 1.0
-        min_keep = min(total_features, max(5, math.ceil(total_features * 0.35)))
-        keep_ratio = kept_features / total_features
-        return kept_features < min_keep, min_keep, keep_ratio
+        return data_tools.is_prune_too_aggressive(total_features, kept_features)
 
     def _show_correlation(self):
         csv = self.tool_feat_csv.get()
@@ -4228,122 +3871,9 @@ class RLTradingStudio(ctk.CTk):
 
     def _show_correlation_worker(self, csv, threshold_raw, train_pct=0.85):
         try:
-            if csv in ("(none)", ""):
-                self._log(self.tools_log, "Please select a CSV", "error")
-                return
-
-            threshold = input_number(threshold_raw, "Correlation threshold", 0, 1)
-            if threshold == 0:
-                raise ValueError("Correlation threshold must be > 0")
-
-            self._log(self.tools_log, f"Loading {csv}...", "info")
-            import pandas as pd
-            import numpy as np
-
-            df = validate_frame(self._smart_read_csv(WORK_DIR / csv), csv)
-            if not 0 < train_pct <= 1:
-                raise ValueError("Train fraction must be > 0 and <= 1")
-            df = df.iloc[:int(len(df) * train_pct)]
-            if len(df) < 3:
-                raise ValueError("Not enough Train rows for correlation")
-            features = feature_columns(df)
-            self._log(self.tools_log, f"TRAIN ONLY: {df.timestamp.iloc[0]} -> {df.timestamp.iloc[-1]} ({len(df):,} rows)", "info")
-            self._log(self.tools_log,
-                f"Found {len(features)} numeric features (after dropping OHLCV + leaky)",
-                "info")
-
-            if len(features) < 2:
-                self._log(self.tools_log, "Not enough features to analyze", "error")
-                return
-
-            constant_features = [
-                c for c in features if df[c].nunique(dropna=True) <= 1
-            ]
-            if constant_features:
-                self._log(self.tools_log,
-                    f"Found {len(constant_features)} constant/no-variance feature(s); "
-                    "their correlations are shown as 0.",
-                    "warn")
-
-            # Compute correlation
-            self._log(self.tools_log, "Computing correlation matrix...", "info")
-            corr = df[features].corr().abs().replace([np.inf, -np.inf], np.nan).fillna(0.0)
-
-            # Find high-correlation pairs
-            pairs = []
-            for i, c1 in enumerate(features):
-                for j, c2 in enumerate(features):
-                    if i >= j:
-                        continue
-                    r = corr.loc[c1, c2]
-                    if r > threshold:
-                        pairs.append((r, c1, c2))
-            pairs.sort(reverse=True)
-
-            # Print top 30 pairs
-            self._log(self.tools_log,
-                f"\n[Top correlated pairs] (threshold > {threshold}):",
-                "metric")
-            self._log(self.tools_log,
-                f"  Found {len(pairs)} pairs above threshold", "metric")
-            for r, c1, c2 in pairs[:30]:
-                self._log(self.tools_log,
-                    f"  r={r:.3f}  {c1:25s} <-> {c2}", "info")
-            if len(pairs) > 30:
-                self._log(self.tools_log,
-                    f"  ... +{len(pairs) - 30} more", "info")
-
-            # Save heatmap
-            self._log(self.tools_log, "\nGenerating heatmap PNG...", "info")
-            import matplotlib
-            matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-
-            n = len(features)
-            fig_size = max(10, min(24, n * 0.3))
-            fig, ax = plt.subplots(figsize=(fig_size, fig_size))
-            im = ax.imshow(corr.values, cmap='RdYlBu_r', vmin=0, vmax=1, aspect='auto')
-
-            ax.set_xticks(range(n))
-            ax.set_yticks(range(n))
-            ax.set_xticklabels(features, rotation=90, fontsize=8)
-            ax.set_yticklabels(features, fontsize=8)
-
-            # Annotate high-corr cells
-            for i in range(n):
-                for j in range(n):
-                    if i != j and corr.values[i, j] > threshold:
-                        ax.text(j, i, f"{corr.values[i,j]:.2f}",
-                                ha='center', va='center',
-                                color='white' if corr.values[i,j] > 0.6 else 'black',
-                                fontsize=6)
-
-            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-            ax.set_title(f"Correlation Matrix — {csv} ({n} features, threshold={threshold})",
-                          fontsize=14)
-            plt.tight_layout()
-
-            png_path = WORK_DIR / f"{Path(csv).stem}_correlation.png"
-            png_existed = png_path.exists()
-            plt.savefig(png_path, dpi=110, bbox_inches='tight')
-            plt.close(fig)
-            self._log(self.tools_log, f"✓ Saved: {png_path.name}", "success")
-            title = "Updated correlation image" if png_existed else "Created correlation image"
-            self._tools_file_notice(
-                title,
-                f"Correlation heatmap saved. Found {len(pairs)} pairs above threshold {threshold}.",
-                [png_path],
-            )
-
-            # Auto-open
-            try:
-                import os
-                os.startfile(str(png_path))
-                self._log(self.tools_log, "Opened in default image viewer", "info")
-            except Exception:
-                self._log(self.tools_log,
-                    f"Open manually: {png_path}", "info")
-
+            data_tools.show_correlation(csv, threshold_raw, train_pct, WORK_DIR, log=lambda text, tag='info': self._log(self.tools_log, text, tag),
+                                        notice=self._tools_file_notice, read_csv=self._smart_read_csv,
+                                        open_file=lambda p: os.startfile(str(p)))
         except Exception as e:
             import traceback
             self._log(self.tools_log, f"Error: {e}", "error")
@@ -4370,110 +3900,15 @@ class RLTradingStudio(ctk.CTk):
         ).start()
 
     def _clean_features_worker(self, csv, threshold, train_pct=0.85):
-        def log(text, tag="info"):
-            self.after(0, lambda text=text, tag=tag:
-                       self._log(self.tools_log, text, tag))
-
+        log = lambda text, tag='info': self.after(0, lambda text=text, tag=tag: self._log(self.tools_log, text, tag))
         try:
-            log(f"\n=== Cleaning redundant features (corr > {threshold}) ===", "info")
-            log(f"Loading {csv}...", "info")
-            import pandas as pd
-            df = validate_frame(self._smart_read_csv(WORK_DIR / csv), csv)
-            if not 0 < train_pct <= 1:
-                raise ValueError("Train fraction must be > 0 and <= 1")
-            fit_df = df.iloc[:int(len(df) * train_pct)]
-            if len(fit_df) < 3:
-                raise ValueError("Not enough Train rows for feature selection")
-            features = feature_columns(df)
-            log(f"Original: {len(features)} features; fit TRAIN ONLY through {fit_df.timestamp.iloc[-1]}", "info")
-
-            kept, dropped, reasons = self._greedy_correlation_prune(
-                fit_df, features, threshold)
-
-            if dropped:
-                blocked, min_keep, keep_ratio = self._is_prune_too_aggressive(
-                    len(features), len(kept))
-                if blocked:
-                    log(
-                        f"⚠ Clean skipped: would keep only {len(kept)}/{len(features)} "
-                        f"features ({keep_ratio:.0%}); minimum safe keep is {min_keep}.",
-                        "error")
-                    log(
-                        "Raise threshold closer to 0.99, then run Show Correlation Matrix first.",
-                        "warn")
-                    self._tools_file_notice(
-                        "Clean skipped",
-                        "Redundant-feature cleanup was too aggressive, so no cleaned CSV was written.",
-                        level="warn",
-                    )
-                    return
-
-            if not dropped:
-                log(
-                    "✓ No redundant features found — already clean!",
-                    "success")
-                self._tools_file_notice(
-                    "No file changed",
-                    "No redundant features were found, so no cleaned CSV was created.",
-                    level="warn",
-                    popup=False,
-                )
-                return
-
-            log(f"\nDropped {len(dropped)} features:", "warn")
-            for col in dropped:
-                kept_col, r = reasons[col]
-                if kept_col is None:
-                    log(f"  - {col:25s}  (constant / no variance)", "warn")
-                else:
-                    log(f"  - {col:25s}  (r={r:.3f} with {kept_col})", "warn")
-
-            log(f"\nKept {len(kept)} features:", "metric")
-            for col in kept:
-                log(f"  + {col}", "info")
-
-            # Save: keep all non-feature cols + kept features
-            non_feature = [c for c in df.columns if c not in features]
-            out_cols = non_feature + kept
-            cleaned_df = df[out_cols]
-
-            out_name = f"{Path(csv).stem}_clean.csv"
-            out_path = WORK_DIR / out_name
-            out_existed = out_path.exists()
-            cleaned_df.to_csv(out_path, index=False)
-            out_path.with_suffix(".features.json").write_text(json.dumps({
-                "source_csv": str((WORK_DIR / csv).resolve()),
-                "fit_start": fit_df.timestamp.iloc[0].isoformat(),
-                "fit_end": fit_df.timestamp.iloc[-1].isoformat(),
-                "fit_rows": len(fit_df), "threshold": threshold,
-                "features": kept, "dropped": dropped,
-            }, indent=2), encoding="utf-8")
-            notice_paths = [out_path]
-            params_path, params_error = self._copy_csv_params_sidecar(WORK_DIR / csv, out_path)
-            if params_path:
-                notice_paths.append(params_path)
-                log(f"  ✓ Copied params sidecar: {params_path.name}", "success")
-            elif params_error:
-                log(f"  ⚠ params sidecar copy failed: {params_error}", "warn")
-            else:
-                log("  ⚠ no params sidecar found for source CSV", "warn")
-
-            size_mb = out_path.stat().st_size / 1024 / 1024
-            log(f"\n✓ Saved: {out_name} ({size_mb:.1f} MB · {len(out_cols)} cols)",
-                "success")
-            log(
-                f"  Reduction: {len(features)} → {len(kept)} features ({(len(kept)/len(features))*100:.0f}% kept)",
-                "metric")
-
-            self.after(0, self._refresh_dropdowns)
-            self.after(0, self._refresh_tools_dropdowns)
-            title = "Updated cleaned CSV" if out_existed else "Created cleaned CSV"
-            self._tools_file_notice(
-                title,
-                f"Cleaned dataset saved after dropping {len(dropped)} redundant features.",
-                notice_paths,
-            )
-
+            written = data_tools.clean_features(csv, threshold, train_pct, WORK_DIR, log=log,
+                                                notice=self._tools_file_notice,
+                                                read_csv=self._smart_read_csv,
+                                                prune=self._greedy_correlation_prune)
+            if written:
+                self.after(0, self._refresh_dropdowns)
+                self.after(0, self._refresh_tools_dropdowns)
         except Exception as e:
             import traceback
             log(f"Error: {e}", "error")
@@ -8271,17 +7706,7 @@ class RLTradingStudio(ctk.CTk):
                     text="Breakpoints are from a previous CSV — re-run detection",
                     text_color=COLOR_YELLOW)
         name = Path(path).name
-        try:
-            import pandas as pd
-            df = pd.read_csv(path, usecols=lambda c: c.lower() in ("timestamp", "close"))
-            n = len(df)
-            if "timestamp" in df.columns:
-                ts = pd.to_datetime(df["timestamp"], errors="coerce")
-                meta = f"{n:,} rows · {ts.min().date()} → {ts.max().date()}"
-            else:
-                meta = f"{n:,} rows · (no timestamp col?)"
-        except Exception as e:
-            meta = f"(error reading: {e})"
+        meta = regime_tools.csv_meta(path)
         self.regime_csv_label.configure(text=name)
         self.regime_csv_meta.configure(text=meta)
 
@@ -8294,23 +7719,11 @@ class RLTradingStudio(ctk.CTk):
             return
 
         method = self.regime_method.get()
-        cmd = [sys.executable, "regime_compare.py", self.regime_csv_path,
-               "--method", method]
-
         try:
-            if method == "hmm":
-                states = input_number(self.regime_hmm_states.get(), "HMM states", 2, integer=True)
-                cmd += ["--n-states", str(states)]
-            elif method == "kmeans":
-                k = input_number(self.regime_km_k.get(), "K-means states", 2, integer=True)
-                win = input_number(self.regime_km_win.get(), "Regime window", 2, integer=True)
-                cmd += ["--k", str(k), "--win", str(win)]
-            elif method == "pelt":
-                pen = input_number(self.regime_pelt_pen.get(), "PELT penalty", 0)
-                if pen == 0:
-                    raise ValueError("PELT penalty must be > 0")
-                cmd += ["--penalty", str(pen)]
-        except ValueError as exc:
+            cmd = regime_tools.detect_command(self.regime_csv_path, method, {
+                "hmm_states": self.regime_hmm_states.get(), "km_k": self.regime_km_k.get(),
+                "km_win": self.regime_km_win.get(), "pelt_pen": self.regime_pelt_pen.get()}, sys.executable)
+        except regime_tools.RegimeError as exc:
             messagebox.showerror("Invalid params", str(exc))
             return
 
@@ -8331,17 +7744,7 @@ class RLTradingStudio(ctk.CTk):
 
     def _regime_event_status_text(self) -> str:
         """Show last_updated + n_events from known_events.json (if any)."""
-        p = WORK_DIR / "known_events.json"
-        if not p.exists():
-            return "● No known_events.json yet — using 3 hardcoded events (Lehman/Brexit/Truss)"
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-            n = data.get("n_events", 0)
-            ts = data.get("last_updated", "?")
-            sym = data.get("symbol", "?")
-            return f"✓ {n} events loaded · symbol {sym} · last updated {ts}"
-        except Exception as e:
-            return f"⚠ known_events.json present but unreadable: {e}"
+        return regime_tools.event_status_text(WORK_DIR)
 
     def _refresh_events_with_gemini(self):
         """Run gemini_labeler.py as subprocess to refresh known_events.json."""
@@ -8368,23 +7771,13 @@ class RLTradingStudio(ctk.CTk):
                 return
 
         try:
-            symbol = self.regime_ev_symbol.get().strip()
-            if not symbol:
-                raise ValueError("Symbol is required")
-            top_k = input_number(self.regime_ev_topk.get(), "Top-K", 1, integer=True)
-        except ValueError as exc:
+            cmd, masked_text = regime_tools.gemini_command(
+                self.regime_csv_path, self.regime_ev_symbol.get(), self.regime_ev_topk.get(),
+                api_key, sys.executable)
+        except regime_tools.RegimeError as exc:
             messagebox.showerror("Invalid params", str(exc))
             return
-
-        cmd = [sys.executable, "gemini_labeler.py", self.regime_csv_path,
-               "--symbol", symbol, "--top-k", str(top_k)]
-        if api_key:
-            cmd += ["--api-key", api_key]
-
-        # Mask the key in the log line
-        masked = [(c if c != api_key else (api_key[:8] + "..." + api_key[-4:]))
-                  for c in cmd]
-        self._log(self.regime_log, f"$ {' '.join(masked)}", "info")
+        self._log(self.regime_log, f"$ {masked_text}", "info")
         self.status_label.configure(text="● Labeling with Gemini...",
             text_color=COLOR_ACCENT)
         self._start_runner(cmd, "regime")
@@ -8392,74 +7785,26 @@ class RLTradingStudio(ctk.CTk):
     def _load_regime_results(self):
         """Read regime_single_data.json after subprocess finishes,
         populate the Treeview, and compute event-match metadata."""
-        json_path = WORK_DIR / "regime_single_data.json"
-        if not json_path.exists():
+        try:
+            results = regime_tools.load_results(WORK_DIR)
+        except Exception as e:
+            self._log(self.regime_log, f"Failed to read JSON: {e}", "error")
+            return
+        if results is None:
             self._log(self.regime_log,
                 "(no regime_single_data.json found — chart wasn't generated)",
                 "warn")
             return
 
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception as e:
-            self._log(self.regime_log, f"Failed to read JSON: {e}", "error")
-            return
-
         # Clear previous rows
         for item in self.regime_tree.get_children():
             self.regime_tree.delete(item)
-
-        breaks = data.get("breaks", [])
-        events = data.get("events", {})
-        self._regime_results_csv = data.get("csv")
-        method = data.get("method", "?").upper()
-        score = data.get("score", 0)
-        n_bars = data.get("n_bars", 0)
-        time_sec = data.get("time_sec", 0)
-
-        # Sort known events by date once
-        try:
-            from datetime import datetime
-            event_dates = {n: datetime.strptime(d, "%Y-%m-%d")
-                           for n, d in events.items()}
-        except Exception:
-            event_dates = {}
-
-        # Populate rows
-        matched = 0
-        for b in breaks:
-            try:
-                from datetime import datetime
-                bdt = datetime.strptime(b, "%Y-%m-%d")
-            except Exception:
-                self.regime_tree.insert("", "end", values=(b, "—", "—"))
-                continue
-
-            # Find closest known event within ±90 days
-            best_name, best_delta = None, None
-            for name, edt in event_dates.items():
-                delta = abs((bdt - edt).days)
-                if delta <= 90 and (best_delta is None or delta < best_delta):
-                    best_name, best_delta = name, delta
-
-            if best_name:
-                matched += 1
-                self.regime_tree.insert("", "end",
-                    values=(b, f"✓ {best_name}", f"{best_delta}d"))
-            else:
-                self.regime_tree.insert("", "end",
-                    values=(b, "—", "—"))
-
-        # Summary line — denominator = total known events (not hardcoded 3)
-        n_events = len(event_dates) if event_dates else 0
-        good = (n_events == 0) or (score / max(n_events, 1) >= 0.4)
+        self._regime_results_csv = results["csv"]
+        for row in results["rows"]:
+            self.regime_tree.insert("", "end", values=tuple(row))
         self.regime_summary.configure(
-            text=(f"Method: {method}  ·  "
-                  f"{len(breaks)} breakpoints  ·  "
-                  f"{score}/{n_events} known events matched  ·  "
-                  f"{n_bars:,} bars analyzed in {time_sec:.2f}s"),
-            text_color=COLOR_GREEN if good else COLOR_YELLOW)
+            text=results["summary"],
+            text_color=COLOR_GREEN if results["good"] else COLOR_YELLOW)
 
     def _use_regime_cutoff(self):
         """Filter CSV to rows >= selected breakpoint, save as a new file,
@@ -8488,7 +7833,7 @@ class RLTradingStudio(ctk.CTk):
         match_label = self.regime_tree.item(sel[0])["values"][1]
 
         src_csv = Path(self.regime_csv_path)
-        dst_csv = src_csv.parent / f"{src_csv.stem}_from_{date_str}.csv"
+        dst_csv = regime_tools.cutoff_target(src_csv, date_str)
 
         msg = (f"Filter CSV to rows where timestamp >= {date_str}\n"
                f"{'(' + match_label + ')' if match_label != '—' else ''}\n\n"
@@ -8500,47 +7845,12 @@ class RLTradingStudio(ctk.CTk):
             return
 
         try:
-            import pandas as pd
-            df = pd.read_csv(src_csv)
-            if "timestamp" not in df.columns:
-                messagebox.showerror("Bad CSV",
-                    "CSV has no 'timestamp' column — can't filter by date.")
-                return
-            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-            df = df.sort_values("timestamp").reset_index(drop=True)
-            before = len(df)
-            cutoff = pd.Timestamp(date_str)
-            df = df[df["timestamp"] >= cutoff].reset_index(drop=True)
-            after = len(df)
-            if after == 0:
-                messagebox.showerror(
-                    "Cutoff outside CSV",
-                    f"Cutoff {date_str} leaves no rows in {src_csv.name}.")
-                return
-            df.to_csv(dst_csv, index=False)
-        except Exception as e:
-            messagebox.showerror("Filter failed", str(e))
+            done = regime_tools.apply_cutoff(src_csv, date_str)
+        except regime_tools.RegimeError as exc:
+            messagebox.showerror(exc.title, exc.message)
             return
-
-        # Forward the .params.json sidecar if it exists
-        src_params = src_csv.with_suffix("").with_suffix(".params.json")
-        if not src_params.exists():
-            src_params = src_csv.parent / (src_csv.stem + ".params.json")
-        dst_params = dst_csv.with_suffix("").with_suffix(".params.json")
-        if src_params.exists():
-            try:
-                import shutil
-                shutil.copy(src_params, dst_params)
-                params_msg = f"\n  + forwarded {src_params.name}"
-            except Exception as e:
-                params_msg = f"\n  (params sidecar copy failed: {e})"
-        else:
-            params_msg = ""
-
-        self._log(self.regime_log,
-            f"[cutoff] saved {dst_csv.name} · {after:,} / {before:,} rows kept"
-            f"{params_msg}",
-            "success")
+        dst_csv = Path(done["path"])
+        self._log(self.regime_log, done["log"], "success")
 
         # Jump to Train page with the new CSV
         try:

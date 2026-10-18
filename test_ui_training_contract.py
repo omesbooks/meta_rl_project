@@ -450,6 +450,78 @@ class DashboardContractTests(unittest.TestCase):
         with self.assertRaises(FormError):
             build_ft_command(dict(form, name="BASE"))                  # same name as the base, case-insensitive
 
+    # ---- web GUI parity (phase 5): analyze / regime check
+    def test_web_analyze_and_regime_commands_equal_ctk(self):
+        import regime_tools
+        from webgui.api import Api
+        app = self.app
+        app.show_page("analyze")                                  # pages are built lazily
+        app.an_model.set("probe")
+        app.an_csv.set(str(self.csv))
+        with patch.object(app, "_start_runner") as runner:
+            app._run_analyze()
+        api = Api(self.root, python=sys.executable)
+        with patch.object(api, "_start_page_run", side_effect=lambda page, cmd, info, display=None: {"ok": True, "cmd": cmd}) as start:
+            self.assertEqual(api.start_analyze({"model": "probe", "csv": str(self.csv)})["cmd"], runner.call_args.args[0])
+        app.regime_csv_path = str(self.csv)
+        for method, entries in (("hmm", {"hmm_states": "4"}), ("kmeans", {"km_k": "5", "km_win": "30"}), ("pelt", {"pelt_pen": "12.5"})):
+            app.regime_method.set(method)
+            for k, v in entries.items():
+                set_entry(getattr(app, "regime_" + k), v)
+            with patch.object(app, "_start_runner") as runner:
+                app._run_regime_detection()
+            params = {"hmm_states": app.regime_hmm_states.get(), "km_k": app.regime_km_k.get(),
+                      "km_win": app.regime_km_win.get(), "pelt_pen": app.regime_pelt_pen.get()}
+            self.assertEqual(regime_tools.detect_command(str(self.csv), method, params), runner.call_args.args[0], method)
+        app.regime_method.set("hmm")
+        with self.assertRaises(regime_tools.RegimeError):
+            regime_tools.detect_command(str(self.csv), "pelt", {"pelt_pen": "0"})
+
+    def test_web_gemini_command_masks_the_key_like_ctk(self):
+        import regime_tools
+        app = self.app
+        app.regime_csv_path = str(self.csv)
+        key = "AIzaCONTRACTkey000000000WXYZ"
+        logged = []
+        with patch.object(rl_app, "_load_api_keys", return_value={"gemini": key}), \
+                patch.object(app, "_start_runner") as runner, \
+                patch.object(app, "_log", side_effect=lambda w, text, tag="info": logged.append(text)):
+            app._refresh_events_with_gemini()
+        cmd, masked = regime_tools.gemini_command(str(self.csv), app.regime_ev_symbol.get(), app.regime_ev_topk.get(), key)
+        self.assertEqual(cmd, runner.call_args.args[0])
+        self.assertEqual(logged[-1], "$ " + masked)
+        self.assertNotIn(key, masked)
+        self.assertIn(key[:8] + "..." + key[-4:], masked)
+
+    def test_web_regime_cutoff_writes_the_same_file_as_ctk(self):
+        from webgui.api import Api
+        app = self.app
+        src = self.root / "regime_src.csv"
+        frame = data(400)
+        frame.to_csv(src, index=False)
+        src.with_suffix(".params.json").write_text('{"p": 1}')
+        date = str(frame.timestamp.iloc[250].date())
+        for item in app.regime_tree.get_children():
+            app.regime_tree.delete(item)
+        app.regime_tree.insert("", "end", iid="b0", values=(date, "—", "—"))
+        app.regime_tree.selection_set("b0")
+        app.regime_csv_path = str(src)
+        app._regime_results_csv = str(src)
+        with patch.object(rl_app.messagebox, "askyesno", return_value=True), \
+                patch.object(app, "show_page"), patch.object(app, "_set_train_csv") as chosen:
+            app._use_regime_cutoff()
+        out = self.root / f"regime_src_from_{date}.csv"
+        ctk_bytes, ctk_params = out.read_bytes(), out.with_suffix(".params.json").read_bytes()
+        self.assertEqual(chosen.call_args.args[0], str(out))
+        out.unlink(); out.with_suffix(".params.json").unlink()
+        r = Api(self.root).regime_cutoff(str(src), date, str(src))
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(Path(r["path"]), out)
+        self.assertEqual(out.read_bytes(), ctk_bytes)
+        self.assertEqual(out.with_suffix(".params.json").read_bytes(), ctk_params)
+        stale = Api(self.root).regime_cutoff(str(src), date, str(self.csv))
+        self.assertEqual(stale.get("title"), "Stale breakpoint")
+
     def test_pipeline_external_eval_and_overrides_metadata(self):
         external = self.root/"later.csv"
         frame = data(120)

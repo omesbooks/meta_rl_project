@@ -270,3 +270,71 @@ def test_walkforward_lines_and_flow_errors(tmp_path):
     assert api.start_walkforward({"csv": ""})["field"] == "wf_csv"
     assert api.start_finetune({"base": "m", "old_csv": "a.csv", "new_csv": "b.csv", "name": "M", "steps": "10", "mix": "0.3", "lr": "1e-4"})["field"] == "name"
     assert not api.busy()
+
+
+# ---------------------------------------------------------------- phase 5: Data Tools / Regime / Analyze
+def _frame(n=300, seed=0):
+    import numpy as np
+    import pandas as pd
+    rng = np.random.default_rng(seed)
+    close = 100 + rng.normal(0, 1, n).cumsum()
+    f1 = rng.normal(size=n)
+    return pd.DataFrame({"timestamp": pd.date_range("2020-01-01", periods=n, freq="D"), "open": close, "high": close + 1,
+                         "low": close - 1, "close": close, "volume": 1, "f1": f1, "f1_copy": f1 * 2 + 0.001,
+                         **{f"f{i}": rng.normal(size=n) for i in range(2, 12)}})
+
+
+def test_data_tools_split_and_clean(tmp_path):
+    import data_tools
+    import pandas as pd
+    _frame().to_csv(tmp_path / "d.csv", index=False)
+    (tmp_path / "d.params.json").write_text("{}", encoding="utf-8")
+    logs, notices = [], []
+    log = lambda t, tag="info": logs.append((t, tag))
+    notice = lambda title, message, paths=None, level="success", popup=True: notices.append(title)
+    s = {"csv": "d.csv", "split_date": "2020-08-01", "train_suffix": "_train", "test_suffix": "_test", "clean_after": True, "clean_threshold": "0.99"}
+    written = data_tools.split_csv(s, tmp_path, log, notice)
+    assert {p.name for p in written} == {"d_train.csv", "d_test.csv", "d_train.params.json", "d_test.params.json"}
+    tr = pd.read_csv(tmp_path / "d_train.csv")
+    assert "f1_copy" not in tr.columns and "f1" in tr.columns and tr.timestamp.max() < "2020-08-01"
+    assert notices[-1] == "Created split files"
+    assert data_tools.split_csv(dict(s, split_date="1990-01-01"), tmp_path, log, notice) == []      # empty train -> aborted
+    out = data_tools.clean_features("d.csv", 0.99, 0.85, tmp_path, log, notice)
+    assert out[0].name == "d_clean.csv" and (tmp_path / "d_clean.features.json").exists()
+    assert data_tools.clean_deploy_name("1st model-v2") == "m_1st_model_v2" and data_tools.clean_deploy_name("@@") == ""
+    plan = data_tools.export_plan("m", "m", "", data_tools.EXPORT_SOURCES[1], tmp_path)
+    assert plan["cmd"][1:] == ["export_to_onnx.py", "m", "--name", "m", "--source", "best"] and plan["outdir"] == ""
+
+
+def test_regime_results_table(tmp_path):
+    import json
+    import regime_tools
+    (tmp_path / "regime_single_data.json").write_text(json.dumps({
+        "breaks": ["2008-09-20", "2016-06-01", "2019-01-01", "bad"], "events": {"Lehman": "2008-09-15", "Brexit": "2016-06-23", "Truss": "2022-09-26"},
+        "method": "hmm", "score": 2, "n_bars": 1234, "time_sec": 1.5, "csv": "x.csv"}), encoding="utf-8")
+    r = regime_tools.load_results(tmp_path)
+    assert r["rows"] == [["2008-09-20", "✓ Lehman", "5d"], ["2016-06-01", "✓ Brexit", "22d"], ["2019-01-01", "—", "—"], ["bad", "—", "—"]]
+    assert r["summary"].startswith("Method: HMM  ·  4 breakpoints  ·  2/3 known events matched") and r["good"]
+    assert regime_tools.event_status_text(tmp_path).startswith("● No known_events.json")
+    assert regime_tools.cutoff_target(tmp_path / "eu.csv", "2016-06-23").name == "eu_from_2016-06-23.csv"
+
+
+def test_tool_job_streams_log_notice_and_done(tmp_path):
+    _frame().to_csv(tmp_path / "d.csv", index=False)
+    events = []
+    api = Api(tmp_path, emit=events.extend)
+    assert api.tools_split({"csv": "d.csv", "split_date": "2020-08-01"})["ok"]
+    assert api.busy() or any(e.get("type") == "done" for e in events)
+    for _ in range(100):
+        if any(e.get("type") == "done" and e.get("page") == "tools" for e in events):
+            break
+        time.sleep(0.1)
+    done = next(e for e in events if e.get("type") == "done")
+    assert done["kind"] == "split" and done["ok"] and len(done["paths"]) == 2
+    assert any(e.get("type") == "notice" and e["title"] == "Created split files" for e in events)
+    assert any(e.get("type") == "line" and e["line"].startswith("✓ Saved: d_train.csv") and e["cls"] == "success" for e in events)
+    assert not api.busy()
+    assert api.tools_clean({"csv": "", "threshold": "0.99", "train_pct": "85"})["field"] == "tool_feat_csv"
+    assert api.tools_correlation({"csv": "d.csv", "threshold": "0", "train_pct": "85"})["field"] == "tool_feat_thr"
+    assert api.start_analyze({"model": "", "csv": "d.csv"})["field"] == "an_model"
+    api.shutdown()

@@ -86,7 +86,7 @@ async function refreshCsv() {
   const csv = $("csv").value;
   if (!csv) { $("dsMeta").textContent = "no CSV in the project root"; return; }
   const info = await api().csv_info(csv, $("train_pct").value, $("window").value);
-  $("dsName").textContent = csv.split(/[\/]/).pop();
+  $("dsName").textContent = csv.split(/[\\/]/).pop();
   if (!info.ok) { $("dsMeta").textContent = info.error; $("dsMeta").className = "hint err"; $("dsSplit").innerHTML = ""; $("useSuggest").disabled = true; return; }
   $("dsMeta").textContent = `${info.rows.toLocaleString()} rows · ${info.cols} columns · ` + (info.params ? "✓ .params.json (parity guaranteed)" : "⚠ no .params.json (EA will use defaults)");
   $("dsMeta").className = "hint " + (info.params ? "ok" : "warn");
@@ -122,7 +122,7 @@ function drawTrend() {
 
 // ------------------------------------------------------------------ run state + events
 function setBusy(b, text) {
-  busy = b; if (b) $("pills").classList.remove("off");
+  busy = b;
   // one subprocess at a time across pages (same as the CTk ProcessRunner): every run button waits
   document.querySelectorAll("[data-run]").forEach(x => x.disabled = b); document.querySelectorAll("[data-stop]").forEach(x => x.disabled = !b);
   document.querySelector("#status .dot").className = "dot" + (b ? " run" : ""); $("statusText").textContent = text || (b ? "training" : "idle");
@@ -219,7 +219,7 @@ async function init() {
     $("pgTitle").textContent = PAGES[p];
     document.querySelectorAll(".page").forEach(s => s.classList.remove("on"));
     const live = window.rlpages.live;
-    $("pills").classList.toggle("off", p !== "train" && !busy);   // training pills: Train page, or while a run is live
+    $("pills").classList.toggle("off", p !== "train");   // training metric pills belong to the Train page
     if (p in live) { $("p-" + p).classList.add("on"); $("pgSub").textContent = live[p]; window.rlpages.show(p).catch(e => toast(String(e), "err")); }
     else { $("p-classic").classList.add("on"); $("clHdr").textContent = PAGES[p].toUpperCase(); $("pgSub").textContent = "not migrated yet — classic app"; }
   });
@@ -227,6 +227,7 @@ async function init() {
   await window.rlpages.init();
   if (window.rlbacktest) await window.rlbacktest.init();
   if (window.rlflows) await window.rlflows.init();
+  if (window.rltools) await window.rltools.init();
   setBusy(await api().busy());
   window.__rlweb_ready = true;
 }

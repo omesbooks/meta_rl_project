@@ -36,6 +36,7 @@ class Api:
         self._model_rows = {}
         self._run_info = {}                   # page -> {kind, model} of the run in flight
         self._ts_cache = {}
+        self._tool_busy = False               # in-process Data Tools job (split/clean/...) running
         self._emit = emit or (lambda events: None)
         self._python = python or sys.executable
         self._runner = Runner(self._root)
@@ -210,7 +211,7 @@ class Api:
 
     # ------------------------------------------------------------------ training
     def busy(self):
-        return self._runner.is_running()
+        return self._runner.is_running() or self._tool_busy
 
     def review_training(self, form):
         """Validate + prepare exactly like the CTk confirm step; nothing is launched here."""
@@ -292,6 +293,10 @@ class Api:
                     batch.append(ev)
                 elif kind in ("stage", "stage_done"):
                     batch.append({"type": kind, "page": page, **data})
+                elif kind == "tline":
+                    batch.append({"type": "line", "page": page, "line": data[0], "cls": data[1]})
+                elif kind in ("notice", "tdone"):
+                    batch.append({"type": "notice" if kind == "notice" else "done", "page": page, **data})
                 else:
                     batch.append({"type": "done", "page": page, **self._run_info.pop(page, {}), **data})
             if batch:
@@ -521,15 +526,16 @@ class Api:
     def browse_m1(self):
         return self._open_dialog(self._root, ("CSV files (*.csv)", "All files (*.*)"))
 
-    def _start_page_run(self, page, cmd, info):
-        if self._runner.is_running():
+    def _start_page_run(self, page, cmd, info, display=None):
+        """display: text shown instead of the command (never put a secret in the page log)."""
+        if self._runner.is_running() or self._tool_busy:
             return {"ok": False, "error": "Another task running"}
         self._train_total = None
         if not self._runner.start(cmd, page):
             return {"ok": False, "error": "Another task running"}
         self._run_info[page] = info
         self.start_pump()
-        self._emit([{"type": "start", "page": page, "command": " ".join(cmd[1:]), **info}])
+        self._emit([{"type": "start", "page": page, "command": display if display is not None else " ".join(cmd[1:]), **info}])
         return {"ok": True, **info}
 
     def start_backtest(self, form):
@@ -694,6 +700,261 @@ class Api:
         except commands.FormError as exc:
             return {"ok": False, "field": exc.field, "error": exc.message}
         return self._start_page_run("finetune", built["cmd"], {"kind": "finetune", "name": built["name"]})
+
+    # ------------------------------------------------------------------ analyze
+    def start_analyze(self, form):
+        model, csv = str(form.get("model", "")).strip(), str(form.get("csv", "")).strip()
+        if model in ("(none)", ""):
+            return {"ok": False, "field": "an_model", "error": "Please select model and CSV"}
+        if csv in ("(none)", ""):
+            return {"ok": False, "field": "an_csv", "error": "Please select model and CSV"}
+        return self._start_page_run("analyze", [self._python, "rl_analyze.py", model, csv], {"kind": "analyze", "model": model})
+
+    # ------------------------------------------------------------------ regime check
+    def regime_catalog(self):
+        import regime_tools
+        return {"methods": [list(m) for m in regime_tools.METHODS], "defaults": regime_tools.DEFAULTS,
+                "csvs": self._feature_csvs(), "status": regime_tools.event_status_text(self._root),
+                "has_key": bool(str(self._keys().get("gemini") or "").strip())}
+
+    def regime_csv(self, path):
+        import regime_tools
+        path = str(self._csv_path(path)) if path else ""
+        if not path or not Path(path).is_file():
+            return {"ok": False, "error": "CSV not found"}
+        return {"ok": True, "path": path, "name": Path(path).name, "meta": regime_tools.csv_meta(path)}
+
+    def regime_browse(self):
+        path = self._open_dialog(self._root, ("CSV files (*.csv)", "All files (*.*)"))
+        return self.regime_csv(path) if path else {"ok": False, "cancelled": True}
+
+    def regime_detect(self, form):
+        import regime_tools
+        try:
+            cmd = regime_tools.detect_command(form.get("csv"), form.get("method", "hmm"), form, python=self._python)
+        except regime_tools.RegimeError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        return self._start_page_run("regime", cmd, {"kind": "detect", "csv": form.get("csv")})
+
+    def regime_gemini(self, form, allow_without_key=False):
+        """CTk Refresh events with Gemini. The key comes from api_keys.json and stays on the Python side."""
+        import regime_tools
+        api_key = str(self._keys().get("gemini") or "").strip()
+        if not api_key and not allow_without_key:
+            return {"ok": False, "need_key": True, "error": "No Gemini API key found in Settings."}
+        try:
+            cmd, masked = regime_tools.gemini_command(form.get("csv"), form.get("ev_symbol"), form.get("ev_topk"),
+                                                       api_key, python=self._python)
+        except regime_tools.RegimeError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        return self._start_page_run("regime", cmd, {"kind": "gemini"}, display=masked.split(" ", 1)[1])
+
+    def regime_results(self):
+        """Breakpoint table + summary from regime_single_data.json, and the events status line."""
+        import regime_tools
+        status = regime_tools.event_status_text(self._root)
+        try:
+            res = regime_tools.load_results(self._root)
+        except Exception as exc:
+            return {"ok": False, "error": f"Failed to read JSON: {exc}", "status": status}
+        if res is None:
+            return {"ok": False, "missing": True, "error": "(no regime_single_data.json found — chart wasn't generated)", "status": status}
+        return {"ok": True, **res, "status": status}
+
+    def regime_cutoff(self, csv_path, date_str, results_csv):
+        """'Use Selected as Train Cutoff': writes <stem>_from_<date>.csv (+ params sidecar)."""
+        import regime_tools
+        if not csv_path:
+            return {"ok": False, "error": "No CSV loaded."}
+        if not regime_tools.same_source(results_csv, csv_path):
+            return {"ok": False, "title": "Stale breakpoint",
+                    "error": "These breakpoints were generated from another CSV. Re-run detection first."}
+        try:
+            return {"ok": True, **regime_tools.apply_cutoff(csv_path, date_str)}
+        except regime_tools.RegimeError as exc:
+            return {"ok": False, "title": exc.title, "field": exc.field, "error": exc.message}
+
+    def regime_cutoff_preview(self, csv_path, date_str):
+        import regime_tools
+        return {"output": regime_tools.cutoff_target(csv_path, date_str).name, "source": Path(csv_path).name}
+
+    def open_regime_chart(self):
+        chart = self._root / "regime_single.html"
+        if not chart.exists():
+            return {"ok": False, "error": "Run a detection first — the chart is generated after analysis."}
+        self._startfile(chart)
+        return {"ok": True}
+
+    # ------------------------------------------------------------------ data tools
+    def tools_catalog(self):
+        import data_tools
+        from artifact_paths import model_names_from_artifacts
+        return {"csvs": self._feature_csvs(), "models": sorted(set(model_names_from_artifacts())),
+                "collector": data_tools.collector_sources(), "common_dir": str(data_tools.common_files_dir()),
+                "export_sources": data_tools.EXPORT_SOURCES,
+                "split_presets": ["2021-01-01 (5y test)", "2020-01-01 (6y test)", "2022-01-01 (4y test)", "2023-01-01 (3y test)"],
+                "defaults": {"split_date": "2021-01-01", "train_suffix": "_train", "test_suffix": "_test", "clean_thr": "0.99",
+                             "feat_thr": "0.99", "feat_train_pct": "85", "import_m1": True}}
+
+    def _tool_job(self, kind, fn):
+        """Run one in-process Data Tools job on a worker thread; its log/notice/done go
+        through the event queue like subprocess output (page 'tools')."""
+        if self._runner.is_running() or self._tool_busy:
+            return {"ok": False, "error": "Another task is running"}
+        self._tool_busy = True
+        q = self._runner.q
+        log = lambda text, tag="info": q.put(("tline", "tools", (str(text), tag)))
+        def notice(title, message, paths=None, level="success", popup=True):
+            shown = []
+            for pth in (paths or []):
+                try:
+                    shown.append(str(Path(pth).resolve().relative_to(self._root)))
+                except Exception:
+                    shown.append(str(pth))
+            q.put(("notice", "tools", {"title": title, "message": message, "paths": shown, "level": level, "popup": popup}))
+        def run():
+            result, ok = None, True
+            try:
+                result = fn(log, notice)
+            except Exception as e:
+                import traceback
+                ok = False
+                log(f"Error: {e}", "error")
+                log(traceback.format_exc(), "error")
+            finally:
+                self._tool_busy = False
+                extra = result if isinstance(result, dict) else {}
+                q.put(("tdone", "tools", {"kind": kind, "ok": ok, **extra}))
+        self.start_pump()
+        self._emit([{"type": "start", "page": "tools", "kind": kind}])
+        threading.Thread(target=run, daemon=True).start()
+        return {"ok": True}
+
+    def tools_import(self, form, confirmed=False):
+        import data_tools
+        src_name = str(form.get("src", "")).strip()
+        if not src_name or src_name == "(none)":
+            return {"ok": False, "field": "tool_src", "error": "Pick a CSV from Common\\Files (or check that DataCollector_RL has run)"}
+        src_csv = data_tools.common_files_dir() / src_name
+        if not src_csv.exists():
+            return {"ok": False, "field": "tool_src", "error": f"File missing: {src_csv}"}
+        out_name = str(form.get("out", "")).strip() or data_tools.collector_out_default(src_name)
+        dst_csv = self._root / Path(out_name).with_suffix(".csv").name
+        if dst_csv.exists() and Path(src_name).stem.lower() not in dst_csv.stem.lower() and not confirmed:
+            return {"ok": False, "confirm": f"{dst_csv.name} already exists and its name does not match source {src_name}.\n\n"
+                                            "Continuing replaces CSV + params + _m1.\n\nContinue?"}
+        want_m1 = bool(form.get("m1", True))
+        return self._tool_job("import", lambda log, notice: {"paths": [str(x) for x in data_tools.import_collector(
+            src_csv, src_csv.with_suffix(".params.json"), out_name, want_m1, self._root, log, notice)]})
+
+    def tools_split(self, form):
+        import data_tools
+        settings = {"csv": str(form.get("csv", "")), "split_date": str(form.get("split_date", "")).strip(),
+                    "train_suffix": str(form.get("train_suffix", "")).strip() or "_train",
+                    "test_suffix": str(form.get("test_suffix", "")).strip() or "_test",
+                    "clean_after": bool(form.get("clean_after")), "clean_threshold": str(form.get("clean_thr", "")).strip() or "0.99"}
+        return self._tool_job("split", lambda log, notice: {"paths": [str(x) for x in data_tools.split_csv(settings, self._root, log, notice)]})
+
+    def _feat_inputs(self, form):
+        from ui_values import fraction, number
+        try:
+            threshold = number(form.get("threshold", ""), "Correlation threshold", 0, 1)
+            if threshold == 0:
+                raise ValueError("Correlation threshold must be > 0")
+        except ValueError as exc:
+            raise commands.FormError("tool_feat_thr", str(exc))
+        try:
+            train_pct = fraction(form.get("train_pct", ""), "Feature Train %", allow_zero=False)
+        except ValueError as exc:
+            raise commands.FormError("tool_feat_train_pct", str(exc))
+        return threshold, train_pct
+
+    def tools_correlation(self, form):
+        import data_tools
+        try:
+            threshold, train_pct = self._feat_inputs(form)
+        except commands.FormError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        csv = str(form.get("csv", ""))
+        def job(log, notice):
+            png = data_tools.show_correlation(csv, threshold, train_pct, self._root, log, notice)
+            return {"png": self._png_data(png, (1600, 1600)) if png else "", "png_path": str(png) if png else ""}
+        return self._tool_job("correlation", job)
+
+    def tools_clean(self, form):
+        import data_tools
+        csv = str(form.get("csv", ""))
+        if csv in ("(none)", ""):
+            return {"ok": False, "field": "tool_feat_csv", "error": "Please select a CSV"}
+        try:
+            threshold, train_pct = self._feat_inputs(form)
+        except commands.FormError as exc:
+            return {"ok": False, "field": exc.field, "error": exc.message}
+        return self._tool_job("clean", lambda log, notice: {"paths": [str(x) for x in data_tools.clean_features(csv, threshold, train_pct, self._root, log, notice)]})
+
+    def tools_export(self, form):
+        """'🚀 Export to ONNX + Generate MT5 Files' (export_to_onnx.py streamed into the tools log)."""
+        import data_tools
+        from artifact_paths import find_model_path
+        model_name = str(form.get("model", "")).strip()
+        try:
+            deploy_raw = commands.normalize_name(form.get("deploy", "")) if str(form.get("deploy", "")).strip() else ""
+        except commands.FormError:
+            return {"ok": False, "field": "tool_export_name", "error": "Deploy name is empty after cleanup."}
+        deploy_name = deploy_raw or model_name
+        clean = data_tools.clean_deploy_name(deploy_name)
+        if model_name not in ("", "(none)") and not clean:
+            return {"ok": False, "field": "tool_export_name", "error": "Deploy name needs at least one ASCII letter or digit."}
+        outdir, source_text = str(form.get("outdir", "")).strip(), str(form.get("source", data_tools.EXPORT_SOURCES[0]))
+        def job(log, notice):
+            if model_name in ("(none)", ""):
+                log("Please select a source model", "error")
+                return {"deploy": clean}
+            plan = data_tools.export_plan(model_name, clean, outdir, source_text, self._root, self._python)
+            log(f"\n=== Exporting {model_name} -> {clean} ===", "info")
+            log(f"Model file: {source_text}", "info")
+            log(f"Output: {plan['outdir']}" if plan["outdir"] else f"Output: {plan['display_outdir']} (auto package)", "info")
+            model_path = find_model_path(model_name, plan["source_key"])
+            if model_path is None:
+                log(f"Model not found for {source_text}: {model_name}", "error")
+                return {"deploy": clean}
+            try:
+                shown = model_path.relative_to(self._root)
+            except Exception:
+                shown = model_path
+            log(f"Found model: {shown}", "info")
+            log(f"$ {' '.join(plan['cmd'])}", "info")
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            env = dict(__import__("os").environ, PYTHONIOENCODING="utf-8")
+            proc = subprocess.Popen(plan["cmd"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=str(self._root), text=True,
+                                    bufsize=1, encoding="utf-8", errors="replace", creationflags=flags, env=env)
+            for line in proc.stdout:
+                line = line.rstrip()
+                log(line, data_tools.export_line_tag(line))
+            proc.wait()
+            if proc.returncode == 0:
+                for text, tag in data_tools.export_done_lines(clean, plan["display_outdir"]):
+                    log(text, tag)
+                notice("Updated MT5 export package" if plan["existed"] else "Created MT5 export package",
+                       f"ONNX/EA package generated for {clean}.", plan["expected_paths"])
+            else:
+                log(f"❌ Export failed (exit code {proc.returncode})", "error")
+            return {"deploy": clean, "rc": proc.returncode, "outdir": str(plan["display_outdir"])}
+        r = self._tool_job("export", job)
+        return {**r, "deploy": clean}
+
+    def tools_open(self, path):
+        """Open a file the Data Tools page produced (only inside the project folder)."""
+        p = Path(path)
+        p = p if p.is_absolute() else self._root / p
+        try:
+            p.resolve().relative_to(self._root.resolve())
+        except ValueError:
+            return {"ok": False, "error": "only files inside the project folder can be opened"}
+        if not p.exists():
+            return {"ok": False, "error": f"{p.name} not found"}
+        self._startfile(p)
+        return {"ok": True}
 
     # ------------------------------------------------------------------ settings
     def _sfile(self, name):

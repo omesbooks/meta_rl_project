@@ -141,3 +141,10 @@ body.deep .reptxt { background: rgba(0,0,0,.3); }
 .verdict span { font-size: 12px; color: var(--dim); }
 .verdict.good b { color: var(--green); } .verdict.warn b { color: var(--amber); } .verdict.bad b { color: var(--red); }
 body.deep .stages span, body.deep .verdict { background: rgba(255,255,255,.04); border-color: rgba(140,170,220,.14); }
+
+/* ---- phase 5: Data Tools / Analyze / Regime Check ---- */
+.radios { display: flex; flex-direction: column; gap: 8px; }
+.radio { display: grid; grid-template-columns: 18px 1fr; gap: 2px 8px; align-items: center; cursor: pointer; }
+.radio input { margin: 0; } .radio b { font: 600 13px var(--hud); } .radio span { grid-column: 2; font-size: 11px; color: var(--dim); line-height: 1.4; }
+.goodc { color: var(--green) !important; } .warnc { color: var(--amber) !important; }
+#tool_notice.ok { color: var(--green); } #tool_notice.warn { color: var(--amber); } #tool_notice.err { color: var(--red); }

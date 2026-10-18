@@ -10,14 +10,14 @@
 <div id="app">
   <nav id="side" class="glass">
     <div class="brand"><div class="logo" id="brandLogo"></div><div><b id="brandText">RL TRADING STUDIO</b><span id="brandSub">MetaFXClub · web</span></div></div>
-    <a data-p="tools">🛠️ Data Tools<span class="cl">classic</span></a>
+    <a data-p="tools">🛠️ Data Tools</a>
     <a data-p="pipeline">▶ Pipeline</a>
     <a data-p="train" class="on">🎯 Train</a>
     <a data-p="backtest">📊 Backtest</a>
     <a data-p="walkfwd">🔬 Walk-Forward</a>
     <a data-p="finetune">🔄 Fine-tune</a>
-    <a data-p="analyze">🔍 Analyze<span class="cl">classic</span></a>
-    <a data-p="regime">🌐 Regime Check<span class="cl">classic</span></a>
+    <a data-p="analyze">🔍 Analyze</a>
+    <a data-p="regime">🌐 Regime Check</a>
     <a data-p="models">🗂️ Models</a>
     <a data-p="settings">⚙️ Settings</a>
     <div class="sp"></div>
@@ -107,6 +107,100 @@
         </details>
       </div>
 
+    </section>
+
+    <!-- ================================================================ DATA TOOLS -->
+    <section class="page" id="p-tools">
+      <div class="card glass"><h3>FILE CHANGES · <b>Data Tools</b></h3>
+        <div class="meta" id="tool_notice">No file changes yet</div>
+      </div>
+      <div class="row c2">
+        <div class="card glass"><h3>① IMPORT FROM DATACOLLECTOR_RL · <b>MT5 Common\Files → project</b></h3>
+          <div class="f">
+            <label>Source CSV</label><div class="inl"><select id="tool_src"></select><button class="sm" id="tool_src_refresh">🔄 Refresh</button></div>
+            <span class="hint mono" id="tool_common_dir"></span>
+            <label>Output basename</label><input id="tool_out" placeholder="training_data_&lt;symbol&gt;_rl.csv">
+            <label>M1 data</label><label class="chk"><input type="checkbox" id="tool_m1"> Import M1 execution data too</label>
+            <span class="hint">ถ้ามี _m1.csv คู่กัน — ใช้กับ Backtest M1 replay</span>
+            <label></label><button class="p" id="tool_import" data-run>📥 Import CSV + params</button>
+          </div>
+        </div>
+        <div class="card glass"><h3>② SPLIT TRAIN/TEST BY DATE · <b>proper out-of-sample</b></h3>
+          <div class="f">
+            <label>Source CSV</label><select id="tool_split_csv"></select>
+            <label>Split date</label><div class="inl"><input id="tool_split_date" placeholder="2021-01-01"><select id="tool_split_preset" style="flex:0 0 190px"></select></div>
+            <label>Output suffixes</label><div class="inl"><input id="tool_train_suffix" placeholder="_train"><input id="tool_test_suffix" placeholder="_test"></div>
+            <label>Auto-clean</label><div class="inl"><label class="chk"><input type="checkbox" id="tool_clean_after"> 🧹 after split, threshold</label><input id="tool_clean_thr" style="flex:0 0 90px"></div>
+            <span class="hint">ลบเฉพาะ features ที่ correlate กันสูงมาก &gt; threshold หลัง split — แนะนำ 0.99 สำหรับ period features</span>
+            <label></label><button class="p" id="tool_split" data-run>✂️ Split Now</button>
+          </div>
+        </div>
+      </div>
+      <div class="row c2">
+        <div class="card glass"><h3>③ FEATURE ANALYSIS &amp; CLEANUP · <b>fit on Train rows only</b></h3>
+          <div class="f">
+            <label>Source CSV</label><select id="tool_feat_csv"></select>
+            <label>Correlation threshold</label><input id="tool_feat_thr">
+            <label>Fit on first Train %</label><input id="tool_feat_train_pct">
+            <label></label><div class="inl"><button id="tool_corr" data-run>📊 Show Correlation Matrix</button><button class="p" id="tool_clean" data-run>🧹 Clean Redundant Features</button></div>
+          </div>
+          <div id="tool_corr_img" class="eq" style="min-height:0;margin-top:10px"></div>
+        </div>
+        <div class="card glass"><h3>④ EXPORT TO MT5 (ONNX) · <b>EA + config + helpers</b></h3>
+          <div class="f">
+            <label>Source model</label><select id="tool_export_model"></select>
+            <label>Deploy name</label><input id="tool_export_name" class="mono" placeholder="rl_v10">
+            <label>Model file</label><select id="tool_export_source"></select>
+            <label>Output folder</label><input id="tool_export_outdir" class="mono" placeholder="auto: mt5_files\packages\&lt;deploy_name&gt;\MQL5">
+            <span class="hint">สร้าง Files/, Include/, Experts/ ภายใน folder นี้ — copy ไป MT5/MQL5/ ได้เลย</span>
+            <label></label><button class="p" id="tool_export" data-run>🚀 Export to ONNX + Generate MT5 Files</button>
+          </div>
+        </div>
+      </div>
+      <div class="card glass"><h3>TOOLS LOG</h3><div class="term" id="tool_log"></div></div>
+    </section>
+
+    <!-- ================================================================ ANALYZE -->
+    <section class="page" id="p-analyze">
+      <div class="card glass"><h3>CONFIDENCE ANALYSIS · <b>is there a usable threshold?</b></h3>
+        <div class="meta" style="margin-bottom:12px">ดูว่า model ทายแม่นขึ้นเมื่อมั่นใจสูงไหม → ใช้หา threshold ที่ดี</div>
+        <div class="f">
+          <label>Model</label><select id="an_model"></select>
+          <label>CSV</label><select id="an_csv"></select>
+          <label></label><div class="inl"><button class="p" id="an_run" data-run>▶ Analyze</button><button class="d" id="an_stop" data-stop disabled>⏹ Stop</button><span class="meta" id="an_status">Ready</span></div>
+        </div>
+      </div>
+      <div class="card glass"><h3>OUTPUT · <b>rl_analyze.py</b></h3><div class="term" id="an_log" style="height:520px"></div></div>
+    </section>
+
+    <!-- ================================================================ REGIME CHECK -->
+    <section class="page" id="p-regime">
+      <div class="row c2">
+        <div class="card glass"><h3>DATASET &amp; METHOD</h3>
+          <div class="f">
+            <label>CSV</label><div class="inl"><select id="regime_csv"></select><button class="sm" id="regime_browse">📂 Browse</button></div>
+            <span class="hint" id="regime_meta">pick a CSV</span>
+            <label>Method</label><div id="regime_methods" class="radios"></div>
+            <label class="rp rp-hmm">States</label><input class="rp rp-hmm" id="regime_hmm_states"><span class="hint rp rp-hmm">จำนวน hidden state (3 = bull/bear/sideways)</span>
+            <label class="rp rp-kmeans">Clusters (k) · Window (days)</label><div class="inl rp rp-kmeans"><input id="regime_km_k"><input id="regime_km_win"></div>
+            <label class="rp rp-pelt">Penalty</label><input class="rp rp-pelt" id="regime_pelt_pen"><span class="hint rp rp-pelt">สูง = ตัด break น้อย (จับเฉพาะ shift ใหญ่ ๆ) · ต่ำ = ตัดถี่</span>
+            <label></label><div class="inl"><button class="p" id="regime_run" data-run>▶ Run Detection</button><button id="regime_chart">📄 Open Chart</button><button class="d" id="regime_stop" data-stop disabled>⏹ Stop</button></div>
+          </div>
+        </div>
+        <div class="card glass"><h3>KNOWN EVENTS · <b>known_events.json</b></h3>
+          <div class="meta" id="regime_ev_status" style="margin-bottom:12px"></div>
+          <div class="f">
+            <label>Symbol · Top-K shocks</label><div class="inl"><input id="regime_ev_symbol"><input id="regime_ev_topk" style="flex:0 0 90px"></div>
+            <label></label><button id="regime_gemini" data-run>🤖 Refresh events with Gemini</button>
+            <span class="hint" id="regime_key_hint"></span>
+          </div>
+        </div>
+      </div>
+      <div class="card glass"><h3>BREAKPOINTS · <b id="regime_summary">(run detection to populate)</b></h3>
+        <div class="tbl" style="max-height:320px"><table id="regime_table"><thead><tr><th>Breakpoint Date</th><th>Known Event Match</th><th>Days Apart</th></tr></thead><tbody></tbody></table></div>
+        <div class="inl" style="margin-top:12px"><button class="p" id="regime_cutoff">🎯 Use Selected as Train Cutoff</button><span class="meta" id="regime_cut_hint">click a row, then use it to train on the regime after that date</span></div>
+        <div class="term" id="regime_log" style="height:220px"></div>
+      </div>
     </section>
 
     <!-- ================================================================ PIPELINE -->
@@ -353,5 +447,6 @@
 <script src="pages.js"></script>
 <script src="backtest.js"></script>
 <script src="flows.js"></script>
+<script src="tools.js"></script>
 </body>
 </html>

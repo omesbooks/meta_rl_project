@@ -150,3 +150,23 @@ CLI scripts, TradingEnv/recipes, artifact layout, MQL/EA export, tests of the en
   Suite 63 passed. Real-window e2e (off-screen + PrintWindow): pipeline on the smoke CSV → all 3 stages done,
   290 log lines, report opened via the button; walk-forward 2 windows → UNSTABLE + chart; fine-tune → refuses
   the base name, rejects overlapping old/new data (engine rule), completes on split old/new CSVs.
+- 2026-10-18 — **phase 5 done**: Data Tools, Analyze and Regime Check are live, so every sidebar page now runs
+  in the web GUI. `data_tools.py` + `regime_tools.py` hold the work and rules (moved out of rl_app.py, which
+  delegates). Data Tools: collector import (+ M1, name-mismatch confirm), split by date (+ auto-clean),
+  correlation heatmap shown inline (click = open full size), clean redundant features, ONNX export (deploy-name
+  cleanup, streamed log), file-change notice; new CSVs refresh every dropdown. The classic page's MT5-CSV
+  import and relabel functions were dead code (no button) and the classic app has no "verify" button, so
+  none was added. Analyze: model + CSV → rl_analyze.py. Regime Check: CSV from the project list or Browse,
+  HMM / K-Means / PELT with per-method params, Run Detection, Open Chart, known-events status, Refresh with
+  Gemini (key stays in Python, masked in the log; no-key confirm), breakpoint table with event match, stale
+  results cleared on a CSV change, Use Selected as Train Cutoff → writes `<stem>_from_<date>.csv` (+ params)
+  and opens Train with it selected.
+  Exit test: the pre-refactor CTk code and the new modules produce byte-identical files and identical log
+  lines/notices for split+auto-clean, clean, correlation (heatmap pixel-identical) and two regime cutoff dates
+  on copies of uj_h4_extra_features.csv; the regime table matches on the real regime_single_data.json; the
+  contract test writes a cutoff with the live CTk page and with the web API and compares the bytes.
+  Suite 69 passed. Real-window e2e (off-screen): tools on a temp root (split, heatmap, clean, bad threshold
+  marked), regime on an 11-year H4 copy (3 breakpoints) → cutoff → Train shows 15,548 rows, analyze ✓, export
+  to a scratch folder (7 files). The user's regime_single_data.json / regime_single.html were backed up and
+  restored around the e2e. Also fixed: the Train dataset header showed the full Windows path; header metric
+  pills now show on the Train page only.

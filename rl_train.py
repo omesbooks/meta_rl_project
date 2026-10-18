@@ -648,7 +648,8 @@ def train(args, run, prepared=None):
                                 total_steps=int(args.steps), eval_index=self.i,
                                 eval_reward=float(getattr(parent, "last_mean_reward", float("nan"))),
                                 best_reward=float(getattr(parent, "best_mean_reward", float("nan"))),
-                                symbol=Path(args.csv).name.split("_")[0].upper(), gate_name=args.entry_gate)
+                                symbol=Path(args.csv).name.split("_")[0].upper(), gate_name=args.entry_gate,
+                    feature_names=list(feature_cols))
                     try:
                         snap = viz_snapshot.capture(self.model.policy, make_viz_env(), args.window,
                                                     viz_frames, action_names=viz_actions, meta=meta)

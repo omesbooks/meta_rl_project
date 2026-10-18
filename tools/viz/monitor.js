@@ -124,6 +124,8 @@ export function createMonitor(root) {
     <div class="mcard s4"><h3>AGENT PNL PER TRADE (BP)</h3><svg id="mS4" height="90"></svg></div>
     <div class="mcard s4"><h3>SELECTION EDGE (ACCEPTED − SKIPPED, BP)</h3><svg id="mS5" height="90"></svg></div>
     <div class="mcard s4"><h3>ACTION ENTROPY (NATS)</h3><svg id="mS6" height="90"></svg></div>
+    <div class="mcard s6"><h3>WHAT DRIVES THE DECISIONS · <b>share of |gradient × input| per feature, lags summed</b></h3><div id="mDrv"></div><div class="lab" id="mDrvLab"></div></div>
+    <div class="mcard s6"><h3>WHICH BARS OF THE WINDOW MATTER · <b>share per lag (right = current bar)</b></h3><svg id="mLag" height="120"></svg><div class="lab">flat = the window length is not used; a spike at lag 0 = decisions rest on the latest bar</div></div>
     <div class="mcard s12"><h3>BEHAVIOUR OVER TRAINING · <b id="mTlHdr">per evaluation (validation, greedy) · this run bold, sibling seeds thin</b></h3><div class="tl" id="mTlEval"></div></div>
     <div class="mcard s12"><h3>TRAINING ROLLOUTS · <b id="mTrHdr">per rollout, 5-rollout mean · this run bold, sibling seeds thin</b></h3><div class="tl" id="mTlTrain"></div></div>
     <div class="mcard s12"><h3>EVALUATIONS · <b id="mEvHdr">validation slice, greedy policy</b></h3><div id="mEv"></div></div>
@@ -249,6 +251,28 @@ export function createMonitor(root) {
     spark($("mS5"), rows.map(r => (r.cf_accepted_bp != null && r.cf_skipped_bp != null) ? r.cf_accepted_bp - r.cf_skipped_bp : NaN), { color: C.orange, zero: true });
     spark($("mS6"), rows.map(r => r.action_entropy), { color: C.purple, fmtv: v => fmt(v, 2) });
     renderEvals(index);
+    drivers(W, meta);
+  }
+  function drivers(W, meta) {
+    const el = $("mDrv"), lag = $("mLag");
+    const withAttr = W.filter(r => r.attr_top && r.attr_top.length);
+    if (!withAttr.length) { el.innerHTML = `<div class="empty">no attribution in these rows (run trained before 2026-10-18)</div>`; lag.innerHTML = ""; return; }
+    const acc = new Map();
+    withAttr.forEach(r => r.attr_top.forEach(([n, v]) => acc.set(n, (acc.get(n) || 0) + v / withAttr.length)));
+    const top = [...acc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12), mx = top[0][1] || 1;
+    const lastTop = new Map(withAttr[withAttr.length - 1].attr_top);
+    el.innerHTML = top.map(([n, v]) => `<div style="display:grid;grid-template-columns:1fr 1fr 52px;gap:8px;align-items:center;font-size:12px;margin:3px 0">
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${n}">${n}</span>
+      <span style="height:7px;border-radius:4px;background:linear-gradient(90deg,${C.orange},${C.gold});width:${(100 * v / mx).toFixed(0)}%"></span>
+      <span style="text-align:right;color:${lastTop.has(n) ? C.fg : C.dim}">${(100 * v).toFixed(1)}%</span></div>`).join("");
+    $("mDrvLab").textContent = `mean over the last ${withAttr.length} rollouts (top-10 of each) · grey % = not in the latest rollout's top-10 · the three state inputs (position, unrealized_pnl, bars_in_position) compete with the features`;
+    const lags = withAttr[withAttr.length - 1].attr_lag || [];
+    if (lags.length) {
+      const w = width(lag), h = 120, pad = 8, n = lags.length, bw = (w - 2 * pad) / n, m2 = Math.max(...lags) || 1;
+      lag.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      lag.innerHTML = lags.map((v, i) => `<rect x="${(pad + i * bw).toFixed(1)}" y="${(h - 18 - v / m2 * (h - 30)).toFixed(1)}" width="${(bw * 0.8).toFixed(1)}" height="${(v / m2 * (h - 30)).toFixed(1)}" fill="${i === n - 1 ? C.gold : C.cyan}" opacity=".85"/>` +
+        `<text x="${(pad + i * bw + bw * 0.4).toFixed(1)}" y="${h - 5}" text-anchor="middle" fill="${C.dim}" font-size="10">-${n - 1 - i}</text>`).join("");
+    }
   }
   function renderEvals(index) {
     if (index.length) {

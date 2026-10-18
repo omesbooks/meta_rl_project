@@ -234,3 +234,27 @@ def test_live_viewer_finds_sibling_seed_runs(tmp_path):
     names = [n for n, _ in peers]
     assert names == ["abl_C_s0", "abl_C_s1", "abl_C_s2"]       # this run first, same stem, _s<seed> only
     assert peers[1][1].name == "viz" and peers[1][1].parent.name == "r1"   # newest run of the sibling
+
+
+def test_attribution_is_gradient_times_input_and_lands_in_snapshots():
+    """grad x input of the chosen action's logit: on a one-layer linear actor the
+    attribution of input j for action a must equal W[a, j] * x[j]."""
+    from stable_baselines3 import PPO
+    _, cfg = get_action_profile("basic_4")
+    df = _frame()
+    make = lambda: TradingEnv(df, FEATS, window_size=WINDOW, random_start=False, max_steps=len(df) - WINDOW - 2, action_profile=cfg)
+    model = PPO("MlpPolicy", make(), n_steps=64, batch_size=32, seed=0, device="cpu", policy_kwargs=dict(net_arch=[]))
+    pol = model.policy
+    obs = np.random.default_rng(0).normal(size=(5, pol.observation_space.shape[0])).astype(np.float32)
+    acts = np.array([1, 2, 0, 3, 1])
+    A = snap_mod.attribution(pol, obs, acts)
+    W = pol.action_net.weight.detach().numpy()
+    assert A.shape == obs.shape and np.allclose(A, W[acts] * obs, atol=1e-5)
+    snap = snap_mod.capture(pol, make(), WINDOW, 40, k=4, action_names=snap_mod.action_names(cfg), feature_names=FEATS)
+    n_in = snap["n_in"]
+    assert len(snap["input_names"]) == n_in and snap["input_names"][0] == "f0@-4" and snap["input_names"][-1] == "bars_in_position"
+    q = np.frombuffer(base64.b64decode(snap["attr"]), dtype=np.int8).reshape(snap["frames"], n_in)
+    assert np.abs(q).max(axis=1).min() == 127 and len(snap["attr_scale"]) == snap["frames"]
+    assert abs(sum(snap["attr_feature"]) - 1) < 1e-3 and abs(sum(snap["attr_lag"]) + sum(snap["attr_feature"][len(FEATS):]) - 1) < 1e-3
+    assert snap["attr_top"][0][0] in snap["input_names"][0].split("@")[0:1] + FEATS + ["position", "unrealized_pnl", "bars_in_position"]
+    assert "top_features" in snap_mod.summary(snap)

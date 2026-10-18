@@ -87,17 +87,70 @@ def _forward(policy, obs):
     return towers, hidden, tanh, probs, values
 
 
-def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None):
+EXTRA_INPUTS = ["position", "unrealized_pnl", "bars_in_position"]   # TradingEnv obs tail
+
+
+def input_names(feature_names, window, n_in):
+    """Name of every observation input in TradingEnv order: feature f at lag L (L = 0 is the
+    current bar, L = window-1 the oldest), then the three state inputs."""
+    nfeat = (n_in - 3) // window
+    feats = list(feature_names or [])[:nfeat] or [f"f{i}" for i in range(nfeat)]
+    out = []
+    for r in range(window):
+        lag = window - 1 - r
+        out += [f"{f}@-{lag}" if lag else f"{f}@0" for f in feats]
+    return out + EXTRA_INPUTS[:n_in - window * nfeat]
+
+
+def attribution(policy, obs, actions):
+    """Gradient x input of each frame's chosen-action logit with respect to the
+    observation: how much every input pushed THAT decision (sign = direction).
+    One batched forward/backward; frames are independent so summing the selected
+    logits gives per-frame gradients."""
+    device = getattr(policy, "device", torch.device("cpu"))
+    x = torch.as_tensor(np.asarray(obs, dtype=np.float32), device=device).requires_grad_(True)
+    feats = policy.extract_features(x)
+    if isinstance(feats, tuple):
+        feats = feats[0]
+    logits = policy.action_net(policy.mlp_extractor.forward_actor(feats))
+    idx = torch.as_tensor(np.asarray(actions, dtype=np.int64), device=device).clamp(0, logits.shape[1] - 1)
+    picked = logits.gather(1, idx[:, None]).sum()
+    grad, = torch.autograd.grad(picked, x)
+    return (grad * x).detach().cpu().numpy()
+
+
+def attribution_summary(attr, window, n_in, feature_names=None, top=10):
+    """Mean |attribution| share per feature (lags summed) and per lag, plus the top features."""
+    nfeat = (n_in - 3) // window
+    a = np.abs(np.asarray(attr, dtype=np.float64)).mean(axis=0)
+    tot = a.sum() or 1.0
+    per_feat = a[:window * nfeat].reshape(window, nfeat).sum(axis=0)
+    extras = a[window * nfeat:]
+    per_lag = a[:window * nfeat].reshape(window, nfeat).sum(axis=1)
+    feats = list(feature_names or [])[:nfeat] or [f"f{i}" for i in range(nfeat)]
+    names = feats + EXTRA_INPUTS[:len(extras)]
+    shares = np.r_[per_feat, extras] / tot
+    order = np.argsort(-shares)[:top]
+    return {"attr_feature": [round(float(v), 5) for v in shares],
+            "attr_lag": [round(float(v / tot), 5) for v in per_lag],          # index 0 = oldest bar
+            "attr_top": [[names[i], round(float(shares[i]), 4)] for i in order]}
+
+
+def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, feature_names=None):
     """Build a snapshot dict from observations the policy saw.
 
     bars: dict of per-frame lists — ts, o, h, l, c, act, pos, eq, tpnl.
     extra: optional per-frame arrays added as-is (e.g. reward, adv).
+    feature_names: env feature columns (for input attribution labels).
     """
     if not supports(policy):
         raise ValueError("visual snapshots need an actor-critic policy (PPO / A2C)")
     obs = np.asarray(obs, dtype=np.float32)
     nf, n_in = obs.shape
     towers, hidden, tanh, probs, values = _forward(policy, obs)
+    attr = attribution(policy, obs, bars["act"])
+    attr_scale = np.abs(attr).max(axis=1); attr_scale[attr_scale == 0] = 1.0
+    attr_q = np.round(attr / attr_scale[:, None] * 127).astype(np.int8)
 
     blocks = [np.clip(obs / 4.0, -1, 1)]                       # z-scores, clip at ±4
     sizes = {"actor": [], "critic": []}
@@ -143,14 +196,18 @@ def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None):
         "pos": [int(p) for p in bars["pos"]], "eq": [round(float(e), 6) for e in bars["eq"]],
         "tpnl": [round(float(p), 6) for p in bars["tpnl"]],
         "edges": edges, "edge_rank": "abs_weight_x_source_std",
+        "attr": b64(attr_q), "attr_scale": [round(float(v), 6) for v in attr_scale],
+        "attr_method": "grad_x_input_of_chosen_action_logit",
+        "input_names": input_names(feature_names, window, n_in),
         "meta": dict(meta or {}, created=time.strftime("%Y-%m-%d %H:%M:%S")),
     }
+    snap.update(attribution_summary(attr, window, n_in, feature_names))
     for key, arr in (extra or {}).items():
         snap[key] = [round(float(x), 6) for x in arr]
     return snap
 
 
-def capture(policy, env, window, frames, k=16, action_names=None, meta=None):
+def capture(policy, env, window, frames, k=16, action_names=None, meta=None, feature_names=None):
     """Eval replay: walk `env` (a fresh, unwrapped TradingEnv on the slice to
     show) with the policy's argmax action and return the snapshot dict.
 
@@ -189,7 +246,8 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None):
             "l": df["low"].iloc[bar_idx].tolist(), "c": df["close"].iloc[bar_idx].tolist(),
             "act": acts, "pos": pos, "eq": eq, "tpnl": tpnl}
     snap = pack(policy, np.stack(rows), window, bars, k=k, names=action_names,
-                meta=dict(meta or {}, source="eval"), extra={"gate": gates} if gates else None)
+                meta=dict(meta or {}, source="eval"), extra={"gate": gates} if gates else None,
+                feature_names=feature_names or list(getattr(env, "feature_cols", []) or []))
     snap["meta"]["capture_s"] = round(time.perf_counter() - t_start, 3)
     return snap
 
@@ -227,6 +285,8 @@ def summary(snap, points=120):
         "hold_mean": round(float(np.mean(holds)), 2) if holds else None,
         "pnl_bp_mean": round(float(closed.mean()) * 1e4, 2) if len(closed) else None,
     }
+    if snap.get("attr_top"):
+        out["top_features"] = snap["attr_top"][:8]
     if snap.get("gate"):
         g = np.asarray(snap["gate"], dtype=float)
         sig = g != 0
@@ -379,7 +439,7 @@ def write_monitor(viz_dir, row, extra=None):
 
 
 def make_rollout_callback(viz_dir, window, names=None, frames=400, min_interval=4.0,
-                          total_steps=None, model_name="", symbol="", gate_name=""):
+                          total_steps=None, model_name="", symbol="", gate_name="", feature_names=None):
     """SB3 callback: after every rollout (at most every `min_interval` s) write
     the real training stretch the agent just played. Prints
     `VIZ_ROLLOUT <seq> <step> <path>` for the first write and every 10th."""
@@ -444,6 +504,16 @@ def make_rollout_callback(viz_dir, window, names=None, frames=400, min_interval=
                     env = self._env()
                     row = monitor_row(self.rollouts, int(self.num_timesteps), total_steps, self.rec, self.aux,
                                       env.df, env, len(env.action_profile["actions"]))
+                    try:                                              # which inputs drove this rollout's decisions
+                        buf = self.model.rollout_buffer
+                        nb = min(len(self.rec), buf.buffer_size if buf.full else buf.pos)
+                        ob = np.asarray(buf.observations)[:nb, 0].reshape(nb, -1)
+                        ac = np.asarray(buf.actions)[:nb, 0].reshape(nb, -1)[:, 0]
+                        fn = feature_names or list(getattr(env, "feature_cols", []) or [])
+                        row.update(attribution_summary(attribution(self.model.policy, ob, ac), window, ob.shape[1], fn))
+                        row.pop("attr_feature", None)                 # keep the row small: lags + top features only
+                    except Exception as exc:
+                        row["attr_error"] = str(exc)[:120]
                     write_monitor(viz_dir, row, {"model": model_name, "symbol": symbol,
                                                  "actions": list(names or env.action_profile["actions"]),
                                                  "entry_gate": gate_name or getattr(env, "entry_gate", ""),
@@ -474,7 +544,8 @@ def make_rollout_callback(viz_dir, window, names=None, frames=400, min_interval=
                                       symbol=symbol, step=int(self.num_timesteps),
                                       total_steps=int(total_steps or 0), rollout=self.seq,
                                       reward_sum=round(float(np.sum(rewards)), 4)),
-                            extra={"reward": rewards, "adv": adv})
+                            extra={"reward": rewards, "adv": adv},
+                            feature_names=feature_names or list(getattr(self._env(), "feature_cols", []) or []))
                 snap["meta"]["explore"] = round(
                     float(np.mean(np.array(snap["act"]) != np.array(snap["greedy"]))), 4)
                 path = write_rollout(viz_dir, snap, self.seq)

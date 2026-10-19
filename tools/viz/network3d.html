@@ -25,6 +25,7 @@
   .lbl { position: fixed; pointer-events: none; font: 600 13px/1 var(--hud); letter-spacing: .12em;
          white-space: nowrap; transform: translate(-50%, -50%); text-shadow: 0 0 10px currentColor; }
   .lbl.tag { font: 600 10px/1 var(--hud); letter-spacing: .3em; color: var(--dim); text-shadow: none; }
+  .lbl.grp { font: 700 9px/1 var(--hud); letter-spacing: .1em; color: var(--dim); text-shadow: none; transform: translate(-100%, -50%); white-space: nowrap; }
   .lbl.lyr { font: 700 11px/1 var(--hud); letter-spacing: .12em; color: var(--fg); opacity: .8; text-shadow: none; white-space: nowrap; }
   .lbl.out { transform: translate(14px, -50%); font-size: 14px; }
   .lbl.out .bar { display: inline-block; height: 4px; margin-left: 8px; vertical-align: middle;
@@ -451,6 +452,60 @@ const X_OUT = 24, Y_TOWER = [7.0, -5.6];   // critic raised so its biggest disc 
 let TILT = -0.6;
 if (params.has("tilt") && isFinite(+params.get("tilt"))) TILT = +params.get("tilt");
 const DISC_N = [Math.cos(TILT), Math.sin(TILT)], DISC_V = [-Math.sin(TILT), Math.cos(TILT)];   // normal, in-plane (x, z)
+// hidden-layer shape (?shape=): disc (default) | grid (square, side ~ sqrt(n)) | column (fixed height,
+// width ~ n, like a classic network diagram) | sorted (grid in a meaningful order: the last actor
+// layer grouped by the action its strongest outgoing weight feeds, other layers busiest-first by
+// mean |activation| over the replay). Neuron positions never carry meaning in disc/grid/column.
+const SHAPE = ["grid", "column", "sorted"].includes(params.get("shape")) ? params.get("shape") : "disc";
+function layerOrder(s, L) {
+  const n = L.size, idx = [...Array(n).keys()];
+  if (L.tower === 0 && L.idx === s.AL.length - 1 && s.mats[0].length) {
+    const H = s.mats[0][s.mats[0].length - 1], grp = new Int16Array(n).fill(s.NA), best = new Float32Array(n);
+    for (let r = 0; r < H.rows; r++) for (let q = 0; q < H.k; q++) {
+      const j = H.idx[r * H.k + q], w = Math.abs(H.w[r * H.k + q]);
+      if (j < n && w > best[j]) { best[j] = w; grp[j] = r; }
+    }
+    return { order: idx.sort((a, b) => grp[a] - grp[b] || best[b] - best[a]), grp };
+  }
+  const mean = new Float32Array(n);
+  for (let f = 0; f < s.NF; f++) { const o = f * s.W + L.off; for (let j = 0; j < n; j++) mean[j] += Math.abs(s.Q[o + j]); }
+  return { order: idx.sort((a, b) => mean[b] - mean[a]) };
+}
+// slot -> [row, col]; a new row starts when the row is full or a group starts (sorted mode)
+function gridCells(n, cols, startsRow) {
+  const out = []; let r = 0, c = 0;
+  for (let t = 0; t < n; t++) { if (t > 0 && (c >= cols || (startsRow && startsRow(t)))) { r++; c = 0; } out.push([r, c]); c++; }
+  return { out, rows: r + 1 };
+}
+function placeLayer(s, L, p) {
+  const n = L.size, y0 = Y_TOWER[L.tower], put = (j, b, y, jit) => {
+    const k = (L.off + j) * 3; p[k] = L.x + b * DISC_V[0] + jit * DISC_N[0]; p[k + 1] = y0 + y; p[k + 2] = b * DISC_V[1] + jit * DISC_N[1]; };
+  L.groups = null;
+  if (SHAPE === "disc") {
+    L.hw = L.hh = L.r;
+    for (let j = 0; j < n; j++) { const rr = L.r * Math.sqrt((j + 0.5) / n), th = j * 2.399963; put(j, rr * Math.sin(th), rr * Math.cos(th), Math.sin(j * 7.13) * 0.35); }
+    return;
+  }
+  let order = [...Array(n).keys()], grp = null;
+  if (SHAPE === "sorted") ({ order, grp } = layerOrder(s, L));
+  let cells, rows, cols, spX, spY;
+  if (SHAPE === "column") {
+    rows = Math.min(n, 32); cols = Math.ceil(n / rows); spY = 8.4 / Math.max(1, rows - 1); spX = 0.42;
+    cells = order.map((_, t) => [t % rows, Math.floor(t / rows)]);
+  } else {
+    cols = Math.ceil(Math.sqrt(n)); spX = spY = (L.r * 1.772) / Math.max(1, cols - 1);   // same area as the disc
+    ({ out: cells, rows } = gridCells(n, cols, grp ? t => grp[order[t]] !== grp[order[t - 1]] : null));
+  }
+  L.hw = (cols - 1) / 2 * spX; L.hh = (rows - 1) / 2 * spY;
+  order.forEach((j, t) => { const [r, c] = cells[t]; put(j, (c - (cols - 1) / 2) * spX, ((rows - 1) / 2 - r) * spY, 0); });
+  if (grp) {                                   // row band of each action group, for the edge markers
+    L.groups = [];
+    order.forEach((j, t) => { const g = grp[j], r = cells[t][0], G = L.groups[L.groups.length - 1];
+      if (!G || G.g !== g) L.groups.push({ g, r0: r, r1: r }); else G.r1 = r; });
+    L.groups.forEach(G => { G.y0 = ((rows - 1) / 2 - G.r0) * spY + spY * 0.4; G.y1 = ((rows - 1) / 2 - G.r1) * spY - spY * 0.4; });
+  }
+}
+
 function layout(s) {
   const p = new Float32Array(s.NODES * 3);
   for (let i = 0; i < s.NIN; i++) {
@@ -462,12 +517,8 @@ function layout(s) {
     tl.forEach((L, i) => {
       L.x = n > 1 ? -12 + i * (27 / (n - 1)) : 2;
       L.r = Math.min(7.0, Math.max(1.6, 4.8 * Math.sqrt(L.size / 256)));   // disc area ~ neuron count
-      L.dot = 3.0 * Math.pow(256 / L.size, 0.25);
-      for (let j = 0; j < L.size; j++) {
-        const rr = L.r * Math.sqrt((j + 0.5) / L.size), th = j * 2.399963, k = (L.off + j) * 3;
-        const b = rr * Math.sin(th), jit = Math.sin(j * 7.13) * 0.35;
-        p[k] = L.x + b * DISC_V[0] + jit * DISC_N[0]; p[k + 1] = Y_TOWER[L.tower] + rr * Math.cos(th); p[k + 2] = b * DISC_V[1] + jit * DISC_N[1];
-      }
+      L.dot = 3.0 * Math.pow(256 / L.size, 0.25) * (SHAPE === "column" ? 0.7 : SHAPE === "disc" ? 1 : 0.85);
+      placeLayer(s, L, p);
     });
   }
   const span = Math.min(2.4, 9 / Math.max(1, s.NA));
@@ -514,21 +565,38 @@ function buildNet(s) {
   synapses.frustumCulled = false; scene.add(synapses);
   const NP = 1400, pulses = glowPoints(NP);
   scene.add(pulses);
-  // one outline + a faint glass fill per hidden layer, so each layer reads as its own disc
-  const SEG = 72, ring = new Float32Array(s.layers.length * SEG * 6), fills = [];
+  // one outline + a faint glass fill per hidden layer, so each layer reads as its own shape
+  const ring = [], fills = [], mk = [], mkCol = [];
   const ringCol = LIGHT ? "#334155" : "#38bdf8";
-  s.layers.forEach((L, li) => {
-    const R = L.r * 1.06, y0 = Y_TOWER[L.tower];
-    for (let q = 0; q < SEG; q++) for (const [e, a] of [[0, q], [1, q + 1]]) {
-      const th = a / SEG * Math.PI * 2, b = R * Math.sin(th), o = (li * SEG + q) * 6 + e * 3;
-      ring[o] = L.x + b * DISC_V[0]; ring[o + 1] = y0 + R * Math.cos(th); ring[o + 2] = b * DISC_V[1];
+  const at = (L, b, y) => [L.x + b * DISC_V[0], Y_TOWER[L.tower] + y, b * DISC_V[1]];
+  s.layers.forEach(L => {
+    const y0 = Y_TOWER[L.tower];
+    let f;
+    if (SHAPE === "disc") {
+      const R = L.r * 1.06, SEG = 72;
+      for (let q = 0; q < SEG; q++) for (const a of [q, q + 1]) { const th = a / SEG * Math.PI * 2; ring.push(...at(L, R * Math.sin(th), R * Math.cos(th))); }
+      f = new THREE.CircleGeometry(R, 48);
+    } else {
+      const pad = 0.45, w = L.hw + pad, h = L.hh + pad, c = [[-w, h], [w, h], [w, -h], [-w, -h]];
+      for (let q = 0; q < 4; q++) ring.push(...at(L, ...c[q]), ...at(L, ...c[(q + 1) % 4]));
+      f = new THREE.PlaneGeometry(2 * w, 2 * h);
+      (L.groups || []).forEach(G => {                          // action-coloured bar on the left edge of each group
+        const col = G.g < s.NA ? s.colorsT[G.g] : C_INK_DIM, bx = -w - 0.35;
+        mk.push(...at(L, bx, G.y0), ...at(L, bx, G.y1)); mkCol.push(col.r, col.g, col.b, col.r, col.g, col.b);
+      });
     }
-    const f = new THREE.Mesh(new THREE.CircleGeometry(R, 48), new THREE.MeshBasicMaterial({
+    const m = new THREE.Mesh(f, new THREE.MeshBasicMaterial({
       color: ringCol, transparent: true, opacity: LIGHT ? 0.13 : 0.05, side: THREE.DoubleSide, depthWrite: false, blending: BLEND }));
-    f.position.set(L.x, y0, 0); f.rotation.y = Math.PI / 2 - TILT;          // circle normal z -> (cos TILT, 0, sin TILT)
-    fills.push(f); scene.add(f);
+    m.position.set(L.x, y0, 0); m.rotation.y = Math.PI / 2 - TILT;          // geometry normal z -> (cos TILT, 0, sin TILT)
+    fills.push(m); scene.add(m);
   });
-  const rGeo = new THREE.BufferGeometry(); rGeo.setAttribute("position", new THREE.BufferAttribute(ring, 3));
+  if (mk.length) {
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(mk), 3));
+    g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(mkCol), 3));
+    const bars = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false }));
+    bars.renderOrder = 3; fills.push(bars); scene.add(bars);
+  }
+  const rGeo = new THREE.BufferGeometry(); rGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(ring), 3));
   const rings = new THREE.LineSegments(rGeo, new THREE.LineBasicMaterial({ color: ringCol, transparent: true, opacity: LIGHT ? 0.85 : 0.4, blending: BLEND, depthWrite: false }));
   rings.renderOrder = 2; scene.add(rings);
   // labels
@@ -537,11 +605,15 @@ function buildNet(s) {
   const tA = s.towerLayers[0], tC = s.towerLayers[1];
   const tags = [[mkLbl("tag", `INPUT · ${s.WIN} BARS × ${s.NFEAT} FEATURES`), [X_IN, IN_H / 2 + 2.7, 0]]];
   // tower name over the middle of the tower, then every layer's index and size above its disc
-  const mid = tl => (tl[0].x + tl[tl.length - 1].x) / 2, maxR = tl => Math.max(...tl.map(L => L.r));
+  const mid = tl => (tl[0].x + tl[tl.length - 1].x) / 2, maxR = tl => Math.max(...tl.map(L => L.hh));
   if (tA.length) tags.push([mkLbl("tag", `ACTOR · POLICY · ${tA.length} HIDDEN`), [mid(tA), Y_TOWER[0] + maxR(tA) + 3.6, 0]]);
   if (tC.length) tags.push([mkLbl("tag", `CRITIC · VALUE · ${tC.length} HIDDEN`), [mid(tC), Y_TOWER[1] - maxR(tC) - 3.6, 0]]);
-  tA.forEach((L, i) => tags.push([mkLbl("lyr", `L${i + 1} · ${L.size}`), [L.x, Y_TOWER[0] + L.r + 1.4, 0]]));
-  tC.forEach((L, i) => tags.push([mkLbl("lyr", `L${i + 1} · ${L.size}`), [L.x, Y_TOWER[1] + L.r + 1.0, 0]]));   // above: below it runs into the chart strip, where labels hide
+  tA.forEach((L, i) => tags.push([mkLbl("lyr", `L${i + 1} · ${L.size}`), [L.x, Y_TOWER[0] + L.hh + 1.4, 0]]));
+  tC.forEach((L, i) => tags.push([mkLbl("lyr", `L${i + 1} · ${L.size}`), [L.x, Y_TOWER[1] + L.hh + 1.0, 0]]));
+  tA.forEach(L => (L.groups || []).forEach(G => {               // sorted: name each action group beside its bar
+    const b = -(L.hw + 0.45) - 0.9, y = (G.y0 + G.y1) / 2;
+    tags.push([mkLbl("grp", G.g < s.NA ? s.labels[G.g] : "OTHER", G.g < s.NA ? s.colors[G.g] : null), [L.x + b * DISC_V[0], Y_TOWER[0] + y, b * DISC_V[1]]]);
+  }));   // above: below it runs into the chart strip, where labels hide
   NET = { nodes, synapses, pulses, eGeo, eSrc, eDst, eW, eInt: new Float32Array(NE), rankEnd, NE, NP,
           pEdge: new Int32Array(NP).fill(-1), pT: new Float32Array(NP), pSp: new Float32Array(NP),
           outLbl, valLbl, tags, rings, fills, impulse: new Float32Array(s.NA),

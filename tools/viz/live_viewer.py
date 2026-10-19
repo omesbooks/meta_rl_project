@@ -87,6 +87,10 @@ def make_handler(viz_data):
 
         def translate_path(self, path):
             path = urllib.parse.unquote(path.split("?", 1)[0].split("#", 1)[0])
+            if path == "/episodes.json":              # written by rl_train into the run folder, next to viz/
+                if viz_data is None:
+                    return str(VIZ_DIR / "__forbidden__")
+                return str(Path(viz_data).resolve().parent / "episodes.json")
             if path.startswith("/run/"):
                 base, rel = viz_data, path[len("/run/"):]
             elif path.startswith("/peer/"):

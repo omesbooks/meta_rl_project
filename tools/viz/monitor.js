@@ -148,6 +148,8 @@ export function createMonitor(root) {
       <canvas id="mStHeat" height="120"></canvas>
       <div class="stsel"><span class="lab" style="margin:0">shade the price by the probabilities of</span><input type="range" id="mStSel" min="0" max="0" value="0"><b id="mStSelLab"></b></div>
       <canvas id="mStChart" height="190"></canvas><div class="lab" id="mStChartLab"></div></div>
+    <div class="mcard s12"><h3>TRAINING DATA COVERAGE · <b id="mCovHdr">which Train bars the agent has played</b></h3>
+      <div class="kpis" id="mCovKpi"></div><canvas id="mCov" height="96" style="margin-top:10px"></canvas><div class="lab" id="mCovLab"></div></div>
     <div class="mcard s12"><h3>LAST 20 ROLLOUTS · <b>pooled</b></h3><div class="kpis" id="mKpi"></div></div>
     <div class="mcard s6"><h3>COUNTERFACTUAL · <b>same bars, fixed rule vs agent</b></h3><div id="mCf"></div><div class="lab" id="mCfLab"></div></div>
     <div class="mcard s6"><h3>EXITS & ACTIONS · <b>last 20 rollouts</b></h3><div id="mExit"></div></div>
@@ -322,10 +324,63 @@ export function createMonitor(root) {
     g.textAlign = "left"; g.fillText(String(bars.ts[0]).slice(0, 10), x0, H - 6); g.textAlign = "right"; g.fillText(String(bars.ts[n - 1]).slice(0, 10), W - 6, H - 6);
   }
 
+  // ---- training data coverage (episodes.json: every training episode's start bar and length)
+  function coveragePanel(ep) {
+    const cv = $("mCov"), eps = (ep && ep.episodes) || [], N = ep ? ep.train_rows : 0;
+    cv.style.display = eps.length && N ? "" : "none";
+    if (!eps.length || !N) {
+      $("mCovKpi").innerHTML = `<div class="empty">no episodes.json (written by rl_train after every rollout; runs trained before 2026-10-19 have none)</div>`;
+      $("mCovLab").textContent = ""; return;
+    }
+    const diff = new Int32Array(N + 1);
+    eps.forEach(e => { if (e.len > 0) { diff[Math.max(0, e.start)]++; diff[Math.min(N, e.start + e.len)]--; } });
+    const cnt = new Int32Array(N); let run = 0, mx = 1;
+    for (let i = 0; i < N; i++) { run += diff[i]; cnt[i] = run; if (run > mx) mx = run; }
+    const s = ep.summary || {}, lo = ep.start_min || 0, pct = v => v == null ? "–" : (100 * v).toFixed(1) + "%";
+    const open = eps[eps.length - 1].end === "open" ? eps[eps.length - 1] : null;
+    $("mCovKpi").innerHTML = [
+      tile("COVERED", pct(s.covered), `of ${(N - lo).toLocaleString()} playable Train bars, played at least once`, s.covered >= 0.95 ? C.green : s.covered >= 0.8 ? C.gold : C.mag),
+      tile("NEVER PLAYED", (s.never ?? 0).toLocaleString(), "bars", s.never ? C.mag : C.green),
+      tile("PLAYS PER BAR", s.passes == null ? "–" : s.passes.toFixed(2), `mean · max ${s.max_plays ?? "–"}`),
+      tile("FIRST 10%", pct(s.first10), "oldest Train bars covered", s.first10 < 0.6 ? C.gold : C.fg),
+      tile("LAST 10%", pct(s.last10), "newest Train bars covered (next to Validation)", s.last10 < 0.6 ? C.gold : C.fg),
+      tile("EPISODES", String(s.episodes ?? eps.length), `${s.blowups || 0} ended by blow-up · ${ep.ep_len} bars max`, s.blowups ? C.gold : C.fg),
+    ].join("");
+    $("mCovHdr").textContent = `${eps.length} episodes · step ${Number(ep.step).toLocaleString()}${ep.total_steps ? " / " + Number(ep.total_steps).toLocaleString() : ""}${ep.final ? " · final" : " · live"}`;
+    const W = Math.max(300, cv.clientWidth || 900), H = 96; cv.width = W; cv.height = H; cv.style.height = H + "px";
+    const g = cv.getContext("2d"); g.clearRect(0, 0, W, H);
+    const x0 = 8, x1 = W - 8, stripTop = 16, stripH = 46, X = i => x0 + i / N * (x1 - x0);
+    g.fillStyle = C.dim; g.globalAlpha = 0.12; g.fillRect(x0, stripTop, x1 - x0, stripH); g.globalAlpha = 1;
+    for (let px = 0; px < x1 - x0; px++) {                 // one pixel column = a bucket of bars: mean plays
+      const a = Math.floor(px / (x1 - x0) * N), b = Math.max(a + 1, Math.floor((px + 1) / (x1 - x0) * N));
+      if (b <= lo) continue;
+      let sum = 0, zero = 0; for (let i = a; i < b; i++) { sum += cnt[i]; if (!cnt[i]) zero++; }
+      const m = sum / (b - a);
+      if (zero === b - a) { g.fillStyle = C.mag; g.globalAlpha = 0.55; }
+      else { g.fillStyle = C.cyan; g.globalAlpha = 0.18 + 0.82 * Math.sqrt(m / mx); }
+      g.fillRect(x0 + px, stripTop, 1, stripH);
+    }
+    g.globalAlpha = 1;
+    eps.forEach(e => {                                     // a tick per episode start above the strip
+      g.fillStyle = e.end === "blowup" ? C.mag : e.end === "open" ? C.gold : C.dim;
+      g.fillRect(X(e.start), stripTop - (e.end === "open" ? 10 : 7), 1.5, e.end === "open" ? 9 : 6);
+    });
+    if (open) { g.strokeStyle = C.gold; g.lineWidth = 2; g.strokeRect(X(open.start), stripTop - 1, Math.max(2, X(open.start + open.len) - X(open.start)), stripH + 2); }
+    g.fillStyle = C.dim; g.font = "10px sans-serif";
+    (ep.ticks || []).forEach(([i, t], k, arr) => {
+      g.textAlign = k === 0 ? "left" : k === arr.length - 1 ? "right" : "center";
+      g.fillText(String(t).slice(0, 10), X(i), stripTop + stripH + 14);
+    });
+    $("mCovLab").innerHTML = `x = Train bars, oldest → newest · colour = how often the agent played that bar <span class="sw" style="background:${C.cyan}"></span>played (brighter = more) <span class="sw" style="background:${C.mag}"></span>never played` +
+      ` · ticks = episode starts${s.blowups ? " (red = ended by blow-up)" : ""}${open ? ` · <span style="color:${C.gold}">gold box</span> = ${ep.final ? "the last episode, cut short when training ended" : "the episode in progress"}` : ""}` +
+      ` · each episode starts at a random bar and plays up to ${ep.ep_len} bars, so the first and last bars of Train are played least · decision bars only (each observation also looks back ${ep.window - 1} bars)`;
+  }
+
   function render(state) {
     last = state;
     themePalette();
-    const { rows = [], meta = {}, index = [], peers = [], stability = null } = state;
+    const { rows = [], meta = {}, index = [], peers = [], stability = null, episodes = null } = state;
+    coveragePanel(episodes);
     gapPanel(index);
     stabilityPanel(stability);
     // --- timelines (drawn even before the first rollout: evals may exist)

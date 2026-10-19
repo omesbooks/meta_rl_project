@@ -731,7 +731,13 @@ def train(args, run, prepared=None):
         callback_after_eval=viz_cb,
     ) if eval_env is not None else None
 
-    callbacks = [cb for cb in (eval_cb, rollout_cb) if cb is not None]
+    # every run: where each training episode started -> <run>/episodes.json (Monitor: TRAINING DATA COVERAGE)
+    import episode_log
+    episode_cb = episode_log.make_episode_callback(
+        model_dir(args.name) / "episodes.json", train_df, args.window, args.ep_len,
+        total_steps=args.steps, model_name=args.name)
+
+    callbacks = [cb for cb in (eval_cb, rollout_cb, episode_cb) if cb is not None]
     if len(callbacks) > 1:
         from stable_baselines3.common.callbacks import CallbackList
         learn_cb = CallbackList(callbacks)

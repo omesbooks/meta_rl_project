@@ -358,3 +358,51 @@ def test_gap_verdict_rules():
     assert v["t"] == "MEMORISING THE TRAIN SLICE" and "gap +9.0 pp" in v["d"]
     assert snap_mod.gap_verdict(mk([1, 1, 1, 1], [0, 0, 0.1, 0]))["t"] == "NO CLEAR TREND"
     assert snap_mod.gap_verdict(mk([0, 1, 2, 3, 4, 5], [0, 0, 0, 0, 1, 2]))["t"] == "GENERALISING"   # window = last 4
+
+
+def test_episode_log_records_every_training_episode(tmp_path):
+    """episodes.json: each training episode's start bar and length; the lengths add up to the
+    steps trained, starts stay in the env's random-start range, coverage counts the plays."""
+    import episode_log
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.monitor import Monitor
+    _, cfg = get_action_profile("basic_4")
+    df = _frame(n=400)
+    ep_len = 60
+    env = Monitor(TradingEnv(df, FEATS, window_size=WINDOW, max_steps=ep_len, action_profile=cfg))
+    model = PPO("MlpPolicy", env, n_steps=64, batch_size=32, n_epochs=1, seed=0, device="cpu", policy_kwargs=dict(net_arch=[8]))
+    out = tmp_path / "episodes.json"
+    cb = episode_log.make_episode_callback(out, df, WINDOW, ep_len, total_steps=300, model_name="t")
+    model.learn(total_timesteps=300, callback=cb)
+    d = json.loads(out.read_text(encoding="utf-8"))
+    eps = d["episodes"]
+    assert d["final"] and d["step"] == model.num_timesteps == sum(e["len"] for e in eps)
+    assert all(d["start_min"] <= e["start"] <= d["start_max"] for e in eps)
+    assert all(e["len"] == ep_len and e["end"] == "length" for e in eps[:-1]) and eps[-1]["end"] in ("open", "length")
+    assert d["train_rows"] == len(df) and len(d["ticks"]) == 11 and eps[0]["ts0"]
+    c = episode_log.coverage(eps, len(df))
+    assert c.sum() == d["step"] and abs(d["summary"]["covered"] - (c[WINDOW - 1:] > 0).mean()) < 1e-3
+
+
+def test_coverage_counts_plays_per_bar():
+    import episode_log
+    c = episode_log.coverage([{"start": 2, "len": 3}, {"start": 4, "len": 2}, {"start": 9, "len": 5}], 10)
+    assert c.tolist() == [0, 0, 1, 1, 2, 1, 0, 0, 0, 1]
+    s = episode_log.coverage_summary([{"start": 2, "len": 3}, {"start": 4, "len": 2, "end": "blowup"}], 10)
+    assert s["covered"] == 0.4 and s["never"] == 6 and s["blowups"] == 1 and s["max_plays"] == 2
+
+
+def test_live_viewer_serves_the_run_episodes_file(tmp_path):
+    import threading
+    import urllib.request
+    spec = importlib.util.spec_from_file_location("lv3", ROOT / "tools" / "viz" / "live_viewer.py")
+    lv = importlib.util.module_from_spec(spec); spec.loader.exec_module(lv)
+    run = tmp_path / "runs" / "r1"; viz = run / "viz"; viz.mkdir(parents=True)
+    (run / "episodes.json").write_text('{"episodes": []}', encoding="utf-8")
+    server = lv.Server(("127.0.0.1", 0), lv.make_handler(viz))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        body = urllib.request.urlopen(f"http://127.0.0.1:{server.server_address[1]}/episodes.json", timeout=5).read()
+        assert json.loads(body) == {"episodes": []}
+    finally:
+        server.shutdown()

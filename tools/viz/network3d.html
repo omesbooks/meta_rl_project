@@ -1002,6 +1002,12 @@ async function poll() {
       } catch (e) { /* no stability file (older run) */ }
     }
   }
+  if (mode === "monitor") {                      // episodes.json: one entry per training episode (~10 KB), every poll
+    try {
+      const r = await fetch(`episodes.json?t=${Date.now()}`, { cache: "no-store" });
+      monEps = r.ok ? await r.json() : null;
+    } catch (e) { monEps = null; }
+  }
   if (mode === "monitor" && (pollN++ % 4 === 0)) await loadPeers();     // sibling seeds every ~10 s
   monUpdate(false);
   if (last && ((follow && last.i !== loadedI) || loadedI < 0)) await loadSnap(last);
@@ -1196,7 +1202,7 @@ function dashUpdate(force = true) {
   dash.render({ index, snap: evalD, selectedI: loadedI });
 }
 const mon = createMonitor($("mon"));
-let monData = null, monKey = "", pollN = 0, peers = [], monStab = null, stabKey = "";
+let monData = null, monKey = "", pollN = 0, peers = [], monStab = null, stabKey = "", monEps = null;
 async function loadPeers() {
   try {
     const r = await fetch(`peers.json?t=${Date.now()}`, { cache: "no-store" });
@@ -1214,10 +1220,10 @@ async function loadPeers() {
 function monUpdate(force = true) {
   if (mode !== "monitor") return;
   const rows = (monData && monData.rows) || [];
-  const key = `${rows.length}:${rows.length ? rows[rows.length - 1].seq : -1}:${index.length}:${monStab ? (monStab.evals || []).length : 0}:${peers.map(p => p.index.length + "/" + p.rows.length).join(",")}`;
+  const key = `${rows.length}:${rows.length ? rows[rows.length - 1].seq : -1}:${index.length}:${monStab ? (monStab.evals || []).length : 0}:${peers.map(p => p.index.length + "/" + p.rows.length).join(",")}:${monEps ? monEps.step + "/" + monEps.final : "-"}`;
   if (!force && key === monKey) return;
   monKey = key;
-  mon.render({ rows, meta: monData || {}, index, peers, stability: monStab });
+  mon.render({ rows, meta: monData || {}, index, peers, stability: monStab, episodes: monEps });
 }
 let dashResize = 0;
 addEventListener("resize", () => { clearTimeout(dashResize); dashResize = setTimeout(() => { if (mode === "dashboard") dash.rerender(); if (mode === "monitor") mon.rerender(); }, 200); });

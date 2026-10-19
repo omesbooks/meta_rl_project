@@ -243,7 +243,7 @@ function auroraTexture() {         // the Clear Liquid aurora (same blobs as the
   const g = c.getContext("2d"); g.fillStyle = "#dfe8f6"; g.fillRect(0, 0, c.width, c.height);
   for (const [x, y, r, col] of [[0.18, 0.22, 560, "255,184,107"], [0.80, 0.18, 620, "124,196,255"], [0.60, 0.90, 700, "197,140,255"], [0.10, 0.85, 480, "127,255,212"]]) {
     const gr = g.createRadialGradient(x * c.width, y * c.height, 0, x * c.width, y * c.height, r);
-    gr.addColorStop(0, `rgba(${col},.55)`); gr.addColorStop(1, `rgba(${col},0)`);
+    gr.addColorStop(0, `rgba(${col},.30)`); gr.addColorStop(1, `rgba(${col},0)`);
     g.fillStyle = gr; g.fillRect(0, 0, c.width, c.height);
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
@@ -297,8 +297,8 @@ const glowPoints = (n, pixelSpace = false) => {
   const p = new THREE.Points(g, m); p.frustumCulled = false; return p;
 };
 // palettes: neon for the dark scene, deeper inks of the same hues for the light one
-const C_POS = LIGHT ? new THREE.Color("#e0661a") : new THREE.Color(1.0, 0.42, 0.06);
-const C_NEG = LIGHT ? new THREE.Color("#0a7fd6") : new THREE.Color(0.05, 0.72, 1.0);
+const C_POS = LIGHT ? new THREE.Color("#c2410c") : new THREE.Color(1.0, 0.42, 0.06);
+const C_NEG = LIGHT ? new THREE.Color("#1d4ed8") : new THREE.Color(0.05, 0.72, 1.0);
 const C_UP = LIGHT ? new THREE.Color("#0f9a5a") : new THREE.Color(0.0, 1.0, 0.55);
 const C_DN = LIGHT ? new THREE.Color("#d01e52") : new THREE.Color(1.0, 0.1, 0.42);
 const C_GOLD = LIGHT ? new THREE.Color("#c98a00") : new THREE.Color(1.0, 0.72, 0.12);
@@ -489,7 +489,7 @@ function buildNet(s) {
   for (let i = 0; i < NE; i++) { ePos.set(s.posOf.subarray(eSrc[i] * 3, eSrc[i] * 3 + 3), i * 6); ePos.set(s.posOf.subarray(eDst[i] * 3, eDst[i] * 3 + 3), i * 6 + 3); }
   eGeo.setAttribute("position", new THREE.BufferAttribute(ePos, 3));
   eGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(NE * (LIGHT ? 8 : 6)), LIGHT ? 4 : 3));
-  const synapses = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: LIGHT ? 0.9 : 0.55, blending: BLEND, depthWrite: false }));
+  const synapses = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: LIGHT ? 1.0 : 0.55, blending: BLEND, depthWrite: false }));
   synapses.frustumCulled = false; scene.add(synapses);
   const NP = 1400, pulses = glowPoints(NP);
   scene.add(pulses);
@@ -543,7 +543,7 @@ function updateNetwork(dt) {
   for (let e = 0; e < end; e++) {
     const sg = N.eW[e] * cur[N.eSrc[e]]; N.eInt[e] = sg;
     const m = Math.min(1, Math.abs(sg)), c = sg >= 0 ? C_POS : C_NEG, a = m * m * m * 0.32 + 0.0025, b = a * 0.25, o = e * 6;
-    if (LIGHT) { const q = e * 8, as = Math.min(1, a * 4.5), bs = Math.min(1, b * 4.5);
+    if (LIGHT) { const q = e * 8, as = Math.min(1, 0.05 + m * m * 1.25), bs = as * 0.45;
       eCol[q] = c.r; eCol[q + 1] = c.g; eCol[q + 2] = c.b; eCol[q + 3] = as; eCol[q + 4] = c.r; eCol[q + 5] = c.g; eCol[q + 6] = c.b; eCol[q + 7] = bs; }
     else { eCol[o] = c.r * a; eCol[o + 1] = c.g * a; eCol[o + 2] = c.b * a; eCol[o + 3] = c.r * b; eCol[o + 4] = c.g * b; eCol[o + 5] = c.b * b; }
   }

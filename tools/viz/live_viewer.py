@@ -175,7 +175,8 @@ def main():
             threading.Event().wait()
         else:
             win = webview.create_window(f"Neural Trader · {name} · {mode}", url, width=1600, height=920,
-                                        background_color="#02030A", min_size=(900, 560))
+                                        background_color="#02030A" if "theme=dark" in url else "#dfe8f6",
+                                        min_size=(900, 560))
 
             def host_hidden(flag):
                 # WebView2 keeps animating when its window is minimised — tell the page

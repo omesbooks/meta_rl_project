@@ -317,8 +317,15 @@ class Api:
             except Exception:
                 pass
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self._viz_proc = subprocess.Popen([self._python, str(self._root / "tools" / "viz" / "live_viewer.py"), *args,
-                                           "--mode", self._viz_mode], cwd=str(self._root), creationflags=flags)
+        self._viz_proc = subprocess.Popen(self._viz_cmd(args), cwd=str(self._root), creationflags=flags)
+
+    def _viz_cmd(self, args):
+        """live_viewer.py command; the visual follows the app theme (Deep Glass -> the dark neon scene)."""
+        import app_settings
+        cmd = [self._python, str(self._root / "tools" / "viz" / "live_viewer.py"), *args, "--mode", self._viz_mode]
+        if app_settings.load_web_settings(self._sfile("web")).get("theme") == "deep":
+            cmd += ["--query", "theme=dark"]
+        return cmd
 
     def _on_viz(self, v):
         viz_dir = Path(v["path"]).parent

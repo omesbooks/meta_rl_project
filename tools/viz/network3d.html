@@ -101,6 +101,31 @@
   body.clear.dash .dcard h3, body.clear.dash .kpi .k, body.clear.dash .heat .lab { color: var(--dim); } body.clear.dash .dcard h3 b { color: var(--fg); }
   body.clear.dash #title h1 { color: #0f1a2b; text-shadow: none; } body.clear.dash #title div { color: var(--dim); }
   body.clear.dash .dlegend, body.clear.dash .trades td, body.clear.dash .trades th { color: var(--fg); }
+  /* ---------- Clear Liquid 3D (2026-10-19): the scene itself is light (aurora texture, normal blending,
+     ink palette, no bloom — see LIGHT in the script); the HUD becomes white glass with dark text. */
+  body.clear { --bg: #dfe8f6; --fg: #0f1a2b; --dim: #5b6b85; --cyan: #0a66ff; --mag: #d01e52; --green: #0f9a5a; --gold: #a66f00; --orange: #d9590a; }
+  body.clear .hud, body.clear .lbl.tag { text-shadow: none; }
+  body.clear .lbl:not(.tag) { text-shadow: 0 1px 0 rgba(255,255,255,.95), 0 0 8px rgba(255,255,255,.9); }
+  body.clear .lbl.out .bar, body.clear #drivers .r .b { box-shadow: none; }
+  body.clear #title h1 { color: #0f1a2b; text-shadow: none; letter-spacing: .26em; }
+  body.clear:not(.dash):not(.flat) .panel, body.clear:not(.dash):not(.flat) #stats, body.clear:not(.dash):not(.flat) #rstats,
+  body.clear:not(.dash):not(.flat) #drivers, body.clear:not(.dash):not(.flat) #idle {
+    background: linear-gradient(140deg, rgba(255,255,255,.80), rgba(255,255,255,.52)); border: 1px solid rgba(255,255,255,.9);
+    backdrop-filter: blur(24px) saturate(180%); border-radius: 18px; color: var(--dim);
+    box-shadow: inset 0 1px 0 #fff, inset 0 -1px 0 rgba(15,26,43,.05), 0 14px 40px rgba(15,26,43,.14), 0 1px 2px rgba(15,26,43,.08); }
+  body.clear:not(.dash):not(.flat) .panel::before, body.clear:not(.dash):not(.flat) #stats::before, body.clear:not(.dash):not(.flat) #rstats::before,
+  body.clear:not(.dash):not(.flat) #drivers::before { left: 0; right: 0; height: 100%; border-radius: inherit;
+    background: linear-gradient(115deg, rgba(255,255,255,.55) 0%, transparent 35%, transparent 70%, rgba(255,255,255,.3) 100%); }
+  body.clear:not(.dash):not(.flat) #stats .stat .k, body.clear:not(.dash):not(.flat) #rstats .stat .k { color: var(--dim); }
+  body.clear:not(.dash):not(.flat) #banner { background: linear-gradient(135deg, rgba(255,196,70,.45), rgba(255,255,255,.7)); color: #8a5a00; text-shadow: none;
+    border: 1px solid rgba(255,255,255,.9); box-shadow: 0 10px 30px rgba(15,26,43,.14); }
+  body.clear .panel button { color: #0a66ff; border-color: rgba(10,102,255,.35); } body.clear .panel button.on { background: rgba(10,102,255,.12); }
+  body.clear .panel button.rec { color: var(--mag); border-color: rgba(208,30,82,.4); }
+  body.clear .panel select { background: rgba(255,255,255,.85); color: var(--fg); border-color: rgba(15,26,43,.15); }
+  body.clear .panel input[type=range] { accent-color: #0a66ff; }
+  body.clear #timeline .lab { color: var(--fg); }
+  body.clear #wait h2 { color: #0a66ff; text-shadow: none; } body.clear #err { color: var(--mag); }
+  body.clear .darkonly { display: none !important; }
 </style>
 </head>
 <body>
@@ -139,7 +164,7 @@
   <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
   <label class="c3d">inputs <select id="iIn"><option value="attr">attribution</option><option value="act">activation</option></select></label>
   <label class="c3d">synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
-  <label class="c3d">glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
+  <label class="c3d darkonly">glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
   <label class="c3d">fps <select id="iFps"><option>15</option><option>20</option><option>30</option><option>60</option></select></label>
   <button id="bRot" class="on c3d">orbit</button>
   <button id="bRec" class="rec c3d">● rec</button>
@@ -168,7 +193,11 @@ import { createDashboard } from "viz-dashboard";
 import { createMonitor } from "viz-monitor";
 
 const params = new URLSearchParams(location.search);
-if (params.get("theme") !== "dark") document.body.classList.add("clear");   // Clear Liquid panels (Monitor / Dashboard)
+if (params.get("theme") !== "dark") document.body.classList.add("clear");   // Clear Liquid (all modes); ?theme=dark = neon on black
+// LIGHT = the 3D scene is drawn on a light aurora: normal blending with brightness carried in
+// alpha (weak nodes/lines fade to the background instead of to black), darker palette, no bloom.
+const LIGHT = document.body.classList.contains("clear");
+const BLEND = LIGHT ? THREE.NormalBlending : THREE.AdditiveBlending;
 if (params.get("hud") === "flat") document.body.classList.add("flat");         // plain HUD in the 3D modes (A/B measuring)
 const LIVE = params.has("live") && !window.SNAPSHOT;
 // Display modes (measured in WebView2, docs/viz_display_modes_2026-10-11.md):
@@ -208,8 +237,19 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.domElement.id = "gl";
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x02030a);
-scene.fog = new THREE.FogExp2(0x02030a, 0.0085);
+const BG_LIGHT = new THREE.Color("#e3eaf6");
+function auroraTexture() {         // the Clear Liquid aurora (same blobs as the app's CSS), painted once
+  const c = document.createElement("canvas"); c.width = 1600; c.height = 1000;
+  const g = c.getContext("2d"); g.fillStyle = "#dfe8f6"; g.fillRect(0, 0, c.width, c.height);
+  for (const [x, y, r, col] of [[0.18, 0.22, 560, "255,184,107"], [0.80, 0.18, 620, "124,196,255"], [0.60, 0.90, 700, "197,140,255"], [0.10, 0.85, 480, "127,255,212"]]) {
+    const gr = g.createRadialGradient(x * c.width, y * c.height, 0, x * c.width, y * c.height, r);
+    gr.addColorStop(0, `rgba(${col},.55)`); gr.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, c.width, c.height);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+scene.background = LIGHT ? auroraTexture() : new THREE.Color(0x02030a);
+scene.fog = LIGHT ? new THREE.FogExp2(0xe3eaf6, 0.0055) : new THREE.FogExp2(0x02030a, 0.0085);
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 600);
 camera.position.set(-44, 13, 31);
 if (LIVE) camera.position.multiplyScalar(1.1);
@@ -229,7 +269,7 @@ const chartPass = new RenderPass(chartScene, chartCam); chartPass.clear = false;
 composer.addPass(chartPass);
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.45, 0.22);
 composer.addPass(bloom);
-bloom.enabled = OPT.bloom;
+bloom.enabled = OPT.bloom && !LIGHT;      // bloom on a light scene only washes it out to white
 composer.addPass(new OutputPass());
 
 const glowPoints = (n, pixelSpace = false) => {
@@ -242,17 +282,38 @@ const glowPoints = (n, pixelSpace = false) => {
     vertexShader: `attribute vec3 aColor; attribute float aSize; uniform float uScale; varying vec3 vC;
       void main() { vC = aColor; vec4 mv = modelViewMatrix * vec4(position, 1.0);
         gl_PointSize = ${pixelSpace ? "aSize * uScale" : "aSize * uScale / -mv.z"}; gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `varying vec3 vC;
+    fragmentShader: LIGHT
+      // light: hue = colour / its strongest channel, strength -> alpha (a dim node is a faint dot, not a black one)
+      ? `varying vec3 vC;
+      void main() { float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a = a * a;
+        float inten = max(max(vC.r, vC.g), vC.b); float al = a * clamp(inten * 2.2, 0.0, 1.0);
+        if (al < 0.004) discard; vec3 hue = vC / max(inten, 1e-4);
+        gl_FragColor = vec4(hue * mix(0.62, 0.42, smoothstep(0.16, 0.0, d)), al); }`
+      : `varying vec3 vC;
       void main() { float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a = a * a;
         if (a < 0.003) discard; gl_FragColor = vec4(vC * (a + smoothstep(0.10, 0.0, d) * 0.6), a); }`,
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    transparent: true, depthWrite: false, blending: BLEND,
   });
   const p = new THREE.Points(g, m); p.frustumCulled = false; return p;
 };
-const C_POS = new THREE.Color(1.0, 0.42, 0.06), C_NEG = new THREE.Color(0.05, 0.72, 1.0);
-const C_UP = new THREE.Color(0.0, 1.0, 0.55), C_DN = new THREE.Color(1.0, 0.1, 0.42), C_GOLD = new THREE.Color(1.0, 0.72, 0.12);
-const ACTION_COLORS = { hold: "#9fb3d9", buy: "#00ffa3", sell: "#ff2e88", close: "#ffc53d", move_sl_breakeven: "#b48cff", trail_sl_atr: "#19e6ff" };
-const FALLBACK_COLORS = ["#9fb3d9", "#00ffa3", "#ff2e88", "#ffc53d", "#b48cff", "#19e6ff", "#ff8a1f", "#7dff6b"];
+// palettes: neon for the dark scene, deeper inks of the same hues for the light one
+const C_POS = LIGHT ? new THREE.Color("#e0661a") : new THREE.Color(1.0, 0.42, 0.06);
+const C_NEG = LIGHT ? new THREE.Color("#0a7fd6") : new THREE.Color(0.05, 0.72, 1.0);
+const C_UP = LIGHT ? new THREE.Color("#0f9a5a") : new THREE.Color(0.0, 1.0, 0.55);
+const C_DN = LIGHT ? new THREE.Color("#d01e52") : new THREE.Color(1.0, 0.1, 0.42);
+const C_GOLD = LIGHT ? new THREE.Color("#c98a00") : new THREE.Color(1.0, 0.72, 0.12);
+const ACTION_COLORS = LIGHT
+  ? { hold: "#5b6b85", buy: "#0f9a5a", sell: "#d01e52", close: "#c98a00", move_sl_breakeven: "#7a4de0", trail_sl_atr: "#0a8fd6" }
+  : { hold: "#9fb3d9", buy: "#00ffa3", sell: "#ff2e88", close: "#ffc53d", move_sl_breakeven: "#b48cff", trail_sl_atr: "#19e6ff" };
+const FALLBACK_COLORS = LIGHT ? ["#5b6b85", "#0f9a5a", "#d01e52", "#c98a00", "#7a4de0", "#0a8fd6", "#e0661a", "#3f8f1f"]
+  : ["#9fb3d9", "#00ffa3", "#ff2e88", "#ffc53d", "#b48cff", "#19e6ff", "#ff8a1f", "#7dff6b"];
+// dark: colour x strength (additive glow) · light: mix from the background toward the colour
+const _sh = new THREE.Color();
+function shade(c, f) {
+  if (!LIGHT) return _sh.setRGB(c.r * f, c.g * f, c.b * f);
+  const t = Math.min(1, 0.35 + 0.65 * Math.max(0, f));   // older bars stay readable on white
+  return _sh.setRGB(BG_LIGHT.r + (c.r - BG_LIGHT.r) * t, BG_LIGHT.g + (c.g - BG_LIGHT.g) * t, BG_LIGHT.b + (c.b - BG_LIGHT.b) * t);
+}
 
 { // dust + synthwave floor
   const n = 2500, g = glowPoints(n), pa = g.geometry.attributes;
@@ -263,40 +324,43 @@ const FALLBACK_COLORS = ["#9fb3d9", "#00ffa3", "#ff2e88", "#ffc53d", "#b48cff", 
     pa.aColor.array.set([c.r * b, c.g * b, c.b * b], i * 3); pa.aSize.array[i] = 20 + Math.random() * 60;
   }
   g.material.uniforms.uScale.value = 10; scene.add(g);
-  const grid = new THREE.GridHelper(260, 52, 0x0b3a66, 0x071a33); grid.position.y = -19;
-  grid.material.transparent = true; grid.material.opacity = 0.55; scene.add(grid);
+  const grid = LIGHT ? new THREE.GridHelper(260, 52, 0x9fb2cf, 0xc3cfe2) : new THREE.GridHelper(260, 52, 0x0b3a66, 0x071a33); grid.position.y = -19;
+  grid.material.transparent = true; grid.material.opacity = LIGHT ? 0.45 : 0.55; scene.add(grid);
 }
 
 // ================================================================== chart (pixel space, built once)
 const CW_BARS = 110;
-const bodies = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), CW_BARS + 2);
+const bodies = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, blending: BLEND, depthWrite: false }), CW_BARS + 2);
 bodies.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3);
 bodies.frustumCulled = false; bodies.count = 0; chartScene.add(bodies);
 const wickGeo = new THREE.BufferGeometry();
 wickGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((CW_BARS + 2) * 6), 3));
 wickGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array((CW_BARS + 2) * 6), 3));
-const wicks = new THREE.LineSegments(wickGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+const wicks = new THREE.LineSegments(wickGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: BLEND, depthWrite: false }));
 wicks.frustumCulled = false; wickGeo.setDrawRange(0, 0); chartScene.add(wicks);
 const triShape = new THREE.Shape(); triShape.moveTo(0, 0.6); triShape.lineTo(-0.55, -0.4); triShape.lineTo(0.55, -0.4); triShape.lineTo(0, 0.6);
-const markers = new THREE.InstancedMesh(new THREE.ShapeGeometry(triShape), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), (CW_BARS + 2) * 2);
+const markers = new THREE.InstancedMesh(new THREE.ShapeGeometry(triShape), new THREE.MeshBasicMaterial({ transparent: true, blending: BLEND, depthWrite: false }), (CW_BARS + 2) * 2);
 markers.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 6), 3);
 markers.frustumCulled = false; markers.count = 0; chartScene.add(markers);
 // training rollouts only: PPO advantage per bar (strip at the chart floor) and
 // dots where the sampled action differs from the greedy one (exploration)
-const advBars = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), CW_BARS + 2);
+const advBars = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ transparent: true, blending: BLEND, depthWrite: false }), CW_BARS + 2);
 advBars.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3);
 advBars.frustumCulled = false; advBars.count = 0; chartScene.add(advBars);
-const xMarks = new THREE.InstancedMesh(new THREE.CircleGeometry(0.5, 12), new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), CW_BARS + 2);
+const xMarks = new THREE.InstancedMesh(new THREE.CircleGeometry(0.5, 12), new THREE.MeshBasicMaterial({ transparent: true, blending: BLEND, depthWrite: false }), CW_BARS + 2);
 xMarks.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3);
 xMarks.frustumCulled = false; xMarks.count = 0; chartScene.add(xMarks);
 const eqGeo = new THREE.BufferGeometry();
 eqGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((CW_BARS + 2) * 3), 3));
-const eqLine = new THREE.Line(eqGeo, new THREE.LineBasicMaterial({ color: C_GOLD, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending }));
+const eqLine = new THREE.Line(eqGeo, new THREE.LineBasicMaterial({ color: C_GOLD, transparent: true, opacity: 0.9, blending: BLEND }));
 eqLine.frustumCulled = false; eqGeo.setDrawRange(0, 0); chartScene.add(eqLine);
 const gridGeo = new THREE.BufferGeometry();
 gridGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(5 * 6 + 6), 3));
-chartScene.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x0d2a4d, transparent: true, opacity: 0.8 })));
-const head = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: C_GOLD, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending }));
+chartScene.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: LIGHT ? 0xb9c6da : 0x0d2a4d, transparent: true, opacity: 0.8 })));
+// light: a white glass strip behind the candles so they stay legible over the network
+const chartBg = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.62, depthWrite: false }));
+chartBg.renderOrder = -1; chartBg.visible = LIGHT; chartScene.add(chartBg);
+const head = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: C_GOLD, transparent: true, opacity: LIGHT ? 0.35 : 0.55, blending: BLEND }));
 head.visible = false; chartScene.add(head);
 const NB = 900, bursts = glowPoints(NB, true);
 const bVel = new Float32Array(NB * 2), bLife = new Float32Array(NB);
@@ -317,6 +381,7 @@ function layoutChart() {
   const g = gridGeo.attributes.position.array;
   for (let i = 0; i < 5; i++) { const y = CH.y0 + (CH.y1 - CH.y0) * i / 4; g.set([CH.x0, y, 0, CH.x1, y, 0], i * 6); }
   g.set([CH.x1, CH.y0, 0, CH.x1, CH.y1, 0], 30); gridGeo.attributes.position.needsUpdate = true;
+  chartBg.position.set((CH.x0 + CH.x1) / 2 + 8, (CH.y0 + CH.y1) / 2 + 2, -1); chartBg.scale.set(CH.x1 - CH.x0 + 100, CH.y1 - CH.y0 + 40, 1);
   $("chartLbl").style.bottom = (CH.y1 + 10) + "px";
   $("rstats").style.bottom = (CH.y1 + 8) + "px";
   $("pxHi").style.bottom = (CH.y1 - 12) + "px";
@@ -423,14 +488,14 @@ function buildNet(s) {
   const eGeo = new THREE.BufferGeometry(), ePos = new Float32Array(NE * 6);
   for (let i = 0; i < NE; i++) { ePos.set(s.posOf.subarray(eSrc[i] * 3, eSrc[i] * 3 + 3), i * 6); ePos.set(s.posOf.subarray(eDst[i] * 3, eDst[i] * 3 + 3), i * 6 + 3); }
   eGeo.setAttribute("position", new THREE.BufferAttribute(ePos, 3));
-  eGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(NE * 6), 3));
-  const synapses = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+  eGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(NE * (LIGHT ? 8 : 6)), LIGHT ? 4 : 3));
+  const synapses = new THREE.LineSegments(eGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: LIGHT ? 0.9 : 0.55, blending: BLEND, depthWrite: false }));
   synapses.frustumCulled = false; scene.add(synapses);
   const NP = 1400, pulses = glowPoints(NP);
   scene.add(pulses);
   // labels
   const outLbl = s.labels.map((n, a) => mkLbl("out", `${n} <span>0%</span><span class="bar"></span>`, s.colors[a]));
-  const valLbl = mkLbl("out", `V(s) <span>0</span>`, "#19e6ff");
+  const valLbl = mkLbl("out", `V(s) <span>0</span>`, LIGHT ? "#0a66ff" : "#19e6ff");
   const tA = s.towerLayers[0], tC = s.towerLayers[1];
   const tags = [[mkLbl("tag", `INPUT · ${s.WIN} BARS × ${s.NFEAT} FEATURES`), [X_IN, 12.2, 0]]];
   if (tA.length) tags.push([mkLbl("tag", "ACTOR · POLICY"), [tA[0].x, Y_TOWER[0] + tA[0].r + 2.0, 0]]);
@@ -478,7 +543,9 @@ function updateNetwork(dt) {
   for (let e = 0; e < end; e++) {
     const sg = N.eW[e] * cur[N.eSrc[e]]; N.eInt[e] = sg;
     const m = Math.min(1, Math.abs(sg)), c = sg >= 0 ? C_POS : C_NEG, a = m * m * m * 0.32 + 0.0025, b = a * 0.25, o = e * 6;
-    eCol[o] = c.r * a; eCol[o + 1] = c.g * a; eCol[o + 2] = c.b * a; eCol[o + 3] = c.r * b; eCol[o + 4] = c.g * b; eCol[o + 5] = c.b * b;
+    if (LIGHT) { const q = e * 8, as = Math.min(1, a * 4.5), bs = Math.min(1, b * 4.5);
+      eCol[q] = c.r; eCol[q + 1] = c.g; eCol[q + 2] = c.b; eCol[q + 3] = as; eCol[q + 4] = c.r; eCol[q + 5] = c.g; eCol[q + 6] = c.b; eCol[q + 7] = bs; }
+    else { eCol[o] = c.r * a; eCol[o + 1] = c.g * a; eCol[o + 2] = c.b * a; eCol[o + 3] = c.r * b; eCol[o + 4] = c.g * b; eCol[o + 5] = c.b * b; }
   }
   N.eGeo.setDrawRange(0, end * 2); N.eGeo.attributes.color.needsUpdate = true;
 
@@ -524,33 +591,33 @@ function updateChart(fp, dt) {
     const fade = i === fi ? 1.15 : Math.max(0.18, 0.72 - age / n * 0.6);
     const yo = py(D.o[i]), yc = py(D.c[i]);
     m4.compose(v3.set(x, (yo + yc) / 2, 0), q0, s3.set(bw, Math.max(1.6, Math.abs(yc - yo)), 1));
-    bodies.setMatrixAt(k, m4); bodies.instanceColor.setXYZ(k, col.r * fade, col.g * fade, col.b * fade);
+    bodies.setMatrixAt(k, m4); { const t = shade(col, fade); bodies.instanceColor.setXYZ(k, t.r, t.g, t.b); }
     const wf = fade * 0.8;
     wp.set([x, py(D.l[i]), 0, x, py(D.h[i]), 0], k * 6);
-    wc.set([col.r * wf, col.g * wf, col.b * wf, col.r * wf, col.g * wf, col.b * wf], k * 6);
+    { const t = shade(col, wf); wc.set([t.r, t.g, t.b, t.r, t.g, t.b], k * 6); }
     ep.set([x, ey(D.eq[i]), 0], k * 3);
     const prev = i > 0 ? D.pos[i - 1] : 0;
     if (D.pos[i] !== prev && D.pos[i] !== 0) {          // entry (long or short)
       const up = D.pos[i] > 0, yy = up ? py(D.l[i]) - 14 : py(D.h[i]) + 14, s = Math.max(9, bw * 1.6);
       m4.compose(v3.set(x, yy, 0), up ? q0 : qDown, s3.set(s, s, 1));
-      markers.setMatrixAt(mk, m4); const c = up ? C_UP : C_DN; markers.instanceColor.setXYZ(mk, c.r * 1.1, c.g * 1.1, c.b * 1.1); mk++;
+      markers.setMatrixAt(mk, m4); const c = up ? C_UP : C_DN; const t = shade(c, 1.1); markers.instanceColor.setXYZ(mk, t.r, t.g, t.b); mk++;
     }
     if (D.tpnl[i] !== 0) {                                // closed trade
       m4.compose(v3.set(x, py(D.c[i]), 0), q0, s3.set(7, 7, 1));
-      markers.setMatrixAt(mk, m4); const c = D.tpnl[i] > 0 ? C_GOLD : C_DN; markers.instanceColor.setXYZ(mk, c.r * 1.4, c.g * 1.4, c.b * 1.4); mk++;
+      markers.setMatrixAt(mk, m4); const c = D.tpnl[i] > 0 ? C_GOLD : C_DN; const t = shade(c, 1.4); markers.instanceColor.setXYZ(mk, t.r, t.g, t.b); mk++;
     }
     if (S.ROLL) {
       const r = Math.min(1, Math.abs(D.adv[i]) / S.advMax), hgt = Math.max(0.8, r * 8);
       if (r > 0.02) {                                     // advantage: up = better than the critic expected
         m4.compose(v3.set(x, D.adv[i] >= 0 ? yb + hgt / 2 : yb - hgt / 2, 0), q0, s3.set(aw, hgt, 1));
         const c = D.adv[i] >= 0 ? C_UP : C_DN, f = fade * (0.35 + 0.65 * r);
-        advBars.setMatrixAt(ak, m4); advBars.instanceColor.setXYZ(ak, c.r * f, c.g * f, c.b * f); ak++;
+        advBars.setMatrixAt(ak, m4); const t = shade(c, f); advBars.instanceColor.setXYZ(ak, t.r, t.g, t.b); ak++;
       }
       const a = D.act[i];
       if (a !== D.greedy[i] && a >= 0 && a < S.NA) {      // explored: sampled action != greedy argmax
         m4.compose(v3.set(x, py(D.h[i]) + 6, 0), q0, s3.set(xs, xs, 1));
         const c = S.colorsT[a], f = Math.max(0.5, fade) * 1.2;
-        xMarks.setMatrixAt(xk, m4); xMarks.instanceColor.setXYZ(xk, c.r * f, c.g * f, c.b * f); xk++;
+        xMarks.setMatrixAt(xk, m4); const t = shade(c, f); xMarks.instanceColor.setXYZ(xk, t.r, t.g, t.b); xk++;
       }
     }
   }
@@ -780,8 +847,9 @@ function renderTimeline() {
   const X = i => pad + (index.length > 1 ? i * (w - 2 * pad) / (index.length - 1) : (w - 2 * pad) / 2);
   const Y = v => h - pad - (hi > lo ? (v - lo) / (hi - lo) : 0.5) * (h - 2 * pad);
   const pts = index.map((x, i) => `${X(i).toFixed(1)},${Y(Number(x.eval_reward)).toFixed(1)}`).join(" ");
-  svg.innerHTML = `<polyline points="${pts}" fill="none" stroke="#19e6ff" stroke-width="1.6" style="filter:drop-shadow(0 0 3px #19e6ff)"/>` +
-    `<circle cx="${X(pos)}" cy="${Y(Number(e.eval_reward))}" r="3.2" fill="#ffc53d" style="filter:drop-shadow(0 0 4px #ffc53d)"/>`;
+  const glowF = c => LIGHT ? "" : `filter:drop-shadow(0 0 3px ${c})`;
+  svg.innerHTML = `<polyline points="${pts}" fill="none" style="stroke:var(--cyan);stroke-width:1.6;${glowF("var(--cyan)")}"/>` +
+    `<circle cx="${X(pos)}" cy="${Y(Number(e.eval_reward))}" r="3.2" style="fill:var(--gold);${glowF("var(--gold)")}"/>`;
 }
 // scrubbing the eval timeline = watch that eval (pins the source to eval replays)
 $("tSlider").oninput = ev => {
@@ -897,7 +965,7 @@ function applyMode(name) {
   document.body.classList.toggle("mon", name === "monitor");
   if (isPanel(name)) { sleep("dashboard"); dashUpdate(); if (name === "monitor") loadPeers().then(() => monUpdate()); else monUpdate(); return; }
   if (leavingDash && idle) { idle = false; idleReason = ""; lastT = performance.now(); lastDraw = 0; requestAnimationFrame(frame); }
-  bloom.enabled = OPT.bloom; K = OPT.k; fpsCap = OPT.fps;
+  bloom.enabled = OPT.bloom && !LIGHT; K = OPT.k; fpsCap = OPT.fps;
   renderer.setPixelRatio(Math.min(OPT.dpr, 2, devicePixelRatio || 1));
   composer.setPixelRatio(renderer.getPixelRatio());
   bursts.material.uniforms.uScale.value = renderer.getPixelRatio();

@@ -360,3 +360,15 @@ def test_launcher_finds_the_project_and_startup_helpers(tmp_path, monkeypatch):
     assert rl_web.main([]) == 0 and calls and calls[0][-1].endswith("rl_app.py")   # ...and the app falls back
     bat = (ROOT / "run_rl_app.bat").read_text(encoding="ascii")
     assert 'set "APP=rl_web.py"' in bat and "--classic" in bat and "\r\n" in (ROOT / "run_rl_app.bat").read_bytes().decode("ascii")
+
+
+def test_live_visual_follows_the_app_theme(tmp_path):
+    api = Api(ROOT, settings_dir=tmp_path)
+    cmd = api._viz_cmd(["--run_dir", "x"])
+    assert cmd[1].endswith("live_viewer.py") and "--query" not in cmd           # Clear Liquid -> light 3D scene (default)
+    api.save_web_settings({"theme": "deep"})
+    cmd = api._viz_cmd(["--run_dir", "x"])
+    assert cmd[cmd.index("--query") + 1] == "theme=dark"                         # Deep Glass -> the dark neon scene
+    html = (ROOT / "tools" / "viz" / "network3d.html").read_text(encoding="utf-8")
+    assert "const LIGHT = document.body.classList.contains(\"clear\")" in html and "THREE.AdditiveBlending" in html
+    assert html.count("blending: BLEND") >= 9 and "blending: THREE.AdditiveBlending" not in html

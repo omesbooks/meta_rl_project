@@ -250,13 +250,21 @@ function auroraTexture() {         // the Clear Liquid aurora (same blobs as the
 }
 scene.background = LIGHT ? auroraTexture() : new THREE.Color(0x02030a);
 scene.fog = LIGHT ? new THREE.FogExp2(0xe3eaf6, 0.0055) : new THREE.FogExp2(0x02030a, 0.0085);
-const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 600);
-camera.position.set(-44, 13, 31);
-if (LIVE) camera.position.multiplyScalar(1.1);
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 600);   // fov set from VIEW below
+// default framing: az/pol = sway centre (rad), amp = sway half-width (az; pol sways a quarter of it), dist = camera distance, tx = target x,
+// ox = horizontal view shift (fraction of the width; + moves the scene right, clear of the drivers panel).
+// fov = lens (deg), oy = vertical view shift (fraction of the height; + lifts the scene above the chart panel).
+// ?view=az,pol,dist,tx,ox,amp,fov,oy overrides it; ?sway=0 starts with the auto-orbit off.
+// The defaults look along the input slab from the front-left so its 10 bar rows read as a grid between the
+// drivers panel and the hidden-layer towers, and keep the output labels clear of the stats panel.
+const VIEW = { az: -0.62, pol: 1.2, dist: 78, tx: -4, ox: 0.06, amp: 0.16, fov: 36, oy: 0.10 };
+if (params.has("view")) params.get("view").split(",").forEach((v, i) => { const k = ["az", "pol", "dist", "tx", "ox", "amp", "fov", "oy"][i]; if (k && v !== "" && isFinite(+v)) VIEW[k] = +v; });
+camera.fov = VIEW.fov; camera.updateProjectionMatrix();
+camera.position.setFromSphericalCoords(VIEW.dist * (LIVE ? 1.1 : 1), VIEW.pol, VIEW.az).add(new THREE.Vector3(VIEW.tx, 0, 0));
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(-7, 0, 0); controls.enableDamping = true;
-controls.minDistance = 20; controls.maxDistance = 140;
-let sway = true, swayHold = 0;
+controls.target.set(VIEW.tx, 0, 0); controls.enableDamping = true;
+controls.minDistance = 20; controls.maxDistance = 200;
+let sway = params.get("sway") !== "0", swayHold = 0;
 controls.addEventListener("start", () => { swayHold = 1e9; });
 controls.addEventListener("end", () => { swayHold = performance.now() + 6000; });
 const sph = new THREE.Spherical(), off3 = new THREE.Vector3();
@@ -430,12 +438,15 @@ function prepare(D) {
   return s;
 }
 
-const X_IN = -30, X_OUT = 24, Y_TOWER = [7.0, -7.0];
+// input slab: x position, height (rows = bars) and depth (columns = features). ?slab=x,h,d overrides (layout tests).
+let X_IN = -22, IN_H = 14, IN_D = 22;   // input slab: x position, height (bar rows), depth (features); ?slab=x,h,d
+if (params.has("slab")) { const q = params.get("slab").split(",").map(Number); if (q.length === 3 && q.every(isFinite)) [X_IN, IN_H, IN_D] = q; }
+const X_OUT = 24, Y_TOWER = [7.0, -7.0];
 function layout(s) {
   const p = new Float32Array(s.NODES * 3);
   for (let i = 0; i < s.NIN; i++) {
     let r, c; if (i < s.WIN * s.NFEAT) { r = Math.floor(i / s.NFEAT); c = i % s.NFEAT; } else { r = s.WIN; c = Math.floor(s.NFEAT / 2) + (i - s.WIN * s.NFEAT - 1) * 6; }
-    p[i * 3] = X_IN; p[i * 3 + 1] = 9.5 - r * (19 / s.WIN); p[i * 3 + 2] = -17 + c * (34 / Math.max(1, s.NFEAT - 1));
+    p[i * 3] = X_IN; p[i * 3 + 1] = IN_H / 2 - r * (IN_H / s.WIN); p[i * 3 + 2] = -IN_D / 2 + c * (IN_D / Math.max(1, s.NFEAT - 1));
   }
   for (const tl of s.towerLayers) {
     const n = tl.length;
@@ -497,7 +508,7 @@ function buildNet(s) {
   const outLbl = s.labels.map((n, a) => mkLbl("out", `${n} <span>0%</span><span class="bar"></span>`, s.colors[a]));
   const valLbl = mkLbl("out", `V(s) <span>0</span>`, LIGHT ? "#0a66ff" : "#19e6ff");
   const tA = s.towerLayers[0], tC = s.towerLayers[1];
-  const tags = [[mkLbl("tag", `INPUT · ${s.WIN} BARS × ${s.NFEAT} FEATURES`), [X_IN, 12.2, 0]]];
+  const tags = [[mkLbl("tag", `INPUT · ${s.WIN} BARS × ${s.NFEAT} FEATURES`), [X_IN, IN_H / 2 + 2.7, 0]]];
   if (tA.length) tags.push([mkLbl("tag", "ACTOR · POLICY"), [tA[0].x, Y_TOWER[0] + tA[0].r + 2.0, 0]]);
   if (tC.length) tags.push([mkLbl("tag", "CRITIC · VALUE"), [tC[0].x, Y_TOWER[1] - tC[0].r - 2.0, 0]]);
   tC.forEach(L => tags.push([mkLbl("tag", String(L.size)), [L.x, Y_TOWER[1] - L.r - 4.2, 0]]));
@@ -945,7 +956,7 @@ function frame(now) {
   bloom.strength = glow * (1 + glowPulse * 1.2);
   if (sway && now > swayHold) {
     off3.copy(camera.position).sub(controls.target); sph.setFromVector3(off3);
-    const az = -0.95 + 0.42 * Math.sin(now * 0.00011), pol = 1.25 + 0.12 * Math.sin(now * 0.00007);
+    const az = VIEW.az + VIEW.amp * Math.sin(now * 0.00011), pol = VIEW.pol + 0.25 * VIEW.amp * Math.sin(now * 0.00007);
     sph.theta += (az - sph.theta) * 0.02; sph.phi += (pol - sph.phi) * 0.02;
     off3.setFromSpherical(sph); camera.position.copy(controls.target).add(off3);
   }
@@ -960,7 +971,7 @@ function frame(now) {
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h); composer.setSize(w, h); bloom.setSize(w, h);
-  camera.aspect = w / h; camera.setViewOffset(w, h, 0, h * 0.13, w, h); camera.updateProjectionMatrix();
+  camera.aspect = w / h; camera.setViewOffset(w, h, -w * VIEW.ox, h * VIEW.oy, w, h); camera.updateProjectionMatrix();
   layoutChart();
 }
 addEventListener("resize", resize);
@@ -992,6 +1003,7 @@ $("iK").onchange = e => K = +e.target.value;
 $("iIn").onchange = e => { inputMode = e.target.value; if (S) drivers(Math.min(S.NF - 1, Math.floor(fpos))); wake("input"); };
 $("iGlow").oninput = e => glow = +e.target.value / 10;
 $("iFps").onchange = e => fpsCap = +e.target.value;
+$("bRot").classList.toggle("on", sway);
 $("bRot").onclick = e => { sway = !sway; swayHold = 0; e.target.classList.toggle("on", sway); };
 $("bFull").onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
 let rec = null, chunks = [];

@@ -71,8 +71,8 @@ class Batch1GuiRegressionTests(unittest.TestCase):
         src_params = Path("source.params.json")
         for name in ("source_train.csv", "source_test.csv"):
             dst = Path(name)
-            with patch.object(
-                    self.app, "_find_csv_params_sidecar", return_value=src_params), \
+            # The rule lives in data_tools since web GUI phase 5; rl_app delegates to it.
+            with patch("data_tools.find_params_sidecar", return_value=src_params), \
                     patch("shutil.copy") as copy_file:
                 copied, error = self.app._copy_csv_params_sidecar(src, dst)
             self.assertIsNone(error)

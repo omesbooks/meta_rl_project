@@ -186,8 +186,16 @@ def test_report_pdf_is_written_from_any_thread(tmp_path):
     import model_results as mr
     rows = mr.collect_model_rows(ROOT)[:3]
     out = {}
-    t = threading.Thread(target=lambda: out.setdefault("p", mr.export_report_pdf(rows, None, tmp_path)))
-    t.start(); t.join(60)
+
+    def work():
+        try:
+            out["p"] = mr.export_report_pdf(rows, None, tmp_path)
+        except Exception as exc:   # surface the real error instead of a KeyError below
+            out["err"] = exc
+    t = threading.Thread(target=work)
+    t.start(); t.join(240)        # the full suite can make this slow; 60 s was flaky
+    assert not t.is_alive(), "PDF export did not finish in 240 s"
+    assert "err" not in out, out.get("err")
     assert out["p"].exists() and out["p"].read_bytes()[:4] == b"%PDF" and out["p"].parent == tmp_path
 
 

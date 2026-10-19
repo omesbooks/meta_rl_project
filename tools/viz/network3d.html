@@ -515,15 +515,26 @@ function sample(fp) {
   for (let i = 0; i < W; i++) cur[i] = (Q[oa + i] * (1 - sm) + Q[ob + i] * sm) / 127;
 }
 function setColor(arr, i, c, m) { arr[i * 3] = c.r * m; arr[i * 3 + 1] = c.g * m; arr[i * 3 + 2] = c.b * m; }
+// light scene, input layer: every input is a visible slate dot; the harder it pushes, the more it
+// turns orange (+) / blue (−) and the bigger it gets. m = 0..1 strength.
+const C_INK_DIM = new THREE.Color("#64748b"), _ic = new THREE.Color();
+function inputInk(nCol, nSize, i, v, m, base, grow) {
+  _ic.copy(C_INK_DIM).lerp(v >= 0 ? C_POS : C_NEG, Math.min(1, m * 1.5));
+  const mx = Math.max(_ic.r, _ic.g, _ic.b) || 1;            // the light shader reads strength from the brightest
+  _ic.multiplyScalar(1 / mx);                               // channel: normalise so a dark ink is not read as weak
+  setColor(nCol, i, _ic, 0.26 + m * 0.6); nSize[i] = base + m * grow;
+}
 
 function updateNetwork(dt) {
   const s = S, N = NET, cur = s.cur, posOf = s.posOf;
   const nCol = N.nodes.geometry.attributes.aColor.array, nSize = N.nodes.geometry.attributes.aSize.array;
   if (inputMode === "attr" && s.ATTR) {                          // what pushed THIS decision (grad x input)
     const fi = Math.min(s.NF - 1, Math.floor(fpos)), o = fi * s.NIN;
-    for (let i = 0; i < s.NIN; i++) { const v = s.ATTR[o + i] / 127, m = Math.min(1, Math.abs(v) * 1.6); setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.05 + m * 1.1); nSize[i] = 1.4 + m * 3.2; }
+    for (let i = 0; i < s.NIN; i++) { const v = s.ATTR[o + i] / 127, m = Math.min(1, Math.abs(v) * 1.6);
+      if (LIGHT) inputInk(nCol, nSize, i, v, m, 2.5, 3.8); else { setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.05 + m * 1.1); nSize[i] = 1.4 + m * 3.2; } }
   } else {
-    for (let i = 0; i < s.NIN; i++) { const v = cur[i], m = Math.min(1, Math.abs(v) * 1.3); setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.07 + m * m * 0.85); nSize[i] = 1.5 + m * 1.7; }
+    for (let i = 0; i < s.NIN; i++) { const v = cur[i], m = Math.min(1, Math.abs(v) * 1.3);
+      if (LIGHT) inputInk(nCol, nSize, i, v, m * m, 2.5, 2.6); else { setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.07 + m * m * 0.85); nSize[i] = 1.5 + m * 1.7; } }
   }
   for (const L of s.layers) for (let j = 0; j < L.size; j++) {
     const i = L.off + j, v = cur[i], m = Math.abs(v);

@@ -260,6 +260,44 @@ def test_attribution_is_gradient_times_input_and_lands_in_snapshots():
     assert "top_features" in snap_mod.summary(snap)
 
 
+def test_feature_usage_flags_features_the_decision_ignores():
+    """Permutation test: a feature with zero weight never changes a decision (flip = tv = 0);
+    a heavily weighted one does. Eval snapshots carry it per feature (+ state inputs)."""
+    from stable_baselines3 import PPO
+    _, cfg = get_action_profile("basic_4")
+    df = _frame()
+    make = lambda: TradingEnv(df, FEATS, window_size=WINDOW, random_start=False, max_steps=len(df) - WINDOW - 2, action_profile=cfg)
+    model = PPO("MlpPolicy", make(), n_steps=64, batch_size=32, seed=0, device="cpu", policy_kwargs=dict(net_arch=[]))
+    pol = model.policy
+    nfeat, n_in = len(FEATS), pol.observation_space.shape[0]
+    with torch.no_grad():
+        W = pol.action_net.weight
+        W.zero_(); pol.action_net.bias.zero_()
+        lag_cols = lambda f: [r * nfeat + f for r in range(WINDOW)]
+        W[1, lag_cols(0)] = 3.0; W[2, lag_cols(0)] = -3.0        # f0 decides buy vs sell; every other input is ignored
+    obs = np.random.default_rng(1).normal(size=(200, n_in)).astype(np.float32)
+    flip, tv = snap_mod.feature_usage(pol, obs, WINDOW)
+    assert len(flip) == nfeat + (n_in - WINDOW * nfeat)
+    assert flip[0] > 0.2 and tv[0] > 0.05
+    assert np.all(flip[1:] == 0) and np.all(tv[1:] < 1e-6)
+    snap = snap_mod.capture(pol, make(), WINDOW, 40, k=4, action_names=snap_mod.action_names(cfg), feature_names=FEATS)
+    assert len(snap["use_flip"]) == len(snap["use_tv"]) == nfeat + 3 and snap["use_tiers"]["used"] > 0
+    bars = {k: [0.0] * 40 for k in ("o", "h", "l", "c", "eq", "tpnl")}
+    bars.update(ts=["t"] * 40, act=[0] * 40, pos=[0] * 40)
+    assert "use_flip" not in snap_mod.pack(pol, obs[:40], WINDOW, bars, k=4, usage=False)   # rollouts skip it
+
+
+def test_static_snapshot_page_points_every_relative_import_at_tools_viz(tmp_path):
+    """--html pages live in tools/viz/out: ./vendor, ./dashboard.js AND ./monitor.js must be rewritten
+    (only dashboard.js was, so every static page stayed blank once monitor.js existed)."""
+    spec = importlib.util.spec_from_file_location("cap", ROOT / "tools" / "viz" / "capture_snapshot.py")
+    cap = importlib.util.module_from_spec(spec); spec.loader.exec_module(cap)
+    html = cap.page_html({"schema": "x"}, ROOT / "tools" / "viz" / "out")
+    assert '"./' not in html.split("<script type=\"importmap\">", 1)[1].split("</script>", 1)[0]
+    assert '"../monitor.js"' in html and '"../dashboard.js"' in html and '"../vendor/three/three.module.js"' in html
+    assert '{"schema": "x"}' in html
+
+
 def test_live_viewer_resolves_a_viz_dir_before_the_first_eval(tmp_path):
     import importlib.util
     spec = importlib.util.spec_from_file_location("lv2", ROOT / "tools" / "viz" / "live_viewer.py")

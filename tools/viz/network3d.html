@@ -34,6 +34,8 @@
   #drivers .r .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
   #drivers .r .b { height: 5px; border-radius: 3px; background: currentColor; box-shadow: 0 0 6px currentColor; }
   #drivers .r .v { text-align: right; font-variant-numeric: tabular-nums; }
+  #drvNote { font: 500 11px/1.45 var(--hud); color: var(--dim); text-shadow: none; margin-top: 6px; }
+  #drvNote:empty { display: none; }
   body.dash #drivers { display: none !important; }
   #chartLbl { left: 24px; font: 600 10px/1 var(--hud); letter-spacing: .3em; color: var(--dim); text-shadow: none; }
   #pxHi, #pxLo { right: 24px; font: 600 12px/1 var(--hud); color: var(--dim); text-shadow: none; }
@@ -144,7 +146,7 @@
   <div class="stat"><div class="k">SAMPLED · GREEDY</div><div class="v sm" id="sExp">–</div></div>
 </div>
 <div id="labels"></div>
-<div id="drivers" class="hud"><div class="k">TOP DRIVERS · <span id="drvWhat">this decision</span></div><div id="drvList"></div></div>
+<div id="drivers" class="hud"><div class="k"><span id="drvHead">TOP DRIVERS</span> · <span id="drvWhat">this decision</span></div><div id="drvList"></div><div id="drvNote"></div></div>
 <div id="dash"></div>
 <div id="mon"></div>
 <div id="chartLbl" class="hud"></div>
@@ -162,7 +164,7 @@
   <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option><option value="dashboard">Dashboard</option><option value="monitor">Monitor</option></select></label>
   <button id="bPlay" class="c3d">❚❚</button>
   <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
-  <label class="c3d">inputs <select id="iIn"><option value="attr">attribution</option><option value="act">activation</option></select></label>
+  <label class="c3d">inputs <select id="iIn"><option value="attr">attribution</option><option value="use">usage (decision test)</option><option value="act">activation</option></select></label>
   <label class="c3d">synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
   <label class="c3d darkonly">glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
   <label class="c3d">fps <select id="iFps"><option>15</option><option>20</option><option>30</option><option>60</option></select></label>
@@ -536,10 +538,43 @@ function inputInk(nCol, nSize, i, v, m, base, grow) {
   setColor(nCol, i, _ic, 0.26 + m * 0.6); nSize[i] = base + m * grow;
 }
 
+// 'usage' input mode: does the policy's DECISION depend on each feature? From the snapshot's
+// permutation test (snapshot.feature_usage: shuffle one feature, all lags, across the frames ->
+// share of greedy decisions that change). A rollout snapshot borrows the latest eval's test; a
+// snapshot made before the test existed falls back to the attribution share (labelled as such).
+const C_USE = LIGHT ? new THREE.Color("#7c3aed") : new THREE.Color(0.66, 0.45, 1.0), USE_CSS = LIGHT ? "#7c3aed" : "#a78bfa";
+function usageOf(s) {
+  if (s.D.use_flip) return { v: s.D.use_flip, kind: "test", tiers: s.D.use_tiers || {} };
+  if (evalD && evalD.use_flip && evalD.n_in === s.NIN) return { v: evalD.use_flip, kind: "test", tiers: evalD.use_tiers || {}, borrowed: true };
+  if (s.D.attr_feature) return { v: s.D.attr_feature, kind: "attr", tiers: {} };
+  return null;
+}
+const useGroup = (s, i) => i < s.WIN * s.NFEAT ? i % s.NFEAT : s.NFEAT + (i - s.WIN * s.NFEAT);
+function useStrength(u, f, vmax) {                 // 0 = never changes a decision .. 1 = strongest
+  if (u.kind !== "test") return vmax > 0 ? Math.sqrt(f / vmax) : 0;
+  const us = u.tiers.used || 0.01;                 // below "used" = faint, never = grey; above it the
+  return f >= us ? 0.3 + 0.7 * f / (vmax || 1) : f > 0 ? 0.12 : 0;   // brightness ranks against the top feature
+}
+function useGroupNames(s) {
+  const n = s.inNames || [], out = [];
+  for (let f = 0; f < s.NFEAT; f++) out.push((n[f] || `f${f}`).split("@")[0]);
+  for (let i = s.WIN * s.NFEAT; i < s.NIN; i++) out.push(n[i] || `in ${i}`);
+  return out;
+}
+
 function updateNetwork(dt) {
   const s = S, N = NET, cur = s.cur, posOf = s.posOf;
   const nCol = N.nodes.geometry.attributes.aColor.array, nSize = N.nodes.geometry.attributes.aSize.array;
-  if (inputMode === "attr" && s.ATTR) {                          // what pushed THIS decision (grad x input)
+  const U = inputMode === "use" ? usageOf(s) : null;
+  if (U) {                                                       // static: a property of the policy
+    let vmax = 0; for (const v of U.v) vmax = Math.max(vmax, v);
+    for (let i = 0; i < s.NIN; i++) {
+      const m = useStrength(U, U.v[useGroup(s, i)] || 0, vmax);
+      if (LIGHT) { _ic.copy(C_INK_DIM).lerp(C_USE, m); _ic.multiplyScalar(1 / (Math.max(_ic.r, _ic.g, _ic.b) || 1));
+                   setColor(nCol, i, _ic, m > 0 ? 0.2 + m * 0.7 : 0.09); nSize[i] = m > 0 ? 2.2 + m * 3.6 : 1.5; }
+      else { setColor(nCol, i, m > 0 ? C_USE : C_INK_DIM, m > 0 ? 0.08 + m * 1.0 : 0.05); nSize[i] = m > 0 ? 1.4 + m * 3.2 : 1.1; }
+    }
+  } else if (inputMode === "attr" && s.ATTR) {                          // what pushed THIS decision (grad x input)
     const fi = Math.min(s.NF - 1, Math.floor(fpos)), o = fi * s.NIN;
     for (let i = 0; i < s.NIN; i++) { const v = s.ATTR[o + i] / 127, m = Math.min(1, Math.abs(v) * 1.6);
       if (LIGHT) inputInk(nCol, nSize, i, v, m, 2.5, 3.8); else { setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.05 + m * 1.1); nSize[i] = 1.4 + m * 3.2; } }
@@ -700,6 +735,8 @@ function onNewBar(i, ch) {
 let inputMode = "attr";
 function drivers(i) {
   const s = S, el = $("drivers");
+  if (s && inputMode === "use" && mode !== "dashboard" && mode !== "monitor") { usagePanel(s); return; }
+  $("drvHead").textContent = "TOP DRIVERS"; $("drvNote").textContent = "";
   if (!s || !s.ATTR || inputMode !== "attr" || mode === "dashboard" || mode === "monitor") { el.style.display = "none"; return; }
   el.style.display = "block";
   const o = i * s.NIN, row = [];
@@ -711,6 +748,25 @@ function drivers(i) {
     const name = s.inNames ? s.inNames[k] : `in ${k}`, m = Math.abs(v) / 127, col = v >= 0 ? "var(--orange)" : "var(--cyan)";
     return `<div class="r" style="color:${col}"><span class="n" title="${name}">${name}</span><span class="b" style="width:${(m * 70).toFixed(0)}px"></span><span class="v">${v >= 0 ? "+" : "−"}${(m * 100).toFixed(0)}</span></div>`;
   }).join("");
+}
+function usagePanel(s) {
+  const el = $("drivers"), U = usageOf(s);
+  if (!U) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  const names = useGroupNames(s), n = Math.min(names.length, U.v.length);
+  const order = [...Array(n).keys()].sort((a, b) => U.v[b] - U.v[a]);
+  const test = U.kind === "test", us = (U.tiers && U.tiers.used) || 0.01, vmax = U.v[order[0]] || 1;
+  $("drvHead").textContent = test ? "USED BY THE POLICY" : "INPUT SHARE";
+  $("drvWhat").textContent = test ? (U.borrowed ? "latest eval test" : "decisions changed") : "attribution, no decision test";
+  $("drvList").innerHTML = order.slice(0, 7).map(k => {
+    const v = U.v[k], w = Math.max(2, v / vmax * 70);
+    return `<div class="r" style="color:${USE_CSS}"><span class="n" title="${names[k]}">${names[k]}</span><span class="b" style="width:${w.toFixed(0)}px"></span><span class="v">${(v * 100).toFixed(v < 0.1 ? 1 : 0)}%</span></div>`;
+  }).join("");
+  if (test) {
+    const used = order.filter(k => U.v[k] >= us).length, zero = order.filter(k => U.v[k] <= 0);
+    const tail = zero.slice(0, 4).map(k => names[k]).join(", ") + (zero.length > 4 ? ` +${zero.length - 4}` : "");
+    $("drvNote").textContent = `${used} of ${n} inputs change ≥${(us * 100).toFixed(0)}% of decisions · ${zero.length} never change one` + (zero.length ? ` (${tail})` : "") + ". Shuffled one at a time over these bars.";
+  } else $("drvNote").textContent = "This snapshot predates the decision test: the share of |gradient × input| is shown instead (says how hard an input pushes, not whether a decision changes).";
 }
 let fpos = 0, START = 0, endAt = 0;
 function seek(i) {

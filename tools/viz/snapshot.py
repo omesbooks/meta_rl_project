@@ -136,12 +136,59 @@ def attribution_summary(attr, window, n_in, feature_names=None, top=10):
             "attr_top": [[names[i], round(float(shares[i]), 4)] for i in order]}
 
 
-def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, feature_names=None):
+USAGE_REPEATS = 2           # shuffles per feature; the mean is stored
+USAGE_STRONG = 0.05         # tiers the viewer paints (share of greedy decisions that change)
+USAGE_USED = 0.01
+
+
+def _greedy_probs(policy, obs):
+    device = getattr(policy, "device", torch.device("cpu"))
+    with torch.no_grad():
+        t = torch.as_tensor(obs, dtype=torch.float32, device=device)
+        return policy.get_distribution(t).distribution.probs.cpu().numpy()
+
+
+def feature_usage(policy, obs, window, repeats=USAGE_REPEATS, seed=0):
+    """Permutation test: does the policy's DECISION depend on each input feature?
+
+    For every feature (all its lags together, with one shuffle so its own history stays
+    consistent) and each state input, shuffle its values across the frames, run the policy
+    again and measure against the unshuffled pass:
+      flip = share of frames whose greedy action changes,
+      tv   = mean total-variation distance of the action probabilities (0..1).
+    A feature whose shuffle never changes a decision is not used for these bars. It answers
+    "does it matter" directly, where gradient x input only says how much it pushes locally.
+    Returns (flip, tv) per feature in env order, then the state inputs."""
+    obs = np.asarray(obs, dtype=np.float32)
+    nf, n_in = obs.shape
+    nfeat = (n_in - 3) // window
+    groups = [np.arange(window) * nfeat + f for f in range(nfeat)]
+    groups += [np.array([window * nfeat + e]) for e in range(n_in - window * nfeat)]
+    base = _greedy_probs(policy, obs)
+    g0 = base.argmax(axis=1)
+    rng = np.random.default_rng(seed)
+    perms = [rng.permutation(nf) for _ in range(max(1, int(repeats)))]
+    flip, tv = np.zeros(len(groups)), np.zeros(len(groups))
+    x = obs.copy()
+    for gi, cols in enumerate(groups):
+        for perm in perms:
+            x[:, cols] = obs[perm][:, cols]
+            pr = _greedy_probs(policy, x)
+            flip[gi] += float((pr.argmax(axis=1) != g0).mean())
+            tv[gi] += float(0.5 * np.abs(pr - base).sum(axis=1).mean())
+        x[:, cols] = obs[:, cols]
+    return flip / len(perms), tv / len(perms)
+
+
+def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, feature_names=None,
+         usage=True):
     """Build a snapshot dict from observations the policy saw.
 
     bars: dict of per-frame lists — ts, o, h, l, c, act, pos, eq, tpnl.
     extra: optional per-frame arrays added as-is (e.g. reward, adv).
     feature_names: env feature columns (for input attribution labels).
+    usage: run the per-feature permutation test (feature_usage; eval snapshots only, the
+    rollout writer turns it off to keep its overhead at ~1%).
     """
     if not supports(policy):
         raise ValueError("visual snapshots need an actor-critic policy (PPO / A2C)")
@@ -202,6 +249,13 @@ def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, fea
         "meta": dict(meta or {}, created=time.strftime("%Y-%m-%d %H:%M:%S")),
     }
     snap.update(attribution_summary(attr, window, n_in, feature_names))
+    if usage:
+        t0 = time.perf_counter()
+        flip, tv = feature_usage(policy, obs, window)
+        snap.update({"use_flip": [round(float(v), 5) for v in flip], "use_tv": [round(float(v), 5) for v in tv],
+                     "use_method": f"permute_feature_all_lags_x{USAGE_REPEATS}",
+                     "use_tiers": {"strong": USAGE_STRONG, "used": USAGE_USED},
+                     "use_s": round(time.perf_counter() - t0, 3)})
     for key, arr in (extra or {}).items():
         snap[key] = [round(float(x), 6) for x in arr]
     return snap
@@ -696,7 +750,7 @@ def make_rollout_callback(viz_dir, window, names=None, frames=400, min_interval=
                                       symbol=symbol, step=int(self.num_timesteps),
                                       total_steps=int(total_steps or 0), rollout=self.seq,
                                       reward_sum=round(float(np.sum(rewards)), 4)),
-                            extra={"reward": rewards, "adv": adv},
+                            extra={"reward": rewards, "adv": adv}, usage=False,
                             feature_names=feature_names or list(getattr(self._env(), "feature_cols", []) or []))
                 snap["meta"]["explore"] = round(
                     float(np.mean(np.array(snap["act"]) != np.array(snap["greedy"]))), 4)

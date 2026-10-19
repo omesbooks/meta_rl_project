@@ -23,7 +23,8 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if __name__ == "__main__":       # UTF-8 stdout for the CLI; importing (tests: page_html) leaves stdout alone
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[2]
 VIZ = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -38,6 +39,17 @@ from trading_env import TradingEnv  # noqa: E402
 import snapshot  # noqa: E402
 
 TEMPLATE = VIZ / "network3d.html"
+
+
+def page_html(snap, out_dir):
+    """The viewer template with `snap` embedded, its relative imports (./vendor/..., ./dashboard.js,
+    ./monitor.js, any later sibling module) pointed back at tools/viz from `out_dir`. Rewriting
+    only dashboard.js left ./monitor.js unresolved and every --html page blank (2026-10-19)."""
+    html = TEMPLATE.read_text(encoding="utf-8").replace("/*__SNAPSHOT__*/null", json.dumps(snap))
+    rel = Path(os.path.relpath(VIZ, Path(out_dir).resolve())).as_posix()
+    if rel != ".":
+        html = re.sub(r'"\./(vendor/|[\w-]+\.js")', lambda m: f'"{rel}/{m.group(1)}', html)
+    return html
 
 
 def main():
@@ -91,11 +103,7 @@ def main():
 
     out = Path(args.out) if args.out else VIZ / "out" / f"{args.model}_network3d.html"
     out.parent.mkdir(parents=True, exist_ok=True)
-    html = TEMPLATE.read_text(encoding="utf-8").replace("/*__SNAPSHOT__*/null", json.dumps(snap))
-    # the template imports ./vendor/... and ./dashboard.js relative to tools/viz
-    rel = Path(os.path.relpath(VIZ, out.parent.resolve())).as_posix()
-    if rel != ".":
-        html = html.replace('"./vendor/', f'"{rel}/vendor/').replace('"./dashboard.js"', f'"{rel}/dashboard.js"')
+    html = page_html(snap, out.parent)
     out.write_text(html, encoding="utf-8")
     closed = [p for p in snap["tpnl"] if p != 0.0]
     print(f"[viz] {args.model} ({args.source}) {args.slice}: {snap['frames']} bars {snap['ts'][0]} -> {snap['ts'][-1]}")

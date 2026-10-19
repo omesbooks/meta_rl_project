@@ -628,7 +628,8 @@ function updateNetwork(dt) {
   for (let e = 0; e < end; e++) {
     const sg = N.eW[e] * cur[N.eSrc[e]]; N.eInt[e] = sg;
     const m = Math.min(1, Math.abs(sg)), c = sg >= 0 ? C_POS : C_NEG, a = m * m * m * 0.32 + 0.0025, b = a * 0.25, o = e * 6;
-    if (LIGHT) { const q = e * 8, as = Math.min(1, 0.05 + m * m * 1.25), bs = as * 0.45;
+    // light: alpha floor 0.012 (was 0.05 — thousands of overlapping faint lines added up to a solid mass)
+    if (LIGHT) { const q = e * 8, as = Math.min(0.85, 0.012 + m * m * 0.8), bs = as * 0.4;
       eCol[q] = c.r; eCol[q + 1] = c.g; eCol[q + 2] = c.b; eCol[q + 3] = as; eCol[q + 4] = c.r; eCol[q + 5] = c.g; eCol[q + 6] = c.b; eCol[q + 7] = bs; }
     else { eCol[o] = c.r * a; eCol[o + 1] = c.g * a; eCol[o + 2] = c.b * a; eCol[o + 3] = c.r * b; eCol[o + 4] = c.g * b; eCol[o + 5] = c.b * b; }
   }

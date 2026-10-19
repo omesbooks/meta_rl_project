@@ -282,6 +282,9 @@ def test_feature_usage_flags_features_the_decision_ignores():
     assert np.all(flip[1:] == 0) and np.all(tv[1:] < 1e-6)
     snap = snap_mod.capture(pol, make(), WINDOW, 40, k=4, action_names=snap_mod.action_names(cfg), feature_names=FEATS)
     assert len(snap["use_flip"]) == len(snap["use_tv"]) == nfeat + 3 and snap["use_tiers"]["used"] > 0
+    # full actor head for the 'sorted' layer view (actions x last hidden layer; here no hidden layer)
+    head = np.frombuffer(base64.b64decode(snap["head_w"]), dtype=np.float32).reshape(snap["head_shape"])
+    assert snap["head_shape"] == [4, n_in] and np.allclose(head, pol.action_net.weight.detach().numpy())
     bars = {k: [0.0] * 40 for k in ("o", "h", "l", "c", "eq", "tpnl")}
     bars.update(ts=["t"] * 40, act=[0] * 40, pos=[0] * 40)
     assert "use_flip" not in snap_mod.pack(pol, obs[:40], WINDOW, bars, k=4, usage=False)   # rollouts skip it

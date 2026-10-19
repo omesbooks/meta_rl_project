@@ -166,6 +166,7 @@
   <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option><option value="dashboard">Dashboard</option><option value="monitor">Monitor</option></select></label>
   <button id="bPlay" class="c3d">❚❚</button>
   <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
+  <label class="c3d">layers <select id="iShape"><option value="sorted">sorted</option><option value="grid">grid</option><option value="column">column</option><option value="disc">disc</option></select></label>
   <label class="c3d">inputs <select id="iIn"><option value="attr">attribution</option><option value="use">usage (decision test)</option><option value="act">activation</option></select></label>
   <label class="c3d">synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
   <label class="c3d darkonly">glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
@@ -439,6 +440,7 @@ function prepare(D) {
   s.ATTR = D.attr ? dec(D.attr, Int8Array) : null;             // frames x n_in, per-frame scaled to ±127
   s.attrScale = D.attr_scale || null;
   s.inNames = D.input_names || null;
+  s.headW = D.head_w && D.head_shape ? { w: dec(D.head_w, Float32Array), rows: D.head_shape[0], cols: D.head_shape[1] } : null;
   return s;
 }
 
@@ -452,18 +454,25 @@ const X_OUT = 24, Y_TOWER = [7.0, -5.6];   // critic raised so its biggest disc 
 let TILT = -0.6;
 if (params.has("tilt") && isFinite(+params.get("tilt"))) TILT = +params.get("tilt");
 const DISC_N = [Math.cos(TILT), Math.sin(TILT)], DISC_V = [-Math.sin(TILT), Math.cos(TILT)];   // normal, in-plane (x, z)
-// hidden-layer shape (?shape=): disc (default) | grid (square, side ~ sqrt(n)) | column (fixed height,
+// hidden-layer shape ('layers' menu, ?shape=): sorted (default) | grid (square, side ~ sqrt(n)) | column (fixed height,
 // width ~ n, like a classic network diagram) | sorted (grid in a meaningful order: the last actor
 // layer grouped by the action its strongest outgoing weight feeds, other layers busiest-first by
 // mean |activation| over the replay). Neuron positions never carry meaning in disc/grid/column.
-const SHAPE = ["grid", "column", "sorted"].includes(params.get("shape")) ? params.get("shape") : "disc";
+const SHAPES = ["sorted", "grid", "column", "disc"];
+let SHAPE = SHAPES.includes(params.get("shape")) ? params.get("shape") : "sorted";
 function layerOrder(s, L) {
   const n = L.size, idx = [...Array(n).keys()];
   if (L.tower === 0 && L.idx === s.AL.length - 1 && s.mats[0].length) {
-    const H = s.mats[0][s.mats[0].length - 1], grp = new Int16Array(n).fill(s.NA), best = new Float32Array(n);
-    for (let r = 0; r < H.rows; r++) for (let q = 0; q < H.k; q++) {
-      const j = H.idx[r * H.k + q], w = Math.abs(H.w[r * H.k + q]);
-      if (j < n && w > best[j]) { best[j] = w; grp[j] = r; }
+    const grp = new Int16Array(n).fill(s.NA), best = new Float32Array(n), HW = s.headW;
+    if (HW && HW.cols === n && HW.rows === s.NA) {         // full head: every neuron gets an action
+      for (let r = 0; r < HW.rows; r++) for (let j = 0; j < n; j++) {
+        const w = Math.abs(HW.w[r * n + j]); if (w > best[j]) { best[j] = w; grp[j] = r; } }
+    } else {                                              // older snapshot: top-k edges only, rest = OTHER
+      const H = s.mats[0][s.mats[0].length - 1];
+      for (let r = 0; r < H.rows; r++) for (let q = 0; q < H.k; q++) {
+        const j = H.idx[r * H.k + q], w = Math.abs(H.w[r * H.k + q]);
+        if (j < n && w > best[j]) { best[j] = w; grp[j] = r; }
+      }
     }
     return { order: idx.sort((a, b) => grp[a] - grp[b] || best[b] - best[a]), grp };
   }
@@ -1157,6 +1166,8 @@ $("iMode").onchange = e => applyMode(e.target.value);
 $("bPlay").onclick = e => { playing = !playing; e.target.textContent = playing ? "❚❚" : "▶"; if (playing && endAt) seek(START); wake("input"); };
 $("iSpeed").oninput = e => speed = +e.target.value;
 $("iK").onchange = e => K = +e.target.value;
+$("iShape").value = SHAPE;
+$("iShape").onchange = e => { SHAPE = e.target.value; if (S) { buildNet(S); drivers(Math.min(S.NF - 1, Math.floor(fpos))); } wake("shape"); };
 $("iIn").onchange = e => { inputMode = e.target.value; if (S) drivers(Math.min(S.NF - 1, Math.floor(fpos))); wake("input"); };
 $("iGlow").oninput = e => glow = +e.target.value / 10;
 $("iFps").onchange = e => fpsCap = +e.target.value;

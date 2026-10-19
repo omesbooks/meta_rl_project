@@ -243,6 +243,10 @@ def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, fea
         "pos": [int(p) for p in bars["pos"]], "eq": [round(float(e), 6) for e in bars["eq"]],
         "tpnl": [round(float(p), 6) for p in bars["tpnl"]],
         "edges": edges, "edge_rank": "abs_weight_x_source_std",
+        # full actor head (actions x last hidden layer, ~1 KB): the viewer groups every last-layer
+        # neuron by the action it feeds most; the top-k edges alone left about half ungrouped
+        "head_w": b64(policy.action_net.weight.detach().cpu().numpy().astype(np.float32)),
+        "head_shape": [int(d) for d in policy.action_net.weight.shape],
         "attr": b64(attr_q), "attr_scale": [round(float(v), 6) for v in attr_scale],
         "attr_method": "grad_x_input_of_chosen_action_logit",
         "input_names": input_names(feature_names, window, n_in),

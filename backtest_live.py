@@ -1673,7 +1673,7 @@ def run_backtest_live(args):
                                   where=(eq >= args.balance), color='#10b981', alpha=0.15)
             axes[0].fill_between(range(len(eq)), args.balance, eq,
                                   where=(eq < args.balance), color='#ef4444', alpha=0.15)
-            axes[0].set_title(f"Live Backtest Equity — {args.model} (PF={pf:.2f}, WR={win_rate:.1%})")
+            axes[0].set_title(f"Backtest equity (live-trader logic) — {args.model} (PF={pf:.2f}, WR={win_rate:.1%})")
             axes[0].set_ylabel("Equity ($)")
             axes[0].grid(True, alpha=0.3)
 

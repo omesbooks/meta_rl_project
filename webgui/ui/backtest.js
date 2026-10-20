@@ -1,7 +1,7 @@
 // Backtest page (phase 3). Command, M1 auto-select, Skip-% preview and the report text
 // all come from Python (webgui/backtest.py, backtest_report.py); this file only paints.
 "use strict";
-const BT = { cat: null, m1Auto: null, loaded: false, shownModel: "", runModel: "" };
+const BT = { cat: null, m1Auto: null, loaded: false, shownModel: "", runModel: "", running: false, shown: null };
 const BT_FIELDS = ["conf", "start", "risk", "max_pos", "sl", "tp", "stop_slip", "swap_long", "swap_short", "random_baseline", "mc", "window"];
 
 function btForm() {
@@ -46,7 +46,7 @@ async function btReport(model) {
     $("bt_cards").innerHTML = ""; $("bt_equity").innerHTML = `<div class="empty">${esc(r.error)}</div>`; $("bt_mcimg").innerHTML = "";
     $("bt_report").innerHTML = ""; $("bt_report_txt").textContent = ""; $("bt_rep_src").textContent = ""; return;
   }
-  $("bt_rep_src").textContent = r.meta_path.split(/[\\/]/).slice(-3).join("/") + (r.status && r.status !== "complete" ? ` · status: ${r.status}` : "");
+  BT.shown = r; btRepSrc();
   const c = r.cards;
   $("bt_cards").innerHTML = card("WIN RATE", c.win_rate) + card("PROFIT FACTOR", c.profit_factor) + card("RETURN", c.return) + card("MAX DD", c.max_dd);
   $("bt_equity").innerHTML = r.zero_trades ? `<div class="empty">0 trades — no equity chart</div>` : r.equity ? `<img src="${r.equity}" alt="equity curve">` : `<div class="empty">no equity image stored for this run</div>`;
@@ -56,14 +56,24 @@ async function btReport(model) {
   $("bt_report_txt").textContent = r.lines.join("\n");
 }
 
+// the RESULTS header names the stored run (date + data) so it is not mistaken for live output, and says so
+// while a new backtest for the same model is running (the panel updates only when that run finishes)
+function btRepSrc() {
+  const r = BT.shown, el = $("bt_rep_src");
+  if (!r) { el.textContent = ""; el.className = "r meta"; return; }
+  const running = BT.running && BT.runModel === r.model;
+  el.textContent = `stored result · ${r.created_at || "date unknown"}${r.data_csv ? " · " + r.data_csv : ""}` +
+    (r.status && r.status !== "complete" ? ` · status: ${r.status}` : "") + (running ? " · previous run — a new backtest is running, the panel updates when it finishes" : "");
+  el.className = "r meta" + (running ? " warn" : "");
+}
 function onBacktestEvent(ev) {
   if (ev.type === "start") {
     setBusy(true, ev.kind === "chart" ? "generating chart" : "backtesting");
-    BT.runModel = ev.model; logLine("$ " + ev.command, "cmd", "bt_log");
+    BT.runModel = ev.model; BT.running = ev.kind === "backtest"; btRepSrc(); logLine("$ " + ev.command, "cmd", "bt_log");
     $("bt_status").textContent = ev.kind === "chart" ? "Generating chart…" : `Backtesting ${ev.model}…`;
   } else if (ev.type === "line") logLine(ev.line, ev.cls, "bt_log");
   else if (ev.type === "done") {
-    setBusy(false);
+    setBusy(false); BT.running = false; btRepSrc();
     const ok = ev.rc === 0;
     logLine(ev.cancelled ? "[stop] cancelled" : ok ? "✓ Done" : `✗ Failed (exit ${ev.rc})`, ok ? "success" : "error", "bt_log");
     $("bt_status").textContent = ev.cancelled ? "Stopped" : ok ? (ev.kind === "chart" ? "✓ Chart ready — Open Chart" : "✓ Backtest complete") : `✗ Failed (exit ${ev.rc})`;

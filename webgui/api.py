@@ -521,6 +521,8 @@ class Api:
         lines = backtest_report.report_lines(meta)
         out = {"ok": True, "model": model, "status": meta.get("status", ""), "cards": backtest_report.stat_cards(meta),
                "lines": lines, "rows": backtest_report.report_rows(lines), "meta_path": str(backtest_meta_path(model)),
+               # when the stored run was made and on which data: the panel is a stored result, never a live feed
+               "created_at": str(meta.get("created_at") or "").replace("T", " ")[:16], "data_csv": str(meta.get("data_csv") or ""),
                "zero_trades": not (meta.get("result") or {}).get("total_trades"), "equity": "", "mc": ""}
         if not out["zero_trades"]:
             for key, path in (("equity", find_equity_path(model)), ("mc", mc_chart_path(model))):

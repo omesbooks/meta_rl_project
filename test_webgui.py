@@ -245,6 +245,9 @@ def test_backtest_api_errors_name_the_field(tmp_path):
     assert api.backtest_report("zz_never_trained")["missing"] is True
     cat = Api(ROOT).backtest_catalog()
     assert cat["m1_options"][0] == "(none)" and not any(d.endswith("_m1.csv") for d in cat["datasets"])
+    # a stored report says when it was made and on which data (the panel is never a live feed)
+    rep = Api(ROOT).backtest_report("rl_uj_extra")
+    assert rep["ok"] and rep["created_at"][:4].isdigit() and "T" not in rep["created_at"] and rep["data_csv"].endswith(".csv")
 
 
 # ---------------------------------------------------------------- phase 4: Pipeline / Walk-Forward / Fine-tune

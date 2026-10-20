@@ -1270,6 +1270,9 @@ function monUpdate(force = true) {
   const key = `${rows.length}:${rows.length ? rows[rows.length - 1].seq : -1}:${index.length}:${monStab ? (monStab.evals || []).length : 0}:${peers.map(p => p.index.length + "/" + p.rows.length).join(",")}:${monEps ? monEps.step + "/" + monEps.final : "-"}`;
   if (!force && key === monKey) return;
   monKey = key;
+  // the waiting banner is otherwise cleared only when a 3D snapshot loads (first eval at 10k steps);
+  // in Monitor mode the first rollout row is already data, so clear it here too
+  if (rows.length || index.length) $("wait").style.display = "none";
   mon.render({ rows, meta: monData || {}, index, peers, stability: monStab, episodes: monEps });
 }
 let dashResize = 0;

@@ -27,12 +27,18 @@
   .lbl.tag { font: 600 10px/1 var(--hud); letter-spacing: .3em; color: var(--dim); text-shadow: none; }
   .lbl.grp { font: 700 9px/1 var(--hud); letter-spacing: .1em; color: var(--dim); text-shadow: none; transform: translate(-100%, -50%); white-space: nowrap; }
   .lbl.lyr { font: 700 11px/1 var(--hud); letter-spacing: .12em; color: var(--fg); opacity: .8; text-shadow: none; white-space: nowrap; }
-  .lbl.out { transform: translate(14px, -50%); font-size: 14px; }
+  .lbl.out { transform: translate(14px, -50%); font-size: 14px; padding: 2px 7px; margin-left: -7px; border-radius: 7px; border: 1.5px solid transparent; }
+  .lbl.out.win { border-color: currentColor; background: color-mix(in srgb, currentColor 14%, transparent); box-shadow: 0 0 10px color-mix(in srgb, currentColor 45%, transparent); }
+  body.clear .lbl.out.win { box-shadow: none; background: color-mix(in srgb, currentColor 12%, #fff 60%); }
   .lbl.out .bar { display: inline-block; height: 4px; margin-left: 8px; vertical-align: middle;
                   background: currentColor; box-shadow: 0 0 8px currentColor; border-radius: 2px; }
-  #drivers { left: 24px; top: 150px; width: 300px; display: none; }
+  #drivers { left: 24px; top: 150px; width: 330px; display: none; }
   #drivers .k { font: 600 10px/1 var(--hud); letter-spacing: .26em; color: var(--dim); text-shadow: none; margin-bottom: 7px; }
-  #drivers .r { display: grid; grid-template-columns: 1fr 70px 48px; align-items: center; gap: 8px; font: 600 12px/1.55 var(--hud); text-shadow: none; }
+  #drivers .r { display: grid; grid-template-columns: 1fr 58px 62px 44px; align-items: center; gap: 8px; font: 600 12px/1.55 var(--hud); text-shadow: none; }
+  #drivers .r svg { width: 58px; height: 16px; display: block; overflow: visible; }
+  #drivers .r svg polyline { fill: none; stroke: currentColor; stroke-width: 1.4; opacity: .85; }
+  #drivers .r svg circle { fill: currentColor; }
+  #drivers .r svg line { stroke: var(--dim); stroke-width: 1; stroke-dasharray: 2 2; opacity: .5; }
   #drivers .r .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
   #drivers .r .b { height: 5px; border-radius: 3px; background: currentColor; box-shadow: 0 0 6px currentColor; }
   #drivers .r .v { text-align: right; font-variant-numeric: tabular-nums; }
@@ -854,8 +860,30 @@ function drivers(i) {
   $("drvWhat").textContent = `${lab} · bar ${i + 1}`;
   $("drvList").innerHTML = row.slice(0, 7).map(([k, v]) => {
     const name = s.inNames ? s.inNames[k] : `in ${k}`, m = Math.abs(v) / 127, col = v >= 0 ? "var(--orange)" : "var(--cyan)";
-    return `<div class="r" style="color:${col}"><span class="n" title="${name}">${name}</span><span class="b" style="width:${(m * 70).toFixed(0)}px"></span><span class="v">${v >= 0 ? "+" : "−"}${(m * 100).toFixed(0)}</span></div>`;
+    return `<div class="r" style="color:${col}"><span class="n" title="${name}">${name}</span>${sparkSvg(s, i, k)}<span class="b" style="width:${(m * 60).toFixed(0)}px"></span><span class="v">${v >= 0 ? "+" : "−"}${(m * 100).toFixed(0)}</span></div>`;
   }).join("");
+}
+// mini chart of what the model saw for this input at bar i: a feature input shows the feature over
+// the whole window (oldest -> current bar) with a dot on the lag this input refers to; a state input
+// (position / unrealized_pnl / bars_in_position) shows its last WIN replay bars. Values are the
+// normalised observation (z-score / 4, clipped), so the line is in the model's units, not price.
+function sparkSvg(s, i, k) {
+  const n = s.WIN, vals = new Float32Array(n), W = s.W;
+  let dot = n - 1;
+  if (k < s.WIN * s.NFEAT) {
+    const f = k % s.NFEAT; dot = Math.floor(k / s.NFEAT);
+    for (let r = 0; r < n; r++) vals[r] = s.Q[i * W + r * s.NFEAT + f] / 127;
+  } else {
+    for (let r = 0; r < n; r++) { const j = i - (n - 1 - r); vals[r] = j >= 0 ? s.Q[j * W + k] / 127 : NaN; }
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (const v of vals) if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (!Number.isFinite(lo)) return `<svg viewBox="0 0 58 16"></svg>`;
+  const span = Math.max(hi - lo, 0.04), X = r => (2 + r * 54 / Math.max(1, n - 1)).toFixed(1), Y = v => (14 - (v - lo) / span * 12).toFixed(1);
+  const pts = []; for (let r = 0; r < n; r++) if (Number.isFinite(vals[r])) pts.push(`${X(r)},${Y(vals[r])}`);
+  const zero = lo < 0 && hi > 0 ? `<line x1="2" x2="56" y1="${Y(0)}" y2="${Y(0)}"/>` : "";
+  const d = Number.isFinite(vals[dot]) ? `<circle cx="${X(dot)}" cy="${Y(vals[dot])}" r="2.2"/>` : "";
+  return `<svg viewBox="0 0 58 16" title="window, oldest → current">${zero}<polyline points="${pts.join(" ")}"/>${d}</svg>`;
 }
 function usagePanel(s) {
   const el = $("drivers"), U = usageOf(s);
@@ -1111,9 +1139,12 @@ function frame(now) {
     const ch = updateChart(fpos, dt);
     const fi = Math.floor(fpos);
     if (fi !== lastFrame) { for (let i = lastFrame + 1; i <= fi; i++) onNewBar(i, ch); lastFrame = fi; }
+    let best = 0;
+    for (let a = 1; a < S.NA; a++) if (S.cur[S.OFF_PROB + a] > S.cur[S.OFF_PROB + best]) best = a;
     for (let a = 0; a < S.NA; a++) {
       const p = Math.max(0, S.cur[S.OFF_PROB + a]), k = (S.OFF_PROB + a) * 3, el = NET.outLbl[a];
       el.children[0].textContent = Math.round(p * 100) + "%"; el.children[1].style.width = (p * 90) + "px";
+      el.classList.toggle("win", a === best);                 // box around the action the policy picks now
       placeLabel(el, S.posOf[k], S.posOf[k + 1], S.posOf[k + 2]);
     }
     const v = S.cur[S.OFF_VAL] * S.D.value_max;

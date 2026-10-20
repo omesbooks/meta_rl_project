@@ -80,6 +80,9 @@ class TradingEnv(gym.Env):
         action_profile: str | dict = "basic_4",
         action_params: dict | None = None,
         random_start: bool = True,
+        start_mode: str = "fit",      # "fit": start where a full episode fits (bars near the end are
+                                      # played least); "uniform": start anywhere, a late start plays a
+                                      # shorter episode, so every bar is equally likely to be played
         entry_gate: str = "",
         sl_mode: str = "none",
         sl_range=(0.5, 3.0),
@@ -111,6 +114,9 @@ class TradingEnv(gym.Env):
         self.feature_cols = feature_cols
         self.window_size = window_size
         self.random_start = random_start
+        self.start_mode = (start_mode or "fit").lower()
+        if self.start_mode not in ("fit", "uniform"):
+            raise ValueError(f"start_mode must be 'fit' or 'uniform', got {start_mode!r}")
         if window_size < 1 or max_hold_bars < 1:
             raise ValueError("Window and max hold must be positive")
         if len(self.df) < int(window_size) + 3:
@@ -172,7 +178,11 @@ class TradingEnv(gym.Env):
         min_start = self.window_size - 1
         # max start: ต้องเหลือพื้นที่ให้ episode รันได้ครบ max_steps
         max_start = len(self.df) - self.max_steps - 2
-        if self.random_start and max_start > min_start:
+        if self.random_start and self.start_mode == "uniform":
+            # every bar equally likely: pick the start from the whole slice; an episode that starts
+            # late simply ends at the data end (episode_end also fires at len(df) - 1)
+            self.t = int(self.np_random.integers(min_start, max(min_start, len(self.df) - 3) + 1))
+        elif self.random_start and max_start > min_start:
             # Random uniform start within valid range
             self.t = int(self.np_random.integers(min_start, max_start + 1))
         else:

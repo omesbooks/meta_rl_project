@@ -101,6 +101,10 @@ def build_parser():
     ap.add_argument("--corr_threshold", type=float, default=1.0,
                     help="train-only correlation pruning (1 = constant features only)")
     ap.add_argument("--ep_len", type=int, default=2000, help="bars per episode")
+    ap.add_argument("--start_mode", default="fit", choices=["fit", "uniform"],
+                    help="where training episodes start: fit = where a full episode fits (default; the last "
+                         "ep_len bars of Train are played least), uniform = any bar, a late start plays a "
+                         "shorter episode (every bar equally likely)")
     ap.add_argument("--algo", default="ppo", choices=["ppo", "dqn", "a2c"])
     ap.add_argument("--reward_mode", default="realized",
                     choices=["realized", "mtm"],
@@ -445,6 +449,7 @@ def train(args, run, prepared=None):
             "steps": args.steps,
             "window": args.window,
             "ep_len": args.ep_len,
+            "start_mode": args.start_mode,
             "algo": args.algo,
             "reward_mode": args.reward_mode,
             "reward_profile": args.reward_profile,
@@ -485,7 +490,7 @@ def train(args, run, prepared=None):
         return Monitor(TradingEnv(
             train_df, feature_cols,
             window_size=args.window,
-            max_steps=args.ep_len,
+            max_steps=args.ep_len, start_mode=args.start_mode,
             reward_mode=args.reward_mode,
             reward_profile=args.reward_profile,
             reward_overrides=reward_overrides,

@@ -406,3 +406,28 @@ def test_live_viewer_serves_the_run_episodes_file(tmp_path):
         assert json.loads(body) == {"episodes": []}
     finally:
         server.shutdown()
+
+
+def test_uniform_start_mode_plays_every_bar_equally():
+    """start_mode='uniform': starts are drawn from the whole slice and a late start ends at the data
+    end; 'fit' (default) never starts inside the last ep_len bars."""
+    _, cfg = get_action_profile("basic_4")
+    df = _frame(n=300)
+    ep_len = 100
+    starts = {}
+    for mode in ("fit", "uniform"):
+        env = TradingEnv(df, FEATS, window_size=WINDOW, max_steps=ep_len, action_profile=cfg, start_mode=mode)
+        env.reset(seed=0)
+        starts[mode] = [(env.reset(), env.start_t)[1] for _ in range(300)]
+    assert max(starts["fit"]) <= len(df) - ep_len - 2
+    assert max(starts["uniform"]) > len(df) - ep_len - 2 and min(starts["uniform"]) >= WINDOW - 1
+    env = TradingEnv(df, FEATS, window_size=WINDOW, max_steps=ep_len, action_profile=cfg, start_mode="uniform")
+    env.reset(seed=1); env.t = env.start_t = len(df) - 20
+    n = 0
+    while True:
+        _, _, term, trunc, _ = env.step(0); n += 1
+        if term or trunc or n > ep_len + 5:
+            break
+    assert n < ep_len and term                    # a late start plays a short episode to the data end
+    with pytest.raises(ValueError):
+        TradingEnv(df, FEATS, window_size=WINDOW, max_steps=ep_len, action_profile=cfg, start_mode="bogus")

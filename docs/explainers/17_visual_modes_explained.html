@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neural Trader Modes Guide</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+  /* layout: a mode picker on top drives a wireframe of the screen; one reference section per mode below it */
+  :root {
+    --bg: #f3f5f8; --paper: #ffffff; --ink: #16212e; --muted: #5d6b7e; --line: #d6dde7;
+    --accent: #0c7c8a; --accent-soft: #d9f0f2; --warn: #b7791f; --warn-soft: #fbeed3;
+    --bad: #c0392b; --bad-soft: #fadbd8; --good: #1f8a4c; --good-soft: #d9f2e3; --neon: #0a66ff;
+    --font: "IBM Plex Sans Thai", "Sarabun", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0f151d; --paper: #182029; --ink: #e6edf5; --muted: #98a6b8; --line: #2c3845;
+    --accent: #3fc1cf; --accent-soft: #123b42; --warn: #e2a84a; --warn-soft: #3d2d12;
+    --bad: #ef6b5e; --bad-soft: #43201c; --good: #4ecf84; --good-soft: #133523; --neon: #19e6ff; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --bg: #0f151d; --paper: #182029; --ink: #e6edf5; --muted: #98a6b8; --line: #2c3845;
+    --accent: #3fc1cf; --accent-soft: #123b42; --warn: #e2a84a; --warn-soft: #3d2d12;
+    --bad: #ef6b5e; --bad-soft: #43201c; --good: #4ecf84; --good-soft: #133523; --neon: #19e6ff; color-scheme: dark }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.65 var(--font);
+         padding-block: 32px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 980px; margin: 0 auto; display: grid; gap: 26px; }
+  h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.2; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 21px; margin: 0 0 6px; text-wrap: balance; }
+  h3 { font-size: 16px; margin: 18px 0 6px; }
+  p { max-width: 70ch; margin: 0 0 10px; }
+  .lead { color: var(--muted); font-size: 17px; }
+  .eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  section { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 18px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+  .tabs button { font: 600 14px var(--font); padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+  .tabs button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .tabs button:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+  .wire { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; background: #0a1020; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+  .wire.light { background: #e9eef6; }
+  .wire .z { position: absolute; border: 1.5px dashed rgba(25,230,255,.55); border-radius: 6px; font: 600 10px/1.2 var(--mono); letter-spacing: .04em; color: #19e6ff; padding: 5px 7px; background: rgba(25,230,255,.07); }
+  .wire.light .z { border-color: rgba(12,124,138,.7); color: #0c7c8a; background: rgba(12,124,138,.08); }
+  .wire .z.hot { border-style: solid; background: rgba(255,197,61,.12); color: #ffc53d; border-color: #ffc53d; }
+  .wire.light .z.hot { background: rgba(183,121,31,.12); color: #8a5a00; border-color: #b7791f; }
+  .wire .z small { display: block; font: 400 9px/1.3 var(--font); opacity: .85; margin-top: 2px; }
+  .wire .z[data-n]::before { content: attr(data-n); position: absolute; top: -8px; left: -8px; width: 16px; height: 16px; border-radius: 50%; background: #19e6ff; color: #0a1020; font: 700 10px/16px var(--mono); text-align: center; }
+  .wire.light .z[data-n]::before { background: #0c7c8a; color: #fff; }
+  .cap { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: .04em; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .tw { overflow-x: auto; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font: 600 11px var(--mono); white-space: nowrap; }
+  .pill.good { background: var(--good-soft); color: var(--good); } .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); } .pill.grey { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+  .note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 15px; max-width: none; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .cols > div { min-width: 0; }
+  code { font: 13.5px var(--mono); background: var(--accent-soft); color: var(--ink); padding: 1px 5px; border-radius: 4px; }
+  ol.parts { padding-left: 20px; max-width: none; } ol.parts li { margin-bottom: 8px; } ol.parts b { font-weight: 600; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; font-size: 14.5px; }
+  dl dt { font-weight: 600; white-space: nowrap; } dl dd { margin: 0; }
+  @media (max-width: 520px) { dl { grid-template-columns: 1fr; } dl dt { margin-top: 6px; } }
+  footer { color: var(--muted); font-size: 13px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Meta RL Trading · tools/viz · Neural Trader window</div>
+    <h1>คู่มือโหมดของหน้าต่าง Neural Trader: แต่ละโหมดมีอะไร และอ่านอย่างไร</h1>
+    <p class="lead">หน้าต่าง visual มีสองเมนูหลักที่ทำงานคนละแกน: <b>mode</b> เลือกว่าจะแสดงอะไรและใช้ CPU เท่าไร (Lite / Cinematic / Dashboard / Monitor) ส่วน <b>look</b> เลือกหน้าตาของภาพ 3D (analysis / showcase) หน้านี้ไล่ทุกแผง ทุกตัวเลข และทุกปุ่มในแต่ละโหมด</p>
+  </header>
+
+  <!-- ============================ 0. picker + wireframe ============================ -->
+  <section>
+    <div class="eyebrow">ภาพรวม</div>
+    <h2>เลือกโหมดแล้วดูว่าหน้าจอประกอบด้วยอะไรบ้าง</h2>
+    <div class="tabs" role="group" aria-label="mode">
+      <button data-m="lite" aria-pressed="true">Lite</button><button data-m="cine">Cinematic</button><button data-m="show">Cinematic + showcase</button><button data-m="dash">Dashboard</button><button data-m="mon">Monitor</button>
+    </div>
+    <div class="wire" id="wire"></div>
+    <div class="cap" id="wireCap"></div>
+    <div class="tw" style="margin-top:14px"><table>
+      <tr><th>mode</th><th>แสดงอะไร</th><th>วาด 3D</th><th>CPU โดยประมาณ (1 core)</th><th>เหมาะกับ</th></tr>
+      <tr><td>Lite</td><td>ภาพ 3D แบบประหยัด: ไม่มีแสงเรือง, เส้นเชื่อม 4 เส้น/node, ไม่มี pulse, ความละเอียด 1×, 20 fps</td><td>ใช่</td><td>20–40%</td><td>เปิดดูระหว่างเทรนโดยไม่กินเครื่อง</td></tr>
+      <tr><td>Cinematic</td><td>ภาพ 3D เต็ม: แสงเรือง (bloom), เส้นเชื่อม 8 เส้น, pulse วิ่งตามเส้น, ความละเอียด 2×, 30 fps</td><td>ใช่</td><td>60% ขึ้นไป</td><td>ดูให้สวย / อัดคลิป</td></tr>
+      <tr><td>Dashboard</td><td>แผงกราฟนิ่ง 6 การ์ด + KPI 8 ช่อง วาดใหม่เฉพาะเมื่อมี snapshot ใหม่</td><td>ไม่</td><td>1–2%</td><td>ดูผล eval ย้อนหลังทั้งหมด</td></tr>
+      <tr><td>Monitor</td><td>แผง verdict ตอบว่า "หยุดหรือเทรนต่อ" + การ์ดวิเคราะห์ 17 การ์ด (ค่าเริ่มต้นของแอป)</td><td>ไม่</td><td>1–2%</td><td>เปิดทิ้งไว้ระหว่างเทรน</td></tr>
+    </table></div>
+    <p class="note" style="margin-top:12px"><b>look</b> มีผลเฉพาะ Lite และ Cinematic: <b>analysis</b> = ข้อมูลครบ (สีเส้นบอกทิศ, แผง TOP DRIVERS, layer แบ่งกลุ่มตาม action) · <b>showcase</b> = ภาพสะอาดสำหรับโชว์ (ธีมมืด, คอลัมน์จุด, กล้องมองตรง, เส้นสีเดียว 16 เส้น, ซ่อนแผงวิเคราะห์) เปลี่ยน look แล้วหน้าจะโหลดใหม่ เพราะธีมกับการจัดวางถูกกำหนดตอนเปิด</p>
+  </section>
+
+  <!-- ============================ 1. 3D view ============================ -->
+  <section>
+    <div class="eyebrow">1 · Lite และ Cinematic</div>
+    <h2>ภาพ 3D: เล่นซ้ำการตัดสินใจของโมเดลทีละแท่ง</h2>
+    <p>สองโหมดนี้คือภาพเดียวกัน ต่างกันแค่คุณภาพการวาด สิ่งที่เห็นคือ "replay": เดินข้อมูลทีละแท่ง แล้วแสดงว่า ณ แท่งนั้น input เป็นอะไร neuron ตัวไหนติด และโมเดลเลือก action อะไร ตัวเลขทุกตัวมาจาก snapshot ที่บันทึกตอน eval (ทุก 10,000 step) หรือจาก rollout ล่าสุดระหว่างเทรน</p>
+
+    <h3>แผงมุมขวาบน (สถานะ ณ แท่งปัจจุบัน)</h3>
+    <dl>
+      <dt>BAR</dt><dd>วันเวลาของแท่งที่กำลังเล่นอยู่</dd>
+      <dt>EQUITY</dt><dd>กำไรสะสม % ตั้งแต่แท่งแรกของ replay ถึงแท่งนี้ (ไม่ใช่ทั้งช่วง Validation; replay มี 300 แท่ง)</dd>
+      <dt>POSITION</dt><dd>LONG / SHORT / FLAT ที่โมเดลถืออยู่</dd>
+      <dt>TRADES · WIN RATE</dt><dd>จำนวนไม้ที่ปิดแล้วใน replay และสัดส่วนที่กำไร</dd>
+      <dt>CRITIC V(s)</dt><dd>มูลค่าที่ critic ประเมินให้สถานะปัจจุบัน (คูณกลับด้วย value_max ของ snapshot) บวก = คาดว่าจะได้ reward ต่อจากนี้</dd>
+    </dl>
+
+    <h3>ชั้น INPUT · N BARS × M FEATURES</h3>
+    <p>ตาราง 1 จุดต่อ 1 input: แถว = แท่งใน window (บนสุด = เก่าสุด), คอลัมน์ = feature บวกอีก 3 จุดคือ position / unrealized pnl / bars in position เมนู <code>inputs</code> เลือกวิธีลงสี:</p>
+    <ul>
+      <li><b>attribution</b> (ค่าเริ่มต้น) สีตามว่า input นั้นดันการตัดสินใจ "ของแท่งนี้" ไปทางไหน (ส้ม +, ฟ้า −) คำนวณจาก gradient × input ของ action ที่เลือก</li>
+      <li><b>usage (decision test)</b> สีม่วงตามว่าถ้าสลับค่า feature นั้นแล้วการตัดสินใจเปลี่ยนกี่ % เป็นผลทดสอบคงที่ต่อ eval ไม่เปลี่ยนตามแท่ง เทา = ไม่เคยเปลี่ยนการตัดสินใจเลย</li>
+      <li><b>activation</b> ค่า input ที่ normalize แล้ว ตรงๆ</li>
+    </ul>
+
+    <h3>Tower ACTOR และ CRITIC</h3>
+    <p>แต่ละฝั่งคือ network คนละตัวที่มีขนาดชั้นเท่ากัน ป้าย <code>L1 · 128</code> บอกลำดับและจำนวน neuron จริง จุด = neuron สีตาม activation ณ แท่งนั้น (ส้ม +, ฟ้า −, สว่าง = แรง) เมนู <code>layers</code> เลือกรูปทรง: <b>sorted</b> (ค่าเริ่มต้น: layer สุดท้ายของ actor แบ่งกลุ่มตาม action ที่ neuron นั้นส่งน้ำหนักไปมากที่สุด มีแถบสีและป้ายกำกับ ชั้นอื่นเรียงจากทำงานมากไปน้อย), <b>grid</b>, <b>column</b>, <b>disc</b> ตำแหน่งจุดในสามแบบหลังไม่มีความหมาย</p>
+    <p>เส้นเชื่อมคือ <b>ตัวอย่าง</b> เท่านั้น: วาดเฉพาะเส้นที่แรงที่สุด 4 / 8 / 16 เส้นต่อ neuron (เมนู <code>synapses</code>) เพราะของจริงมีหลายแสนเส้น สีส้ม = สัญญาณบวก ฟ้า = ลบ ความเข้ม = น้ำหนัก × ค่าต้นทาง ณ แท่งนั้น</p>
+
+    <h3>ฝั่งขวา: OUTPUT และ V(s)</h3>
+    <p>ป้าย HOLD / BUY / SELL / CLOSE พร้อม % คือความน่าจะเป็นที่ policy ให้แต่ละ action ณ แท่งนั้น action ที่สูงสุดมีกรอบล้อม (ใน eval replay คือ action ที่ทำจริง) ป้าย V(s) คือค่าเดียวกับ CRITIC V(s) ในแผงสถิติ</p>
+
+    <h3>แผง TOP DRIVERS (ซ้าย, เฉพาะ look analysis)</h3>
+    <p>7 input ที่ดันการตัดสินใจของแท่งนี้แรงที่สุด แต่ละแถวมี sparkline ของ feature นั้นตลอด window (จุด = lag ที่ input ตัวนั้นอ้างถึง เส้นประ = ศูนย์), แถบความแรง และตัวเลข + / − เมื่อเลือก inputs = usage แผงจะเปลี่ยนเป็น USED BY THE POLICY: feature ที่ใช้มากสุด และสรุปว่ามีกี่ตัวที่ไม่เคยเปลี่ยนการตัดสินใจเลย</p>
+
+    <h3>กราฟแท่งเทียน (ล่าง)</h3>
+    <p>แท่งเทียนจริงของช่วง replay เส้นเหลือง = equity สามเหลี่ยมขึ้น/ลง = เปิด long / short จุดกะพริบ = ไม้ปิด (ทอง = กำไร, แดง = ขาดทุน) ใน Cinematic มีอนุภาคแตกกระจายตอนเปิด/ปิดไม้ด้วย</p>
+
+    <h3>แถบ timeline (ล่างซ้าย)</h3>
+    <p><code>EVAL k / n · STEP s</code> บอกว่ากำลังเล่น eval ครั้งไหน slider เลือก eval ย้อนหลังได้ sparkline เล็ก = eval reward ของทุก eval (จุดทอง = ที่เลือก) ปุ่ม <code>● LIVE</code> = ตามอัตโนมัติไป eval ล่าสุด บรรทัดเล็กบอก reward / best / จำนวนไม้</p>
+
+    <h3>มุมมอง "Training (live)" ระหว่างเทรน</h3>
+    <p>เมนู <code>source</code> สลับได้ระหว่าง <b>Eval replay</b> (policy แบบ greedy บนชุด Validation) กับ <b>Training (live)</b> = rollout ล่าสุดบนชุด Train ที่ policy ยังสุ่มลองอยู่ มุมมองนี้เพิ่ม: จุดบนกราฟตรงแท่งที่ action ที่สุ่มได้ต่างจาก greedy, แถบ advantage ใต้กราฟ, และแผง REWARD / ADVANTAGE / SAMPLED · GREEDY แทนสถิติเทรด หัวกราฟบอก <code>ROLLOUT #k · STEP s</code> (k คือลำดับภาพที่บันทึก ไม่ใช่จำนวนรอบ PPO จริง) rollout ใหม่จะรอให้ replay ปัจจุบันเล่นจบก่อน</p>
+
+    <h3>แถบควบคุม (ล่างขวา)</h3>
+    <div class="tw"><table>
+      <tr><th>ปุ่ม</th><th>ทำอะไร</th></tr>
+      <tr><td>source</td><td>Training (live) / Eval replay (มีเฉพาะตอนเปิดจาก run ที่กำลังเทรน)</td></tr>
+      <tr><td>mode</td><td>Lite / Cinematic / Dashboard / Monitor เปลี่ยนได้ทันที</td></tr>
+      <tr><td>look</td><td>analysis / showcase (โหลดหน้าใหม่)</td></tr>
+      <tr><td>❚❚ / ▶ · speed</td><td>หยุด-เล่น replay และความเร็ว</td></tr>
+      <tr><td>inputs</td><td>attribution / usage / activation (วิธีลงสีชั้น input)</td></tr>
+      <tr><td>layers</td><td>sorted / grid / column / disc (รูปทรง hidden layer)</td></tr>
+      <tr><td>synapses</td><td>4 / 8 / 16 เส้นต่อ neuron</td></tr>
+      <tr><td>glow</td><td>ความแรงของแสงเรือง (เฉพาะธีมมืด)</td></tr>
+      <tr><td>fps</td><td>เพดานเฟรมต่อวินาที</td></tr>
+      <tr><td>orbit</td><td>เปิด/ปิดกล้องแกว่งอัตโนมัติ (ลากเมาส์หมุนเองได้เสมอ)</td></tr>
+      <tr><td>● rec</td><td>บันทึกวิดีโอหน้าจอของหน้าต่างนี้</td></tr>
+      <tr><td>⛶</td><td>เต็มจอ</td></tr>
+    </table></div>
+
+    <h3>พฤติกรรมประหยัดเครื่อง</h3>
+    <p>หน้าต่าง live เล่น snapshot แต่ละอันหนึ่งรอบแล้ว "หลับ" (ข้อความ 💤 IDLE) จน eval ถัดไปมาถึงหรือขยับเมาส์ ย่อหน้าต่างไว้ก็หยุดวาด และหยุดหลังกด pause ไว้ 8 วินาที</p>
+  </section>
+
+  <!-- ============================ 2. looks ============================ -->
+  <section>
+    <div class="eyebrow">2 · look</div>
+    <h2>analysis กับ showcase: ภาพเดียวกัน คนละงาน</h2>
+    <div class="tw"><table>
+      <tr><th></th><th>analysis</th><th>showcase</th></tr>
+      <tr><td>ธีม</td><td>ตามที่ตั้งในแอป (Clear Liquid สว่าง / Deep Glass มืด)</td><td>บังคับมืดเสมอ</td></tr>
+      <tr><td>มุมกล้อง</td><td>เฉียงจากหน้าซ้าย เห็นชั้น input เป็นตาราง 10 แถว</td><td>มองตรงจากด้านหน้า เรียงซ้ายไปขวาแบบรูปในตำรา ชั้น input กางเป็นตารางหน้า tower</td></tr>
+      <tr><td>hidden layer</td><td>sorted (แบ่งกลุ่มตาม action)</td><td>คอลัมน์จุด</td></tr>
+      <tr><td>สีเส้นเชื่อม</td><td>ส้ม = บวก, ฟ้า = ลบ</td><td>ส้มสีเดียว (ทิ้งข้อมูลทิศทางโดยตั้งใจ)</td></tr>
+      <tr><td>จำนวนเส้น</td><td>ตาม mode (4 / 8)</td><td>16</td></tr>
+      <tr><td>TOP DRIVERS · ป้ายกลุ่ม action</td><td>มี</td><td>ซ่อน</td></tr>
+      <tr><td>กล้องแกว่ง</td><td>ปานกลาง</td><td>แพนช้า</td></tr>
+      <tr><td>ใช้เมื่อ</td><td>อยากรู้ว่าโมเดลใช้อะไรตัดสินใจ</td><td>อัดคลิป / ขึ้นจอโชว์</td></tr>
+    </table></div>
+    <p class="cap">ในแอป เมนูข้างปุ่ม Open Visual มีตัวเลือก "Showcase (for clips)" = Cinematic + showcase ในคลิกเดียว</p>
+  </section>
+
+  <!-- ============================ 3. dashboard ============================ -->
+  <section>
+    <div class="eyebrow">3 · Dashboard</div>
+    <h2>แผงผล eval ทุกครั้ง ไม่วาด 3D</h2>
+    <p>ใช้ข้อมูลจาก eval replay (ชุด Validation, policy แบบ greedy) อ่านจากสรุปของทุก eval ใน <code>index.json</code> จึงเบามาก วาดใหม่เฉพาะเมื่อ eval ใหม่มาถึง</p>
+    <h3>KPI 8 ช่อง (ของ eval ที่เลือก)</h3>
+    <dl>
+      <dt>STEP</dt><dd>step ที่ eval นั้นเกิด</dd>
+      <dt>EVAL REWARD · BEST REWARD</dt><dd>reward รวมของ eval นี้ และค่าดีที่สุดที่เคยได้</dd>
+      <dt>EQUITY · MAX DD</dt><dd>equity ปลาย replay และ drawdown ลึกสุด</dd>
+      <dt>TRADES · WIN RATE · AVG TRADE</dt><dd>จำนวนไม้ อัตราชนะ และกำไรเฉลี่ยต่อไม้</dd>
+    </dl>
+    <h3>การ์ด 6 ใบ</h3>
+    <ol class="parts">
+      <li><b>LEARNING CURVE</b> — eval reward ต่อ eval ดูแนวโน้มว่ายังขึ้นอยู่หรือแบนแล้ว</li>
+      <li><b>ACTION MIX</b> — สัดส่วนแท่งที่เป็น HOLD/BUY/SELL/CLOSE ในแต่ละ eval ถ้ากลายเป็นสีเดียวแปลว่า policy ล้มไปทางใดทางหนึ่ง</li>
+      <li><b>EQUITY ON THE SLICE</b> — เส้น equity ของ "ทุก" eval ซ้อนกัน สีทอง = ล่าสุด เห็นได้ว่าเก่งขึ้นหรือแค่แกว่ง</li>
+      <li><b>REPLAY</b> — กราฟแท่งเทียนพร้อมเทรดของ eval ที่เลือก</li>
+      <li><b>NEURON ACTIVITY</b> — heatmap neuron × แท่ง (ส้ม +, ฟ้า −) ของแต่ละ layer</li>
+      <li><b>LAST TRADES</b> — ตารางไม้ล่าสุดของ eval ที่เลือก</li>
+    </ol>
+  </section>
+
+  <!-- ============================ 4. monitor ============================ -->
+  <section>
+    <div class="eyebrow">4 · Monitor (ค่าเริ่มต้นของแอป)</div>
+    <h2>ตอบคำถามเดียว: หยุดหรือเทรนต่อ?</h2>
+    <p>ทุกตัวเลขมาจากไฟล์ที่ตัวเทรนเขียนเองหลัง "ทุก" rollout (<code>monitor.json</code>) และหลังทุก eval (<code>index.json</code>, <code>stability.json</code>, <code>episodes.json</code>) ทุก verdict แสดงตัวเลขและเกณฑ์ที่ใช้ตัดสินไว้ในชิป ไม่มีกล่องดำ</p>
+
+    <h3>การ์ด VERDICTS (รวม 20 rollout ล่าสุด)</h3>
+    <div class="tw"><table>
+      <tr><th>คำถาม</th><th>ชิปที่เป็นไปได้</th><th>เกณฑ์</th></tr>
+      <tr><td>ใช้สัญญาณ (entry gate) ไหม</td><td><span class="pill good">FILTERS THE SIGNAL</span> <span class="pill warn">TAKES ALMOST NOTHING</span> <span class="pill warn">NO FILTERING</span> <span class="pill grey">NO SIGNAL BARS YET</span></td><td>รับสัญญาณ &lt; 5% = แทบไม่เทรด · &gt; 90% = gate ตัดสินแทนทั้งหมด (เฉพาะ run ที่มี gate)</td></tr>
+      <tr><td>เทรดถี่เกินไปไหม</td><td><span class="pill good">TRADE FREQUENCY OK</span> <span class="pill warn">TRADES OFTEN</span> <span class="pill bad">OVER-TRADING</span></td><td>&gt; 6 ไม้ต่อ 100 แท่ง = ถี่ · ถี่และถือเฉลี่ย &lt; 4 แท่ง = over-trading</td></tr>
+      <tr><td>ใครเป็นคนปิดไม้</td><td><span class="pill good">AGENT-TIMED EXITS</span> <span class="pill warn">EXITS BY TIMEOUT</span> <span class="pill warn">EXITS BY STOP</span></td><td>&gt; 50% ปิดเพราะครบ max_hold = โมเดลไม่ได้ตัดสินใจออก · &gt; 60% โดน stop</td></tr>
+      <tr><td>เลือกสัญญาณเก่งไหม</td><td><span class="pill good">SELECTION HELPS</span> <span class="pill bad">SELECTION HURTS</span> <span class="pill grey">SELECTION ≈ RANDOM</span> <span class="pill grey">SELECTION: COLLECTING</span></td><td>เทียบกฎคงที่ (เข้าทุกสัญญาณ ออกหลัง 4 แท่ง) บนแท่งที่โมเดล "รับ" กับที่ "ข้าม" ต่างกัน &gt; ±2 bp ต้องมีอย่างละ ≥ 30 แท่ง</td></tr>
+      <tr><td>จังหวะออกดีกว่ากฎไหม</td><td><span class="pill good">EXIT TIMING ADDS</span> <span class="pill bad">EXIT TIMING LOSES</span> <span class="pill grey">EXIT TIMING ≈ RULE</span></td><td>pnl จริงของโมเดล เทียบกฎคงที่บนไม้เดียวกัน ต่างกัน &gt; ±2 bp ต้อง ≥ 30 ไม้</td></tr>
+      <tr><td>ยังสำรวจอยู่ไหม</td><td><span class="pill warn">EXPLORATION COLLAPSED EARLY</span> <span class="pill warn">STILL NEAR-RANDOM</span></td><td>entropy &lt; 0.25 nats ก่อน 30% ของการเทรน = ล้มเร็ว · entropy &gt; 85% ของค่าสูงสุดหลัง 70% = ยังสุ่ม</td></tr>
+      <tr><td>มีกำไรบนชุด Train ไหม</td><td><span class="pill good">TRAIN PF x.xx</span> <span class="pill grey">TRAIN PF x.xx</span> <span class="pill bad">TRAIN PF x.xx</span></td><td>&gt; 1.2 เขียว · &lt; 0.9 แดง (in-sample และยังสุ่มอยู่ จึงเป็นขอบล่าง)</td></tr>
+    </table></div>
+    <p class="note">verdict เรื่องการเลือกสัญญาณและจังหวะออกพลิกได้ในช่วงแรก (เคยเห็น "helps" ที่ 6 rollout กลายเป็น "random" ที่ 13) อ่านหลังมีข้อมูลครบเกณฑ์เท่านั้น</p>
+
+    <h3>TRAIN vs VALIDATION (หลังทุก eval)</h3>
+    <p>เดิน policy แบบ greedy บน 2 ช่วงที่ยาวเท่ากันและคงที่: ท้ายชุด Train (in-sample) กับชุด Validation (ไม่เคยเห็น) เทียบ return %, PF, win rate, จำนวนไม้, reward ต่อแท่ง ชิปสรุปจาก 4 eval ล่าสุด: <b>GAP WIDENING — OVERFIT?</b> (Train ขึ้น Validation ลง) · <b>GENERALISING</b> (Validation ขึ้น) · <b>VALIDATION PEAKED AT EVAL k</b> (ดีสุดผ่านไปแล้ว ≥ 3 eval) · <b>MEMORISING</b> (ห่างกัน ≥ 5 pp และ Validation ≤ 0) · <b>NO CLEAR TREND</b></p>
+
+    <h3>DECISION STABILITY</h3>
+    <p>แท่ง Validation ชุดเดิมในทุก eval: heatmap แถว = eval, คอลัมน์ = แท่ง, สี = action ที่เลือก, ความสว่าง = ความน่าจะเป็น KPI: <b>CHANGED MIND</b> (% การตัดสินใจที่ต่างจาก eval ก่อน), <b>SETTLED SINCE</b> (eval ที่หลังจากนั้นเปลี่ยนไม่เกิน 10% ตลอด), <b>CONFIDENCE</b>, <b>ENTROPY</b>, <b>IN A POSITION</b> ด้านล่างมี slider เลือก eval แล้วดูราคาที่ระบายสีด้วย P(buy) / P(sell) ของ eval นั้น</p>
+
+    <h3>TRAINING DATA COVERAGE</h3>
+    <p>แถบข้อมูล Train เก่า→ใหม่ สีเข้ม = ถูกเล่นบ่อย แดง = ไม่เคยถูกเล่น ขีดบน = จุดเริ่มแต่ละ episode กรอบทอง = episode ที่กำลังเล่น KPI: COVERED, NEVER PLAYED, PLAYS PER BAR, FIRST 10%, LAST 10%, EPISODES ใช้ตอบว่าตั้ง step พอหรือยัง (ช่วงต้นและท้าย Train ถูกเล่นน้อยเสมอเพราะ episode สุ่มจุดเริ่ม)</p>
+
+    <h3>LAST 20 ROLLOUTS · pooled</h3>
+    <dl>
+      <dt>TRADES</dt><dd>ไม้ที่เปิดและปิดใน 20 rollout ล่าสุด</dd>
+      <dt>ENTRIES / 100 BARS</dt><dd>ความถี่การเข้า</dd>
+      <dt>MEAN HOLD</dt><dd>ถือเฉลี่ยกี่แท่ง</dd>
+      <dt>PNL / TRADE</dt><dd>กำไรเฉลี่ยต่อไม้ (bp) หลังหัก spread และ commission</dd>
+      <dt>PF (TRAIN)</dt><dd>profit factor ของ policy ที่ยังสุ่มลองอยู่</dd>
+      <dt>ENTROPY</dt><dd>ความสุ่มของ action ที่สุ่มได้ (nats)</dd>
+      <dt>REWARD Σ</dt><dd>reward รวมของ rollout ล่าสุด</dd>
+      <dt>ACCEPTANCE</dt><dd>สัดส่วนสัญญาณที่โมเดลรับ (เฉพาะ run ที่มี gate)</dd>
+    </dl>
+
+    <h3>COUNTERFACTUAL และ EXITS & ACTIONS</h3>
+    <p><b>COUNTERFACTUAL</b>: บนแท่งเดียวกัน ถ้าใช้กฎคงที่ (เข้าทุกสัญญาณ ออกหลัง 4 แท่ง ไม่มี stop) จะได้เท่าไร แยกเป็นแท่งที่โมเดลรับกับที่ข้าม เป็นฐานของ verdict เรื่องการเลือกสัญญาณ (ต้องมี entry gate) <b>EXITS & ACTIONS</b>: แถบสัดส่วนเหตุที่ไม้ปิด (signal / max_hold / stop / end) และสัดส่วน action ที่สุ่มได้</p>
+
+    <h3>sparkline 6 ใบ (ต่อ rollout)</h3>
+    <p>ENTRIES PER 100 BARS · MEAN HOLD · ACCEPTANCE % · AGENT PNL PER TRADE · SELECTION EDGE (accepted − skipped) · ACTION ENTROPY เอาไว้ดูทิศทางของค่าใน KPI ด้านบนว่ากำลังดีขึ้นหรือแย่ลง</p>
+
+    <h3>WHAT DRIVES THE DECISIONS และ WHICH BARS OF THE WINDOW MATTER</h3>
+    <p>ซ้าย: feature ที่มีส่วนแบ่ง |gradient × input| มากสุด (รวมทุก lag) เฉลี่ยจาก 20 rollout ล่าสุด เทา = ไม่ติด top-10 ของ rollout ล่าสุด ขวา: ส่วนแบ่งต่อ lag ของ window ถ้าแบนทุกแถบ = โมเดลไม่ได้ใช้ประโยชน์จากความยาว window ถ้าพุ่งที่ lag 0 = ตัดสินใจจากแท่งล่าสุด</p>
+
+    <h3>BEHAVIOUR OVER TRAINING · TRAINING ROLLOUTS · EVALUATIONS</h3>
+    <p>สองการ์ดแรกเป็นกราฟเส้นต่อ eval และต่อ rollout (ค่าเฉลี่ย 5 rollout) ของ run นี้แบบเส้นหนา และซ้อน run พี่น้องที่ชื่อลงท้าย <code>_s&lt;seed&gt;</code> แบบเส้นบางเพื่อเทียบ seed การ์ดสุดท้ายเป็นตาราง eval ล่าสุด 8 ครั้ง: step, reward, trades, equity, max dd</p>
+  </section>
+
+  <!-- ============================ 5. which ============================ -->
+  <section>
+    <div class="eyebrow">5 · ใช้โหมดไหนเมื่อไร</div>
+    <h2>ทางลัดในการเลือก</h2>
+    <div class="cols">
+      <div><p><b>กำลังเทรนและอยากรู้ว่าควรหยุดไหม</b> → Monitor (ค่าเริ่มต้น) ดูชิป VERDICTS กับการ์ด TRAIN vs VALIDATION</p><p><b>อยากเห็นว่าโมเดล "คิด" อะไรที่แท่งหนึ่ง</b> → Lite + analysis ชี้ TOP DRIVERS และสีชั้น input</p></div>
+      <div><p><b>อยากดูผลทุก eval แบบรวดเดียว</b> → Dashboard (EQUITY ON THE SLICE, LEARNING CURVE)</p><p><b>อยากอัดคลิปหรือโชว์ขึ้นจอ</b> → Cinematic + showcase (หรือเลือก "Showcase (for clips)" ในแอป)</p></div>
+    </div>
+    <p class="note">ทุกโหมดเล่นซ้ำบนชุด Validation ซึ่งถูกใช้เลือก best model ซ้ำๆ ตัวเลขจึงดูดีเกินจริงได้ ผลที่เชื่อได้คือ backtest บนชุด Test ในหน้า Backtest</p>
+  </section>
+
+  <footer>อ้างอิงโค้ดจริง: <code>tools/viz/network3d.html</code> (3D, แถบควบคุม, look), <code>tools/viz/dashboard.js</code>, <code>tools/viz/monitor.js</code> (verdict rules), <code>tools/viz/snapshot.py</code> (ข้อมูลที่บันทึก) · สร้าง 2026-10-20</footer>
+</main>
+
+<script>
+(() => {
+  const W = {
+    lite: { light: true, cap: "Lite · analysis: ทุกแผงวิเคราะห์เปิดครบ วาดแบบประหยัด", zones: [
+      ["2%", "3%", "26%", "9%", "NEURAL TRADER<small>ชื่อ run · step · ช่วงวันที่</small>"], ["74%", "3%", "24%", "13%", "BAR · EQUITY · POSITION<small>TRADES · WIN RATE · CRITIC V(s)</small>", "hot"],
+      ["2%", "19%", "20%", "20%", "TOP DRIVERS<small>7 input + sparkline</small>"], ["25%", "22%", "14%", "26%", "INPUT<small>10 bars × 182 features</small>"],
+      ["42%", "18%", "28%", "20%", "ACTOR · L1 L2 (sorted)"], ["42%", "41%", "28%", "20%", "CRITIC · L1 L2"],
+      ["73%", "20%", "14%", "14%", "HOLD / BUY / SELL / CLOSE %<small>กรอบ = ที่เลือก</small>"], ["73%", "46%", "10%", "7%", "V(s)"],
+      ["2%", "64%", "96%", "20%", "AGENT TRADES<small>แท่งเทียน · equity · จุดเข้าออก</small>"],
+      ["2%", "86%", "34%", "10%", "EVAL k/n · STEP<small>slider · sparkline · LIVE</small>"], ["42%", "88%", "56%", "9%", "source · mode · look · ❚❚ · speed · inputs · layers · synapses · fps · orbit · rec"] ] },
+    cine: { light: true, cap: "Cinematic · analysis: แผงเดียวกับ Lite แต่มีแสงเรือง (ธีมมืด), pulse, เส้น 8 เส้น, 30 fps", zones: [
+      ["2%", "3%", "26%", "9%", "NEURAL TRADER"], ["74%", "3%", "24%", "13%", "สถานะ ณ แท่ง", "hot"], ["2%", "19%", "20%", "20%", "TOP DRIVERS"], ["25%", "22%", "14%", "26%", "INPUT"],
+      ["42%", "18%", "28%", "20%", "ACTOR + pulse"], ["42%", "41%", "28%", "20%", "CRITIC + pulse"], ["73%", "20%", "14%", "14%", "OUTPUT %"], ["73%", "46%", "10%", "7%", "V(s)"],
+      ["2%", "64%", "96%", "20%", "AGENT TRADES + อนุภาคตอนเปิด/ปิดไม้"], ["2%", "86%", "34%", "10%", "timeline"], ["42%", "88%", "56%", "9%", "แถบควบคุม (+ glow ในธีมมืด)"] ] },
+    show: { light: false, cap: "Cinematic · showcase: ธีมมืด กล้องมองตรง คอลัมน์จุด เส้นสีเดียว 16 เส้น ซ่อน TOP DRIVERS", zones: [
+      ["2%", "3%", "26%", "9%", "NEURAL TRADER"], ["74%", "3%", "24%", "13%", "สถานะ ณ แท่ง", "hot"], ["14%", "24%", "18%", "28%", "INPUT กางเป็นตาราง"],
+      ["38%", "18%", "12%", "22%", "L1 · 128"], ["62%", "22%", "6%", "14%", "L2 · 64"], ["38%", "42%", "12%", "22%", "L1 · 128"], ["62%", "46%", "6%", "14%", "L2 · 64"],
+      ["73%", "20%", "14%", "14%", "OUTPUT % + กรอบ"], ["73%", "46%", "10%", "7%", "V(s)"], ["2%", "66%", "96%", "18%", "AGENT TRADES"], ["2%", "86%", "34%", "10%", "timeline"], ["42%", "88%", "56%", "9%", "แถบควบคุม"] ] },
+    dash: { light: true, cap: "Dashboard: ไม่มี 3D · KPI 8 ช่อง + การ์ด 6 ใบ วาดใหม่เมื่อมี eval ใหม่", zones: [
+      ["2%", "3%", "96%", "12%", "KPI: STEP · EVAL REWARD · BEST · EQUITY · MAX DD · TRADES · WIN RATE · AVG TRADE", "hot"],
+      ["2%", "18%", "47%", "24%", "LEARNING CURVE"], ["51%", "18%", "47%", "24%", "ACTION MIX"],
+      ["2%", "45%", "47%", "24%", "EQUITY ON THE SLICE<small>ทุก eval ซ้อนกัน</small>"], ["51%", "45%", "47%", "24%", "REPLAY<small>eval ที่เลือก</small>"],
+      ["2%", "72%", "47%", "24%", "NEURON ACTIVITY"], ["51%", "72%", "47%", "24%", "LAST TRADES"] ] },
+    mon: { light: true, cap: "Monitor: ไม่มี 3D · verdict + การ์ดวิเคราะห์ 17 ใบ (ยาว เลื่อนลงได้)", zones: [
+      ["2%", "3%", "96%", "11%", "VERDICTS<small>ชิปพร้อมตัวเลขและเกณฑ์</small>", "hot"],
+      ["2%", "16%", "96%", "11%", "TRAIN vs VALIDATION"], ["2%", "29%", "96%", "11%", "DECISION STABILITY<small>heatmap + slider</small>"],
+      ["2%", "42%", "96%", "10%", "TRAINING DATA COVERAGE"], ["2%", "54%", "96%", "8%", "LAST 20 ROLLOUTS · pooled"],
+      ["2%", "64%", "47%", "9%", "COUNTERFACTUAL"], ["51%", "64%", "47%", "9%", "EXITS & ACTIONS"],
+      ["2%", "75%", "96%", "7%", "sparkline × 6"], ["2%", "84%", "47%", "7%", "WHAT DRIVES THE DECISIONS"], ["51%", "84%", "47%", "7%", "WHICH BARS MATTER"],
+      ["2%", "93%", "96%", "5%", "BEHAVIOUR OVER TRAINING · TRAINING ROLLOUTS · EVALUATIONS ↓"] ] },
+  };
+  const wire = document.getElementById("wire"), cap = document.getElementById("wireCap"), btns = [...document.querySelectorAll(".tabs button")];
+  function show(m) {
+    const d = W[m]; wire.className = "wire" + (d.light ? " light" : ""); wire.innerHTML = "";
+    d.zones.forEach((z, i) => { const el = document.createElement("div"); el.className = "z" + (z[5] ? " " + z[5] : ""); el.dataset.n = i + 1;
+      el.style.left = z[0]; el.style.top = z[1]; el.style.width = z[2]; el.style.height = z[3]; el.innerHTML = z[4]; wire.appendChild(el); });
+    cap.textContent = d.cap; btns.forEach(b => b.setAttribute("aria-pressed", b.dataset.m === m ? "true" : "false"));
+  }
+  btns.forEach(b => b.onclick = () => show(b.dataset.m));
+  show("lite");
+})();
+</script>
+</body>
+</html>

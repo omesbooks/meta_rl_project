@@ -189,7 +189,8 @@ function liveDraw() {
   pts.forEach(([b, v], i) => i ? g.lineTo(X(b), Y(v)) : g.moveTo(X(b), Y(v))); g.stroke();
   const [lb, lv] = pts[pts.length - 1]; g.fillStyle = accent; g.beginPath(); g.arc(X(lb), Y(lv), 3.5 * (devicePixelRatio || 1), 0, Math.PI * 2); g.fill();
   g.fillStyle = dim; g.font = `${11 * (devicePixelRatio || 1)}px sans-serif`; g.textAlign = "right";
-  g.fillText(hi.toFixed(0), x0 - 6, y0 + 10); g.fillText(lo.toFixed(0), x0 - 6, y1); g.fillText(L.initial.toFixed(0), x0 - 6, yI + 4);
+  g.fillText(hi.toFixed(0), x0 - 6, y0 + 10); g.fillText(lo.toFixed(0), x0 - 6, y1);
+  if (Math.min(Math.abs(yI - y0 - 6), Math.abs(y1 - yI - 4)) > 14 * (devicePixelRatio || 1)) g.fillText(L.initial.toFixed(0), x0 - 6, yI + 4);   // skip when it would overlap hi/lo
   g.textAlign = "left"; g.fillStyle = fg; g.fillText(String(L.t0).slice(0, 16), x0, H - 8); g.textAlign = "right"; g.fillText(String(L.t1).slice(0, 16), x1, H - 8);
   g.textAlign = "center"; g.fillStyle = dim; g.fillText(`equity · live · ${lb.toLocaleString()} / ${L.bars.toLocaleString()} bars`, (x0 + x1) / 2, y0 + 10);
 }

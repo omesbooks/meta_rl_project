@@ -49,7 +49,7 @@ async function btReport(model) {
   BT.shown = r; btRepSrc();
   const c = r.cards;
   $("bt_cards").innerHTML = card("WIN RATE", c.win_rate) + card("PROFIT FACTOR", c.profit_factor) + card("RETURN", c.return) + card("MAX DD", c.max_dd);
-  $("bt_equity").innerHTML = r.zero_trades ? `<div class="empty">0 trades — no equity chart</div>` : r.equity ? `<img src="${r.equity}" alt="equity curve">` : `<div class="empty">no equity image stored for this run</div>`;
+  eqImgSlot(model).innerHTML = r.zero_trades ? `<div class="empty">0 trades — no equity chart</div>` : r.equity ? `<img src="${r.equity}" alt="equity curve">` : `<div class="empty">no equity image stored for this run</div>`;
   $("bt_mcimg").innerHTML = r.mc ? `<img src="${r.mc}" alt="Monte Carlo fan chart">` : "";
   $("bt_report").innerHTML = "<table>" + r.rows.map(([k, v]) => k === "" && v === "" ? `<tr class="sep"><td colspan="2"></td></tr>` :
     `<tr class="${v.startsWith("->") ? "verdict" : ""}"><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("") + "</table>";
@@ -66,18 +66,95 @@ function btRepSrc() {
     (r.status && r.status !== "complete" ? ` · status: ${r.status}` : "") + (running ? " · previous run — a new backtest is running, the panel updates when it finishes" : "");
   el.className = "r meta" + (running ? " warn" : "");
 }
+// the equity area holds an optional live block (candles + markers + live equity, kept after the run for the
+// model it was made for) and the stored PNG slot below it
+function eqImgSlot(model) {
+  const eq = $("bt_equity");
+  let wrap = $("bt_live_wrap");
+  if (wrap && wrap.dataset.model !== model) { wrap.remove(); wrap = null; }
+  let slot = $("bt_equity_img");
+  if (!slot) { eq.innerHTML = ""; if (wrap) eq.appendChild(wrap); slot = document.createElement("div"); slot.id = "bt_equity_img"; slot.className = "eq"; slot.style.width = "100%"; eq.appendChild(slot); }
+  return slot;
+}
 // ---- live equity while backtest_live.py runs (BT_LIVE lines, ~150 per run; nothing is stored until the run ends)
 const fmtPct = v => (v >= 0 ? "+" : "") + (100 * v).toFixed(2) + "%";
 function liveStart(s) {
-  BT.live = { initial: s.initial, bars: s.bars, pts: [], last: null, t0: "", t1: "", raf: 0 };
+  BT.live = { initial: s.initial, bars: s.bars, pts: [], last: null, t0: "", t1: "", raf: 0,
+              ohlc: null, idx: new Map(), opens: [], trades: [], cursor: -1, follow: true, view: 140 };
   $("bt_cards").innerHTML = card("WIN RATE", ["–", "dim"]) + card("PROFIT FACTOR", ["–", "dim"]) + card("RETURN", ["–", "dim"]) + card("MAX DD", ["–", "dim"]);
-  $("bt_equity").innerHTML = `<canvas id="bt_live" width="900" height="220" style="width:100%;max-width:100%;border-radius:12px"></canvas>`;
-  $("bt_mcimg").innerHTML = ""; $("bt_report").innerHTML = `<div class="empty">live run · the full report (realism, baseline, Monte Carlo) appears when it finishes</div>`; $("bt_report_txt").textContent = "";
+  $("bt_equity").innerHTML = `<div id="bt_live_wrap" data-model="${esc(BT.runModel)}" style="width:100%">
+    <canvas id="bt_candles" width="900" height="260" style="width:100%;max-width:100%;border-radius:12px;display:block"></canvas>
+    <div class="ctl" style="display:flex;align-items:center;gap:10px;margin:6px 0 8px;font-size:12px;color:var(--dim)">
+      <span id="bt_cd_lab">loading bars…</span><input type="range" id="bt_cd_pos" min="0" max="0" value="0" style="flex:1;accent-color:var(--accent)">
+      <button type="button" class="d" id="bt_cd_follow" style="padding:4px 10px;font-size:12px">follow</button></div>
+    <canvas id="bt_live" width="900" height="220" style="width:100%;max-width:100%;border-radius:12px;display:block"></canvas></div>`;
+  $("bt_cd_pos").oninput = e => { const L = BT.live; if (!L) return; L.follow = +e.target.value >= L.cursor; candlesDraw(+e.target.value); };
+  $("bt_cd_follow").onclick = () => { const L = BT.live; if (!L) return; L.follow = true; $("bt_cd_pos").value = String(L.cursor); candlesDraw(); };
+  $("bt_mcimg").innerHTML = ""; $("bt_report").innerHTML = `<div class="empty">live run · the full report (realism, baseline, Monte Carlo) appears when it finishes</div>`;
+  $("bt_report_txt").textContent = "the text report is written when the run finishes";
+  const L = BT.live;
+  api().backtest_bars($("bt_csv").value, $("bt_start").value).then(b => {
+    if (BT.live !== L) return;
+    if (!b.ok) { $("bt_cd_lab").textContent = "no bars: " + b.error; return; }
+    L.ohlc = b; b.ts.forEach((t, i) => L.idx.set(t, i));
+    $("bt_cd_pos").max = String(b.ts.length - 1); candlesDraw();
+  });
   const el = $("bt_rep_src"); el.textContent = `live · ${BT.runModel} · bar 0 / ${s.bars.toLocaleString()}`; el.className = "r meta ok";
+}
+function liveTrade(t) {
+  const L = BT.live; if (!L) return;
+  const i0 = L.idx.get(t.open_time), i1 = L.idx.get(t.exit_time);
+  L.trades.push({ i0, i1, ...t }); L.opens = L.opens.filter(o => !(o.time === t.open_time && o.side === t.side));
+  if (L.follow && !L.raf) L.raf = requestAnimationFrame(() => { L.raf = 0; liveDraw(); candlesDraw(); });
+}
+function liveOpen(o) { const L = BT.live; if (!L) return; L.opens.push({ i: L.idx.get(o.time), ...o }); }
+// candles of the backtest range with the trades on them (MT visual-tester style): ▲ long entry, ▼ short entry,
+// dotted line to the exit square (green = won, red = lost); an open position runs to the live cursor.
+function candlesDraw(endAt) {
+  const L = BT.live, cv = $("bt_candles"); if (!L || !cv || !L.ohlc) return;
+  const B = L.ohlc, n = B.ts.length, end = Math.min(n - 1, Math.max(0, endAt != null ? endAt : L.cursor >= 0 ? L.cursor : L.view - 1));
+  const a = Math.max(0, end - L.view + 1), m = end - a + 1;
+  const dpr = devicePixelRatio || 1, W = cv.width = Math.max(300, cv.clientWidth * dpr), H = cv.height = 260 * dpr;
+  const g = cv.getContext("2d"), cs = getComputedStyle(document.body), col = k => cs.getPropertyValue(k).trim();
+  const fg = col("--fg") || "#111", dim = col("--dim") || "#888", line = col("--line") || "#ccc", green = col("--green") || "#1c8a55", red = col("--red") || "#c24135", accent = col("--accent") || "#245b8f";
+  g.clearRect(0, 0, W, H);
+  const x0 = 10 * dpr, x1 = W - 62 * dpr, y0 = 16 * dpr, y1 = H - 24 * dpr, bw = (x1 - x0) / m;
+  let lo = Infinity, hi = -Infinity;
+  for (let i = a; i <= end; i++) { lo = Math.min(lo, B.l[i]); hi = Math.max(hi, B.h[i]); }
+  const pad = (hi - lo || 1) * 0.06; lo -= pad; hi += pad;
+  const X = i => x0 + (i - a + 0.5) * bw, Y = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
+  g.strokeStyle = line; g.lineWidth = 1; [0.25, 0.5, 0.75].forEach(f => { const y = y0 + (y1 - y0) * f; g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke(); });
+  for (let i = a; i <= end; i++) {
+    const up = B.c[i] >= B.o[i], c = up ? green : red; g.strokeStyle = g.fillStyle = c; g.lineWidth = Math.max(1, dpr);
+    g.beginPath(); g.moveTo(X(i), Y(B.h[i])); g.lineTo(X(i), Y(B.l[i])); g.stroke();
+    const t = Y(Math.max(B.o[i], B.c[i])), b = Y(Math.min(B.o[i], B.c[i])); g.fillRect(X(i) - bw * 0.3, t, Math.max(1, bw * 0.6), Math.max(1, b - t));
+  }
+  const tri = (x, y, upward, c) => { g.fillStyle = c; g.beginPath(); const s = 5 * dpr; if (upward) { g.moveTo(x, y); g.lineTo(x - s, y + s * 1.6); g.lineTo(x + s, y + s * 1.6); } else { g.moveTo(x, y); g.lineTo(x - s, y - s * 1.6); g.lineTo(x + s, y - s * 1.6); } g.closePath(); g.fill(); };
+  const vis = i => i != null && i >= a && i <= end;
+  for (const t of L.trades) {
+    if (t.i0 == null || t.i1 == null || (t.i1 < a) || (t.i0 > end)) continue;
+    const c = t.pnl >= 0 ? green : red;
+    g.strokeStyle = c; g.setLineDash([3 * dpr, 3 * dpr]); g.lineWidth = Math.max(1, dpr); g.beginPath(); g.moveTo(X(Math.max(t.i0, a)), Y(t.entry)); g.lineTo(X(Math.min(t.i1, end)), Y(t.exit)); g.stroke(); g.setLineDash([]);
+    if (vis(t.i0)) tri(X(t.i0), t.side === "long" ? Y(B.l[t.i0]) + 3 * dpr : Y(B.h[t.i0]) - 3 * dpr, t.side === "long", t.side === "long" ? green : red);
+    if (vis(t.i1)) { g.fillStyle = c; g.fillRect(X(t.i1) - 3.5 * dpr, Y(t.exit) - 3.5 * dpr, 7 * dpr, 7 * dpr); }
+  }
+  for (const o of L.opens) {
+    if (o.i == null || o.i > end) continue;
+    if (vis(o.i)) tri(X(o.i), o.side === "long" ? Y(B.l[o.i]) + 3 * dpr : Y(B.h[o.i]) - 3 * dpr, o.side === "long", o.side === "long" ? green : red);
+    g.strokeStyle = accent; g.setLineDash([2 * dpr, 4 * dpr]); g.beginPath(); g.moveTo(X(Math.max(o.i, a)), Y(o.price)); g.lineTo(X(end), Y(o.price)); g.stroke(); g.setLineDash([]);
+  }
+  if (L.cursor >= a && L.cursor <= end) { g.strokeStyle = accent; g.globalAlpha = 0.5; g.beginPath(); g.moveTo(X(L.cursor), y0); g.lineTo(X(L.cursor), y1); g.stroke(); g.globalAlpha = 1; }
+  g.fillStyle = dim; g.font = `${11 * dpr}px sans-serif`; g.textAlign = "left";
+  g.fillText(hi.toFixed(hi > 100 ? 2 : 5), x1 + 4 * dpr, y0 + 8 * dpr); g.fillText(lo.toFixed(lo > 100 ? 2 : 5), x1 + 4 * dpr, y1);
+  g.fillStyle = fg; g.fillText(B.ts[a].slice(0, 16), x0, H - 8 * dpr); g.textAlign = "right"; g.fillText(B.ts[end].slice(0, 16), x1, H - 8 * dpr);
+  const nOpen = L.opens.length, won = L.trades.filter(t => t.pnl >= 0).length;
+  $("bt_cd_lab").textContent = `${m} bars · ${L.trades.length} closed (${won} won) · ${nOpen} open${L.follow ? " · following" : ""}`;
+  $("bt_cd_follow").style.display = L.follow ? "none" : "";
 }
 function livePoint(p) {
   const L = BT.live; if (!L) return;
   L.pts.push([p.bar, p.equity]); L.last = p; if (!L.t0) L.t0 = p.time; L.t1 = p.time;
+  const ci = L.idx.get(p.time); if (ci != null) { L.cursor = ci; if (L.follow) $("bt_cd_pos").value = String(ci); }
   const ret = p.balance / L.initial - 1, pf = p.gross_loss > 0 ? p.gross_win / p.gross_loss : (p.gross_win > 0 ? Infinity : NaN), wr = p.trades ? p.wins / p.trades : NaN;
   $("bt_cards").innerHTML =
     card("WIN RATE", [isNaN(wr) ? "–" : (100 * wr).toFixed(1) + "%", wr >= 0.5 ? "ok" : "dim"]) +
@@ -85,7 +162,7 @@ function livePoint(p) {
     card("RETURN", [fmtPct(ret), ret >= 0 ? "ok" : "bad"]) + card("MAX DD", [fmtPct(p.max_dd), p.max_dd > -0.1 ? "ok" : "bad"]);
   $("bt_rep_src").textContent = `live · ${BT.runModel} · bar ${p.bar.toLocaleString()} / ${p.bars.toLocaleString()} · ${p.trades} trades · ${p.time}`;
   $("bt_status").textContent = `Backtesting ${BT.runModel}… ${Math.round(100 * p.bar / p.bars)}%`;
-  if (!L.raf) L.raf = requestAnimationFrame(() => { L.raf = 0; liveDraw(); });
+  if (!L.raf) L.raf = requestAnimationFrame(() => { L.raf = 0; liveDraw(); if (L.follow) candlesDraw(); });
 }
 function livePhase(ph) {
   const txt = ph.name === "baseline" ? `random-agent baseline ${ph.k} / ${ph.n}` : ph.name === "mc" ? `Monte Carlo · ${ph.n.toLocaleString()} shuffles` : ph.name;
@@ -122,10 +199,12 @@ function onBacktestEvent(ev) {
     BT.runModel = ev.model; BT.running = ev.kind === "backtest"; BT.live = null; btRepSrc(); logLine("$ " + ev.command, "cmd", "bt_log");
     $("bt_status").textContent = ev.kind === "chart" ? "Generating chart…" : `Backtesting ${ev.model}…`;
   } else if (ev.type === "line") {
-    if (ev.bt) { if (ev.bt.start) liveStart(ev.bt.start); else if (ev.bt.point) livePoint(ev.bt.point); else if (ev.bt.phase) livePhase(ev.bt.phase); return; }
+    if (ev.bt) { if (ev.bt.start) liveStart(ev.bt.start); else if (ev.bt.point) livePoint(ev.bt.point); else if (ev.bt.phase) livePhase(ev.bt.phase);
+                 else if (ev.bt.open) liveOpen(ev.bt.open); else if (ev.bt.trade) liveTrade(ev.bt.trade); return; }
     logLine(ev.line, ev.cls, "bt_log");
   } else if (ev.type === "done") {
-    setBusy(false); BT.running = false; BT.live = null; btRepSrc();
+    setBusy(false); BT.running = false; BT.done = BT.live; BT.live = null; btRepSrc();
+    if (BT.done) { BT.live = BT.done; BT.live.follow = false; const c = $("bt_live"); if (c) c.remove(); candlesDraw(BT.live.cursor); }   // chart stays scrollable
     const ok = ev.rc === 0;
     logLine(ev.cancelled ? "[stop] cancelled" : ok ? "✓ Done" : `✗ Failed (exit ${ev.rc})`, ok ? "success" : "error", "bt_log");
     $("bt_status").textContent = ev.cancelled ? "Stopped" : ok ? (ev.kind === "chart" ? "✓ Chart ready — Open Chart" : "✓ Backtest complete") : `✗ Failed (exit ${ev.rc})`;
@@ -138,7 +217,7 @@ window.rlbacktest = {
   async init() {
     window.rlweb.handlers.backtest = onBacktestEvent;
     $("bt_mode").onchange = btMode;
-    addEventListener("resize", () => BT.live && liveDraw());
+    addEventListener("resize", () => { if (BT.live) { liveDraw(); candlesDraw(+($("bt_cd_pos") || {}).value || undefined); } });
     $("bt_model").onchange = () => btReport($("bt_model").value);
     $("bt_csv").onchange = () => { btRange(); btAutoM1(); };
     $("bt_m1").onchange = () => { BT.m1Auto = null; btM1Hint(); };   // explicit choice: kept until the dataset changes

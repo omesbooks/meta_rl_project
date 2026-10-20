@@ -17,6 +17,8 @@ _VIZ = re.compile(r"VIZ_(SNAPSHOT|ROLLOUT)\s+(\d+)\s+(\d+)\s+(.+?)\s*$")
 _BT_START = re.compile(r"^BT_LIVE_START (\d+) ([-\d.]+)\s*$")
 _BT_LIVE = re.compile(r"^BT_LIVE (\d+) (\d+) ([-\d.]+) ([-\d.]+) (\d+) (\d+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ?(.*?)\s*$")
 _BT_PHASE = re.compile(r"^BT_PHASE (\w+) (\d+) (\d+)\s*$")
+_BT_OPEN = re.compile(r"^BT_OPEN (long|short) ([-\d.]+) (.+?)\s*$")
+_BT_TRADE = re.compile(r"^BT_TRADE (long|short) ([-\d.]+) ([-\d.]+) ([-\d.]+) (\S+) (.+?) \| (.+?)\s*$")
 
 
 def classify(line):
@@ -102,6 +104,14 @@ def backtest_live(line):
     m = _BT_PHASE.match(line)
     if m:
         return {"phase": {"name": m.group(1), "k": int(m.group(2)), "n": int(m.group(3))}}
+    m = _BT_OPEN.match(line)
+    if m:
+        return {"open": {"side": m.group(1), "price": float(m.group(2)), "time": m.group(3)}}
+    m = _BT_TRADE.match(line)
+    if m:
+        g = m.groups()
+        return {"trade": {"side": g[0], "entry": float(g[1]), "exit": float(g[2]), "pnl": float(g[3]), "reason": g[4],
+                          "open_time": g[5], "exit_time": g[6]}}
     return None
 
 

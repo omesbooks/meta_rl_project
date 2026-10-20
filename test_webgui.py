@@ -396,3 +396,20 @@ def test_backtest_live_lines_become_page_events():
     assert logparse.event("BT_PHASE baseline 3 20", "backtest")["bt"] == {"phase": {"name": "baseline", "k": 3, "n": 20}}
     assert "bt" not in logparse.event("[backtest] starting on 1234 bars ...", "backtest")
     assert "bt" not in logparse.event("BT_LIVE 1 2 3", "train")          # other pages ignore them
+
+
+def test_backtest_trade_lines_and_bars_feed_the_live_candle_chart(tmp_path):
+    ev = logparse.event("BT_OPEN long 150.12345 2025-09-26 04:00:00", "backtest")
+    assert ev["bt"] == {"open": {"side": "long", "price": 150.12345, "time": "2025-09-26 04:00:00"}}
+    ev = logparse.event("BT_TRADE short 150.10000 149.80000 25.50 tp 2025-09-26 04:00:00 | 2025-09-27 12:00:00", "backtest")
+    t = ev["bt"]["trade"]
+    assert (t["side"], t["entry"], t["exit"], t["pnl"], t["reason"], t["open_time"], t["exit_time"]) == \
+        ("short", 150.1, 149.8, 25.5, "tp", "2025-09-26 04:00:00", "2025-09-27 12:00:00")
+    # bars of the backtest range, timestamps normalised to the format the BT_* lines use
+    import pandas as pd
+    df = pd.DataFrame({"timestamp": pd.date_range("2024-01-01", periods=10, freq="4h").strftime("%Y.%m.%d %H:%M"),
+                       "open": range(10), "high": range(1, 11), "low": range(10), "close": range(10), "f1": range(10)})
+    df.to_csv(tmp_path / "bars.csv", index=False)
+    b = Api(tmp_path).backtest_bars("bars.csv", "0.5")
+    assert b["ok"] and b["ts"][0] == "2024-01-01 20:00:00" and len(b["ts"]) == 5 and b["h"][0] == 6 and "f1" not in b
+    assert Api(tmp_path).backtest_bars("missing.csv", "0")["ok"] is False

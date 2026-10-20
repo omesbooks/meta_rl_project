@@ -505,6 +505,29 @@ class Api:
         text, level = backtest_report.skip_preview(ts, skip)
         return {"text": text, "level": level}
 
+    def backtest_bars(self, csv, start="0"):
+        """OHLC of the backtest range (rows from int(len * start), the same slice backtest_live.py uses) for the
+        live candle chart; timestamps as 'YYYY-MM-DD HH:MM:SS' so BT_OPEN / BT_TRADE / BT_LIVE times match."""
+        import pandas as pd
+        try:
+            path = self._csv_path(csv)
+            df = pd.read_csv(path, usecols=lambda c: c in ("timestamp", "open", "high", "low", "close"))
+            if "timestamp" not in df.columns or len(df) < 2:
+                return {"ok": False, "error": "no timestamp column"}
+            ts = pd.to_datetime(df["timestamp"], errors="coerce")
+            df = df.assign(timestamp=ts).dropna(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
+            try:
+                frac = float(start or 0)
+            except ValueError:
+                frac = 0.0
+            if 0 < frac < 1:
+                df = df.iloc[int(len(df) * frac):].reset_index(drop=True)
+            r = lambda col: [round(float(v), 5) for v in df[col].to_numpy()]
+            return {"ok": True, "ts": df["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S").tolist(),
+                    "o": r("open"), "h": r("high"), "l": r("low"), "c": r("close")}
+        except Exception as exc:
+            return {"ok": False, "error": f"cannot read bars: {exc}"}
+
     def backtest_report(self, model):
         """Stored report of one model: stat cards, the CTk report lines, equity + Monte Carlo PNGs."""
         import backtest_report

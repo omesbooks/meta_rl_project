@@ -896,6 +896,20 @@ def run_backtest_live(args):
         n_bars = len(df) - 1 - warmup
         live_every = max(1, n_bars // 150)
         worst_dd = 0.0
+        live_ntr, live_seen = 0, set()                 # trades / opens already announced
+
+        def _live_trades():
+            """Announce every new open (BT_OPEN) and closed trade (BT_TRADE) since the last call."""
+            nonlocal live_ntr
+            for p in sim_account.positions:
+                if p['open_idx'] not in live_seen:
+                    live_seen.add(p['open_idx'])
+                    print(f"BT_OPEN {p['side']} {p['entry']:.5f} {p['open_time']}", flush=True)
+            tr = sim_account.trade_history
+            while live_ntr < len(tr):
+                t = tr[live_ntr]; live_ntr += 1
+                print(f"BT_TRADE {t['side']} {t['entry']:.5f} {t['exit']:.5f} {t['pnl_dollars']:.2f} {t['reason']} "
+                      f"{t['open_time']} | {t['exit_time']}", flush=True)
         if live:
             print(f"BT_LIVE_START {n_bars} {sim_account.initial:.2f}", flush=True)
 
@@ -915,6 +929,7 @@ def run_backtest_live(args):
             sim_account.update_equity(price)
             if live:
                 worst_dd = min(worst_dd, sim_account.drawdown_pct())
+                _live_trades()
                 k = i - warmup + 1
                 if k % live_every == 0 or k == n_bars:
                     tr = sim_account.trade_history
@@ -1069,6 +1084,8 @@ def run_backtest_live(args):
         if sim_account.positions:
             final_price = df.iloc[-1]['close']
             sim_account.close_all(final_price, len(df) - 1, df.iloc[-1].get('timestamp'), "end")
+        if live:
+            _live_trades()
         return counters
 
     def _model_select(state):

@@ -21,7 +21,8 @@ from webgui import commands, logparse
 from webgui.runner import Runner
 
 ROOT = Path(__file__).resolve().parents[1]
-VIZ_MODES = {"monitor": "Monitor (verdicts)", "lite": "Lite (low CPU)", "cinematic": "Cinematic", "dashboard": "Dashboard (lowest CPU)"}
+VIZ_MODES = {"monitor": "Monitor (verdicts)", "lite": "Lite (low CPU)", "cinematic": "Cinematic", "dashboard": "Dashboard (lowest CPU)",
+             "showcase": "Showcase (for clips)"}
 
 
 class Api:

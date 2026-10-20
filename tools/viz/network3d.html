@@ -45,6 +45,8 @@
   #drvNote { font: 500 11px/1.45 var(--hud); color: var(--dim); text-shadow: none; margin-top: 6px; }
   #drvNote:empty { display: none; }
   body.dash #drivers { display: none !important; }
+  body.show #drivers, body.show .lbl.grp { display: none !important; }
+  body.show #ctrl label.c3d:has(#iIn) { display: none; }
   #chartLbl { left: 24px; font: 600 10px/1 var(--hud); letter-spacing: .3em; color: var(--dim); text-shadow: none; }
   #pxHi, #pxLo { right: 24px; font: 600 12px/1 var(--hud); color: var(--dim); text-shadow: none; }
   .panel { position: fixed; background: rgba(6, 10, 24, .72); border: 1px solid rgba(25, 230, 255, .18);
@@ -170,6 +172,7 @@
 <div id="ctrl" class="panel">
   <label class="c3d" id="lSrc" style="display:none">source <select id="iSrc"><option value="training">Training (live)</option><option value="eval">Eval replay</option></select></label>
   <label>mode <select id="iMode"><option value="lite">Lite</option><option value="cinematic">Cinematic</option><option value="dashboard">Dashboard</option><option value="monitor">Monitor</option></select></label>
+  <label class="c3d">look <select id="iLook"><option value="analysis">analysis</option><option value="showcase">showcase</option></select></label>
   <button id="bPlay" class="c3d">❚❚</button>
   <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
   <label class="c3d">layers <select id="iShape"><option value="sorted">sorted</option><option value="grid">grid</option><option value="column">column</option><option value="disc">disc</option></select></label>
@@ -204,7 +207,13 @@ import { createDashboard } from "viz-dashboard";
 import { createMonitor } from "viz-monitor";
 
 const params = new URLSearchParams(location.search);
-if (params.get("theme") !== "dark") document.body.classList.add("clear");   // Clear Liquid (all modes); ?theme=dark = neon on black
+// ?look=showcase: the presentation look (for clips/screens) — always the dark neon scene, textbook
+// layout (columns left to right, front camera, input grid spread along the flow), one warm colour
+// for every synapse, 16 synapses, cinematic, slow pan, no drivers panel. Analysis colours (sign of
+// the signal) are given up on purpose; the usual modes are untouched.
+const SHOW = params.get("look") === "showcase";
+if (SHOW) document.body.classList.add("show");
+if (params.get("theme") !== "dark" && !SHOW) document.body.classList.add("clear");   // Clear Liquid (all modes); ?theme=dark = neon on black
 // LIGHT = the 3D scene is drawn on a light aurora: normal blending with brightness carried in
 // alpha (weak nodes/lines fade to the background instead of to black), darker palette, no bloom.
 const LIGHT = document.body.classList.contains("clear");
@@ -226,8 +235,9 @@ const MODES = {
   dashboard: { bloom: false, k: 4, pulses: false, dpr: 1, fps: 20, dashboard: true },
   monitor:   { bloom: false, k: 4, pulses: false, dpr: 1, fps: 20, dashboard: true, monitor: true },
 };
-let mode = MODES[params.get("mode")] ? params.get("mode") : (LIVE ? "lite" : "cinematic");
+let mode = MODES[params.get("mode")] ? params.get("mode") : (SHOW || !LIVE ? "cinematic" : "lite");
 const OPT = Object.assign({}, MODES[mode]);
+if (SHOW && !params.has("k")) OPT.k = 16;
 if (params.has("bloom")) OPT.bloom = params.get("bloom") !== "0";
 if (params.has("pulses")) OPT.pulses = params.get("pulses") !== "0";
 if (params.has("dpr")) OPT.dpr = +params.get("dpr");
@@ -268,7 +278,8 @@ const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 60
 // ?view=az,pol,dist,tx,ox,amp,fov,oy overrides it; ?sway=0 starts with the auto-orbit off.
 // The defaults look along the input slab from the front-left so its 10 bar rows read as a grid between the
 // drivers panel and the hidden-layer towers, and keep the output labels clear of the stats panel.
-const VIEW = { az: -0.62, pol: 1.2, dist: 78, tx: -4, ox: 0.06, amp: 0.16, fov: 36, oy: 0.10 };
+const VIEW = SHOW ? { az: 0.0, pol: 1.5, dist: 84, tx: -2, ox: 0, amp: 0.1, fov: 34, oy: 0.09 }
+                  : { az: -0.62, pol: 1.2, dist: 78, tx: -4, ox: 0.06, amp: 0.16, fov: 36, oy: 0.10 };
 if (params.has("view")) params.get("view").split(",").forEach((v, i) => { const k = ["az", "pol", "dist", "tx", "ox", "amp", "fov", "oy"][i]; if (k && v !== "" && isFinite(+v)) VIEW[k] = +v; });
 camera.fov = VIEW.fov; camera.updateProjectionMatrix();
 camera.position.setFromSphericalCoords(VIEW.dist * 1.1, VIEW.pol, VIEW.az).add(new THREE.Vector3(VIEW.tx, 0, 0));
@@ -318,6 +329,7 @@ const glowPoints = (n, pixelSpace = false) => {
 // palettes: neon for the dark scene, deeper inks of the same hues for the light one
 const C_POS = LIGHT ? new THREE.Color("#c2410c") : new THREE.Color(1.0, 0.42, 0.06);
 const C_NEG = LIGHT ? new THREE.Color("#1d4ed8") : new THREE.Color(0.05, 0.72, 1.0);
+const C_SHOW = new THREE.Color(1.0, 0.55, 0.18);          // showcase: one warm colour for every synapse
 const C_UP = LIGHT ? new THREE.Color("#0f9a5a") : new THREE.Color(0.0, 1.0, 0.55);
 const C_DN = LIGHT ? new THREE.Color("#d01e52") : new THREE.Color(1.0, 0.1, 0.42);
 const C_GOLD = LIGHT ? new THREE.Color("#c98a00") : new THREE.Color(1.0, 0.72, 0.12);
@@ -451,13 +463,13 @@ function prepare(D) {
 }
 
 // input slab: x position, height (rows = bars) and depth (columns = features). ?slab=x,h,d overrides (layout tests).
-let X_IN = -22, IN_H = 14, IN_D = 22;   // input slab: x position, height (bar rows), depth (features); ?slab=x,h,d
+let X_IN = SHOW ? -29 : -22, IN_H = 14, IN_D = SHOW ? 16 : 22;   // input slab: x position, height (bar rows), depth (features); ?slab=x,h,d
 if (params.has("slab")) { const q = params.get("slab").split(",").map(Number); if (q.length === 3 && q.every(isFinite)) [X_IN, IN_H, IN_D] = q; }
 const X_OUT = 24, Y_TOWER = [7.0, -5.6];   // critic raised so its biggest disc and labels clear the chart strip
 // hidden layers are discs; TILT turns each disc about the vertical axis so it faces the default camera
 // (normal = (cos, 0, sin)). 0 = perpendicular to the flow, which the front-left camera saw almost edge-on
 // and two or three layers merged into one band. ?tilt=<rad> overrides.
-let TILT = -0.6;
+let TILT = SHOW ? -Math.PI / 2 : -0.6;            // showcase: the layer plane lies along the flow, facing the front camera
 if (params.has("tilt") && isFinite(+params.get("tilt"))) TILT = +params.get("tilt");
 const DISC_N = [Math.cos(TILT), Math.sin(TILT)], DISC_V = [-Math.sin(TILT), Math.cos(TILT)];   // normal, in-plane (x, z)
 // hidden-layer shape ('layers' menu, ?shape=): sorted (default) | grid (square, side ~ sqrt(n)) | column (fixed height,
@@ -465,7 +477,7 @@ const DISC_N = [Math.cos(TILT), Math.sin(TILT)], DISC_V = [-Math.sin(TILT), Math
 // layer grouped by the action its strongest outgoing weight feeds, other layers busiest-first by
 // mean |activation| over the replay). Neuron positions never carry meaning in disc/grid/column.
 const SHAPES = ["sorted", "grid", "column", "disc"];
-let SHAPE = SHAPES.includes(params.get("shape")) ? params.get("shape") : "sorted";
+let SHAPE = SHAPES.includes(params.get("shape")) ? params.get("shape") : (SHOW ? "column" : "sorted");
 function layerOrder(s, L) {
   const n = L.size, idx = [...Array(n).keys()];
   if (L.tower === 0 && L.idx === s.AL.length - 1 && s.mats[0].length) {
@@ -505,7 +517,7 @@ function placeLayer(s, L, p) {
   if (SHAPE === "sorted") ({ order, grp } = layerOrder(s, L));
   let cells, rows, cols, spX, spY;
   if (SHAPE === "column") {
-    rows = Math.min(n, 32); cols = Math.ceil(n / rows); spY = 8.4 / Math.max(1, rows - 1); spX = 0.42;
+    rows = Math.min(n, 32); cols = Math.ceil(n / rows); spY = 8.4 / Math.max(1, rows - 1); spX = SHOW ? 0.95 : 0.42;   // showcase: sub-columns far enough apart to read as columns of dots
     cells = order.map((_, t) => [t % rows, Math.floor(t / rows)]);
   } else {
     cols = Math.ceil(Math.sqrt(n)); spX = spY = (L.r * 1.772) / Math.max(1, cols - 1);   // same area as the disc
@@ -525,14 +537,15 @@ function layout(s) {
   const p = new Float32Array(s.NODES * 3);
   for (let i = 0; i < s.NIN; i++) {
     let r, c; if (i < s.WIN * s.NFEAT) { r = Math.floor(i / s.NFEAT); c = i % s.NFEAT; } else { r = s.WIN; c = Math.floor(s.NFEAT / 2) + (i - s.WIN * s.NFEAT - 1) * 6; }
-    p[i * 3] = X_IN; p[i * 3 + 1] = IN_H / 2 - r * (IN_H / s.WIN); p[i * 3 + 2] = -IN_D / 2 + c * (IN_D / Math.max(1, s.NFEAT - 1));
+    const d = -IN_D / 2 + c * (IN_D / Math.max(1, s.NFEAT - 1));
+    p[i * 3] = X_IN + (SHOW ? d : 0); p[i * 3 + 1] = IN_H / 2 - r * (IN_H / s.WIN); p[i * 3 + 2] = SHOW ? 0 : d;   // showcase: features along the flow (front view)
   }
   for (const tl of s.towerLayers) {
     const n = tl.length;
     tl.forEach((L, i) => {
       L.x = n > 1 ? -12 + i * (27 / (n - 1)) : 2;
       L.r = Math.min(7.0, Math.max(1.6, 4.8 * Math.sqrt(L.size / 256)));   // disc area ~ neuron count
-      L.dot = 3.0 * Math.pow(256 / L.size, 0.25) * (SHAPE === "column" ? 0.7 : SHAPE === "disc" ? 1 : 0.85);
+      L.dot = 3.0 * Math.pow(256 / L.size, 0.25) * (SHAPE === "column" ? (SHOW ? 1.15 : 0.7) : SHAPE === "disc" ? 1 : 0.85);
       placeLayer(s, L, p);
     });
   }
@@ -712,7 +725,7 @@ function updateNetwork(dt) {
   const end = N.rankEnd[Math.min(64, K)], eCol = N.eGeo.attributes.color.array;
   for (let e = 0; e < end; e++) {
     const sg = N.eW[e] * cur[N.eSrc[e]]; N.eInt[e] = sg;
-    const m = Math.min(1, Math.abs(sg)), c = sg >= 0 ? C_POS : C_NEG, a = m * m * m * 0.32 + 0.0025, b = a * 0.25, o = e * 6;
+    const m = Math.min(1, Math.abs(sg)), c = SHOW ? C_SHOW : (sg >= 0 ? C_POS : C_NEG), a = m * m * m * 0.32 + 0.0025, b = a * 0.25, o = e * 6;
     // light: alpha floor 0.012 (was 0.05 — thousands of overlapping faint lines added up to a solid mass)
     if (LIGHT) { const q = e * 8, as = Math.min(0.85, 0.012 + m * m * 0.8), bs = as * 0.4;
       eCol[q] = c.r; eCol[q + 1] = c.g; eCol[q + 2] = c.b; eCol[q + 3] = as; eCol[q + 4] = c.r; eCol[q + 5] = c.g; eCol[q + 6] = c.b; eCol[q + 7] = bs; }
@@ -1198,6 +1211,9 @@ function applyMode(name) {
   if (source === "training" && haveRollout && (shown !== "rollout" || rollPending)) loadRollout();
 }
 $("iMode").onchange = e => applyMode(e.target.value);
+// the look changes the scene at load (theme, layout, colours), so switching reloads the page with the flag
+$("iLook").value = SHOW ? "showcase" : "analysis";
+$("iLook").onchange = e => { const u = new URL(location.href); if (e.target.value === "showcase") u.searchParams.set("look", "showcase"); else u.searchParams.delete("look"); u.searchParams.delete("mode"); location.href = u.toString(); };
 $("bPlay").onclick = e => { playing = !playing; e.target.textContent = playing ? "❚❚" : "▶"; if (playing && endAt) seek(START); wake("input"); };
 $("iSpeed").oninput = e => speed = +e.target.value;
 $("iK").onchange = e => K = +e.target.value;

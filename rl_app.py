@@ -1261,7 +1261,8 @@ class RLTradingStudio(ctk.CTk):
         low = label.lower()
         return ["--mode", "cinematic" if low.startswith("cinematic")
                 else "dashboard" if low.startswith("dashboard")
-                else "monitor" if low.startswith("monitor") else "lite"]
+                else "monitor" if low.startswith("monitor")
+                else "showcase" if low.startswith("showcase") else "lite"]
 
     def _launch_viz_window(self, viewer_args):
         """(Re)open the viewer window as its own process (pywebview owns its main thread)."""
@@ -4536,7 +4537,7 @@ class RLTradingStudio(ctk.CTk):
             font=ctk.CTkFont(size=12))
         self.train_viz_check.pack(side="left", padx=(18, 6))
         self.train_viz_mode = ctk.CTkOptionMenu(
-            btn_row, values=["Lite (low CPU)", "Cinematic", "Dashboard (lowest CPU)", "Monitor (verdicts)"], width=150, height=30,
+            btn_row, values=["Lite (low CPU)", "Cinematic", "Dashboard (lowest CPU)", "Monitor (verdicts)", "Showcase (for clips)"], width=150, height=30,
             fg_color=COLOR_BG_INPUT, button_color=COLOR_BG_INPUT)
         self.train_viz_mode.set("Monitor (verdicts)")
         self.train_viz_mode.pack(side="left", padx=(0, 8))

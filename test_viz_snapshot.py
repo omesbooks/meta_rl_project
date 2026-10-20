@@ -431,3 +431,16 @@ def test_uniform_start_mode_plays_every_bar_equally():
     assert n < ep_len and term                    # a late start plays a short episode to the data end
     with pytest.raises(ValueError):
         TradingEnv(df, FEATS, window_size=WINDOW, max_steps=ep_len, action_profile=cfg, start_mode="bogus")
+
+
+def test_showcase_is_a_look_on_top_of_the_cinematic_mode():
+    """--mode showcase opens cinematic + look=showcase (the page forces the dark scene itself);
+    the web and classic apps list it next to the render modes."""
+    spec = importlib.util.spec_from_file_location("lv4", ROOT / "tools" / "viz" / "live_viewer.py")
+    lv = importlib.util.module_from_spec(spec); spec.loader.exec_module(lv)
+    assert lv.viewer_query("showcase") == ["mode=cinematic", "look=showcase"]
+    assert lv.viewer_query("monitor", 15) == ["mode=monitor", "fps=15"] and lv.viewer_query(None) == []
+    from webgui.api import VIZ_MODES
+    assert "showcase" in VIZ_MODES
+    html = (ROOT / "tools" / "viz" / "network3d.html").read_text(encoding="utf-8")
+    assert 'params.get("look") === "showcase"' in html and 'value="showcase"' in html

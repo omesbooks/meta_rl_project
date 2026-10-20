@@ -74,6 +74,19 @@ def find_peers(viz_data, limit=12):
     return out
 
 
+def viewer_query(mode, fps=None):
+    """URL options for a --mode/--fps choice. 'showcase' is a look, not a render mode: it opens the
+    cinematic mode with look=showcase (the page forces the dark scene itself)."""
+    out = []
+    if mode == "showcase":
+        out += ["mode=cinematic", "look=showcase"]
+    elif mode:
+        out.append(f"mode={mode}")
+    if fps:
+        out.append(f"fps={fps}")
+    return out
+
+
 def make_handler(viz_data):
     class Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
@@ -134,8 +147,9 @@ def main():
     ap.add_argument("--browser", action="store_true", help="open in the default browser instead of a window")
     ap.add_argument("--serve_only", action="store_true", help="only serve (for testing)")
     ap.add_argument("--port", type=int, default=0, help="fixed port (default: random free port)")
-    ap.add_argument("--mode", choices=["lite", "cinematic", "dashboard", "monitor"], default=None,
-                    help="display mode (default: lite for live runs, cinematic for --html pages)")
+    ap.add_argument("--mode", choices=["lite", "cinematic", "dashboard", "monitor", "showcase"], default=None,
+                    help="display mode (default: lite for live runs, cinematic for --html pages); "
+                         "showcase = the presentation look (dark, columns, front camera, one-colour synapses)")
     ap.add_argument("--fps", type=int, default=None, help="frame cap override (default: the mode's own)")
     ap.add_argument("--query", default="", help="extra viewer options, e.g. 'bloom=0&k=4&pulses=0&dpr=1'")
     args = ap.parse_args()
@@ -157,7 +171,7 @@ def main():
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{port}/{path}"
-    extra = [f"mode={args.mode}" if args.mode else "", f"fps={args.fps}" if args.fps else ""]
+    extra = viewer_query(args.mode, args.fps)
     for q in extra:
         if q:
             url += ("&" if "?" in url else "?") + q

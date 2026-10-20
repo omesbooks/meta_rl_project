@@ -255,7 +255,7 @@ runs on idealized TradingEnv trades (no costs/SL-TP) → use it for recipe
 screening only; the backtest MC is the one that sizes real capital.
 The Pipeline's backtest stage passes `--random_baseline 20` and auto-attaches
 `--m1_csv` when a companion M1 file exists, matching the Backtest page
-defaults. GUI surfaces: Backtest page renders a full report panel (equity PNG
+defaults. GUI surfaces: **live equity while it runs (2026-10-20):** `backtest_live._simulate(live=True)` (the model run only, not the baseline/MC runs) prints `BT_LIVE_START <bars> <initial>`, then `BT_LIVE <bar> <bars> <equity> <balance> <trades> <wins> <gross_win> <gross_loss> <max_dd> <time>` about 150 times per run and `BT_PHASE baseline k n` / `BT_PHASE mc 0 n`; `webgui/logparse.backtest_live` turns them into `ev.bt` (cls `live`, not printed to the log) and the Backtest page draws a canvas equity curve + live WIN RATE / PF / RETURN / MAX DD cards and a `live · bar i/n` header, replaced by the stored report when the run ends (the stored meta is only written at the end). The classic app just shows the lines in its log. Backtest page renders a full report panel (equity PNG
 + settings/realism/baseline/MC/significance/analytics) from the meta JSON, and
 the Models page has a **Realism** column (`M1 ✓` / `ok` / `guess N%` / `-`)
 showing how each stored result resolved intrabar exits.

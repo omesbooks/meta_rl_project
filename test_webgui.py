@@ -383,3 +383,16 @@ def test_live_visual_follows_the_app_theme(tmp_path):
     html = (ROOT / "tools" / "viz" / "network3d.html").read_text(encoding="utf-8")
     assert "const LIGHT = document.body.classList.contains(\"clear\")" in html and "THREE.AdditiveBlending" in html
     assert html.count("blending: BLEND") >= 9 and "blending: THREE.AdditiveBlending" not in html
+
+
+def test_backtest_live_lines_become_page_events():
+    """backtest_live.py prints BT_LIVE_START / BT_LIVE / BT_PHASE; the backtest page draws them (cls 'live')."""
+    ev = logparse.event("BT_LIVE_START 1234 10000.00", "backtest")
+    assert ev["bt"] == {"start": {"bars": 1234, "initial": 10000.0}} and ev["cls"] == "live"
+    ev = logparse.event("BT_LIVE 300 1234 10123.45 10100.00 7 4 250.50 120.25 -0.0312 2025-09-26 04:00:00", "backtest")
+    p = ev["bt"]["point"]
+    assert (p["bar"], p["bars"], p["equity"], p["balance"], p["trades"], p["wins"]) == (300, 1234, 10123.45, 10100.0, 7, 4)
+    assert p["gross_win"] == 250.5 and p["gross_loss"] == 120.25 and p["max_dd"] == -0.0312 and p["time"] == "2025-09-26 04:00:00"
+    assert logparse.event("BT_PHASE baseline 3 20", "backtest")["bt"] == {"phase": {"name": "baseline", "k": 3, "n": 20}}
+    assert "bt" not in logparse.event("[backtest] starting on 1234 bars ...", "backtest")
+    assert "bt" not in logparse.event("BT_LIVE 1 2 3", "train")          # other pages ignore them

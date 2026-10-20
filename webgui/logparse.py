@@ -14,6 +14,9 @@ _METRIC = re.compile(r"\|\s*([a-z_]+)\s*\|\s*([+\-\d\.eE]+)\s*\|")
 _TQDM = re.compile(r"(\d[\d,]*)/(\d[\d,]*)\s*\[")
 _TOTAL = re.compile(r"\|\s*total_timesteps\s*\|\s*(\d+)\s*\|")
 _VIZ = re.compile(r"VIZ_(SNAPSHOT|ROLLOUT)\s+(\d+)\s+(\d+)\s+(.+?)\s*$")
+_BT_START = re.compile(r"^BT_LIVE_START (\d+) ([-\d.]+)\s*$")
+_BT_LIVE = re.compile(r"^BT_LIVE (\d+) (\d+) ([-\d.]+) ([-\d.]+) (\d+) (\d+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ?(.*?)\s*$")
+_BT_PHASE = re.compile(r"^BT_PHASE (\w+) (\d+) (\d+)\s*$")
 
 
 def classify(line):
@@ -84,6 +87,24 @@ def walkforward(line):
     return out or None
 
 
+def backtest_live(line):
+    """backtest_live.py progress lines -> {"start": {bars, initial}} | {"point": {...}} | {"phase": {...}} | None.
+    point: bar/bars, equity, balance, trades, wins, gross_win, gross_loss (dollars), max_dd (fraction, <= 0), time."""
+    m = _BT_START.match(line)
+    if m:
+        return {"start": {"bars": int(m.group(1)), "initial": float(m.group(2))}}
+    m = _BT_LIVE.match(line)
+    if m:
+        g = m.groups()
+        return {"point": {"bar": int(g[0]), "bars": int(g[1]), "equity": float(g[2]), "balance": float(g[3]),
+                          "trades": int(g[4]), "wins": int(g[5]), "gross_win": float(g[6]), "gross_loss": float(g[7]),
+                          "max_dd": float(g[8]), "time": g[9]}}
+    m = _BT_PHASE.match(line)
+    if m:
+        return {"phase": {"name": m.group(1), "k": int(m.group(2)), "n": int(m.group(3))}}
+    return None
+
+
 def event(line, page="train", total=None):
     """One stdout line -> event dict for the page (keys only present when they apply)."""
     ev = {"type": "line", "page": page, "line": line, "cls": classify(line)}
@@ -91,6 +112,11 @@ def event(line, page="train", total=None):
         w = walkforward(line)
         if w:
             ev["wf"] = w
+    if page == "backtest":
+        b = backtest_live(line)
+        if b:
+            ev["bt"] = b
+            ev["cls"] = "live"             # the page draws these; it does not print them
     if page in ("train", "pipeline", "finetune"):
         p = progress(line, total if page != "finetune" else None)
         if p:

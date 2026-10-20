@@ -881,9 +881,10 @@ def run_backtest_live(args):
     # ==========================================================
     sltp_enabled = args.mode == "agent_sltp" and args.atr_sl > 0
 
-    def _simulate(sim_account, select_action, need_state=True, verbose=False):
+    def _simulate(sim_account, select_action, need_state=True, verbose=False, live=False):
         """select_action(state) -> (action_id, confidence). state is None when
-        need_state=False (random policy doesn't need observations)."""
+        need_state=False (random policy doesn't need observations).
+        live=True prints BT_LIVE progress lines (~150 per run) for the GUI's live equity panel."""
         counters = {
             "n_signals": {int(a["id"]): 0 for a in action_profile_cfg["actions"]},
             "n_executed": {int(a["id"]): 0 for a in action_profile_cfg["actions"] if int(a["id"]) > 0},
@@ -892,6 +893,11 @@ def run_backtest_live(args):
         }
         paused = False
         prev_date = None
+        n_bars = len(df) - 1 - warmup
+        live_every = max(1, n_bars // 150)
+        worst_dd = 0.0
+        if live:
+            print(f"BT_LIVE_START {n_bars} {sim_account.initial:.2f}", flush=True)
 
         for i in range(warmup, len(df) - 1):
             row = df.iloc[i]
@@ -907,6 +913,16 @@ def run_backtest_live(args):
 
             # Update equity (mark-to-market)
             sim_account.update_equity(price)
+            if live:
+                worst_dd = min(worst_dd, sim_account.drawdown_pct())
+                k = i - warmup + 1
+                if k % live_every == 0 or k == n_bars:
+                    tr = sim_account.trade_history
+                    gw = sum(t['pnl_dollars'] for t in tr if t['pnl_dollars'] > 0)
+                    gl = -sum(t['pnl_dollars'] for t in tr if t['pnl_dollars'] < 0)
+                    wins = sum(1 for t in tr if t['pnl_dollars'] > 0)
+                    print(f"BT_LIVE {k} {n_bars} {sim_account.equity:.2f} {sim_account.balance:.2f} {len(tr)} {wins} "
+                          f"{gw:.2f} {gl:.2f} {worst_dd:.4f} {bar_time}", flush=True)
 
             # Check SL/TP for open positions (using bar OHLC)
             sim_account.check_sl_tp(row['high'], row['low'], i, bar_time)
@@ -1073,7 +1089,7 @@ def run_backtest_live(args):
     # ==========================================================
     print(f"\n[backtest] starting on {len(df) - warmup} bars ...")
     run_counters = _simulate(account, _model_select, need_state=True,
-                             verbose=args.verbose)
+                             verbose=args.verbose, live=True)
     n_signals = run_counters["n_signals"]
     n_executed = run_counters["n_executed"]
     n_skipped_conf = run_counters["n_skipped_conf"]
@@ -1325,6 +1341,7 @@ def run_backtest_live(args):
         n_actions_total = len(action_profile_cfg["actions"])
         base_returns = []
         for _k in range(n_base):
+            print(f"BT_PHASE baseline {_k + 1} {n_base}", flush=True)
             acct = SimAccount(initial_balance=args.balance, spread_pct=args.spread,
                               commission=args.commission,
                               intrabar=getattr(args, 'intrabar', 'pessimistic'),
@@ -1370,6 +1387,7 @@ def run_backtest_live(args):
     mc_result = None
     n_mc = int(getattr(args, 'mc', 1000) or 0)
     if n_mc > 0 and len(trades) >= 10:
+        print(f"BT_PHASE mc 0 {n_mc}", flush=True)
         # Note: final balance is order-independent (product of (1+r) commutes) —
         # only the DRAWDOWN PATH changes with ordering, so that's what we report.
         fracs = np.array([t['pnl_pct'] * t.get('lots', 1.0) for t in trades], dtype=float)

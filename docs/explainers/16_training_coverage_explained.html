@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Training Coverage Explained</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+  /* layout: one reading column, each section = an interactive figure with its explanation beside the controls */
+  :root {
+    --bg: #f3f5f8; --paper: #ffffff; --ink: #16212e; --muted: #5d6b7e; --line: #d6dde7;
+    --accent: #0c7c8a; --accent-soft: #d9f0f2; --warn: #b7791f; --warn-soft: #fbeed3;
+    --bad: #c0392b; --bad-soft: #fadbd8; --good: #1f8a4c; --good-soft: #d9f2e3; --seen: #0c7c8a;
+    --font: "IBM Plex Sans Thai", "Sarabun", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0f151d; --paper: #182029; --ink: #e6edf5; --muted: #98a6b8; --line: #2c3845;
+    --accent: #3fc1cf; --accent-soft: #123b42; --warn: #e2a84a; --warn-soft: #3d2d12;
+    --bad: #ef6b5e; --bad-soft: #43201c; --good: #4ecf84; --good-soft: #133523; --seen: #3fc1cf; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --bg: #0f151d; --paper: #182029; --ink: #e6edf5; --muted: #98a6b8; --line: #2c3845;
+    --accent: #3fc1cf; --accent-soft: #123b42; --warn: #e2a84a; --warn-soft: #3d2d12;
+    --bad: #ef6b5e; --bad-soft: #43201c; --good: #4ecf84; --good-soft: #133523; --seen: #3fc1cf; color-scheme: dark }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.65 var(--font);
+         padding-block: 32px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 980px; margin: 0 auto; display: grid; gap: 28px; }
+  h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.2; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 20px; margin: 0 0 6px; text-wrap: balance; }
+  p { max-width: 68ch; margin: 0 0 10px; }
+  .lead { color: var(--muted); font-size: 17px; max-width: 70ch; }
+  .eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  section { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 18px; }
+  .fig { background: var(--bg); border-radius: 10px; padding: 14px; margin: 12px 0; }
+  canvas { display: block; width: 100%; max-width: 100%; }
+  .ctl { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin: 10px 0 2px; font-size: 14px; }
+  .ctl label { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+  .ctl input[type=range] { accent-color: var(--accent); width: 160px; }
+  .ctl input[type=number] { width: 86px; font: 14px var(--mono); padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); }
+  .ctl select { font: 14px var(--font); padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); }
+  button { font: 500 14px var(--font); padding: 7px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--warn); outline-offset: 2px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 12px; }
+  .kpi { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .kpi .k { font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .kpi .v { font: 600 22px/1.3 var(--mono); font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .kpi .u { font-size: 12px; color: var(--muted); }
+  .legend { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+  .note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 15px; max-width: none; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .cols > div { min-width: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; letter-spacing: .04em; }
+  td:first-child, th:first-child { text-align: left; }
+  .tw { overflow-x: auto; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font: 600 12px var(--mono); }
+  .pill.good { background: var(--good-soft); color: var(--good); } .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  code { font: 13.5px var(--mono); background: var(--accent-soft); color: var(--ink); padding: 1px 5px; border-radius: 4px; }
+  footer { color: var(--muted); font-size: 13px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Meta RL Trading · rl_train.py · TradingEnv</div>
+    <h1>โมเดลเห็นข้อมูลยังไงตอนเทรน และทำไมบางช่วงไม่เคยถูกเล่น</h1>
+    <p class="lead">ตอนเทรน PPO ไม่ได้อ่านข้อมูลตั้งแต่ต้นจนจบ แต่สุ่มจุดเริ่มแล้วเดินไปข้างหน้าทีละแท่ง หน้านี้ให้ลองเล่นเองได้ 3 ชั้น: สิ่งที่โมเดลเห็นใน 1 step, หนึ่ง episode ทำงานยังไง และเมื่อรวมหลายร้อย episode แล้วข้อมูลช่วงไหนถูกใช้มากน้อยแค่ไหน (coverage)</p>
+  </header>
+
+  <!-- ============================ 1. observation window ============================ -->
+  <section>
+    <div class="eyebrow">1 · หนึ่ง step</div>
+    <h2>ในแต่ละ step โมเดลเห็น <em>window</em> แท่งล่าสุดของทุก feature บวกสถานะตัวเอง 3 ค่า</h2>
+    <p>แท่งสีเข้มคือแท่งที่อยู่ใน window (รวมแท่งปัจจุบัน) แท่งสีจางคือข้อมูลที่โมเดล <strong>ไม่เห็น</strong> ไม่ว่าจะเก่ากว่า window หรืออยู่ในอนาคต ตารางด้านล่างคือ observation จริง: แถว = แท่งใน window, คอลัมน์ = feature (ราคา อินดิเคเตอร์ session ฯลฯ ที่คำนวณไว้ต่อแท่งแล้ว normalize ด้วยค่าของชุด Train)</p>
+    <div class="fig">
+      <canvas id="obsBars" height="150"></canvas>
+      <canvas id="obsGrid" height="110" style="margin-top:8px"></canvas>
+      <div class="ctl">
+        <label>ตำแหน่ง t <input type="range" id="obsT" min="0" max="59" value="22"></label>
+        <label>window <input type="number" id="obsW" min="3" max="20" value="10"></label>
+        <button class="ghost" id="obsPlay">เดินทีละแท่ง ▶</button>
+        <span id="obsLab" style="font:13px var(--mono);color:var(--muted)"></span>
+      </div>
+      <div class="legend"><span><i class="sw" style="background:var(--seen)"></i>อยู่ใน window = โมเดลเห็น</span><span><i class="sw" style="background:var(--line)"></i>ไม่เห็น</span><span><i class="sw" style="background:var(--warn)"></i>state ของตัวเอง: position · unrealized pnl · bars in position</span></div>
+    </div>
+    <p>ความจำที่ยาวกว่า window มีได้แค่เท่าที่ feature แต่ละตัวบรรจุไว้ เช่น EMA 200 สรุปประวัติ 200 แท่งไว้ในตัวเลขเดียวของแท่งนั้น โมเดลเห็นตัวเลขนั้น แต่ไม่เห็น 200 แท่งจริง</p>
+  </section>
+
+  <!-- ============================ 2. one episode ============================ -->
+  <section>
+    <div class="eyebrow">2 · หนึ่ง episode</div>
+    <h2>สุ่มจุดเริ่มครั้งเดียว แล้วเดินต่อเนื่องไปข้างหน้าจนครบ <code>ep_len</code> แท่ง</h2>
+    <p>แถบคือข้อมูล Train ทั้งช่วง (เก่า → ใหม่) ทุกครั้งที่ env reset มันสุ่มแท่งเริ่มหนึ่งจุด แล้วเล่นต่อกันทีละแท่งจริงตามลำดับเวลา ไม่กระโดด จนครบ ep_len หรือจนเงินทุนเหลือต่ำกว่า 50% กด <b>สุ่ม episode ใหม่</b> หลายครั้งแล้วดูว่าจุดเริ่มตกตรงไหนได้บ้าง</p>
+    <div class="fig">
+      <canvas id="epCv" height="120"></canvas>
+      <div class="ctl">
+        <label>วิธีสุ่ม <select id="epMode"><option value="fit">fit (ค่าเริ่มต้น): เริ่มเฉพาะจุดที่เล่นครบ ep_len ได้</option><option value="uniform">uniform: เริ่มได้ทุกแท่ง ถ้าเริ่มท้ายๆ จะเล่นสั้นลง</option></select></label>
+        <button id="epNew">สุ่ม episode ใหม่</button>
+        <span id="epLab" style="font:13px var(--mono);color:var(--muted)"></span>
+      </div>
+      <div class="legend"><span><i class="sw" style="background:var(--accent-soft);border:1px solid var(--accent)"></i>ช่วงที่จุดเริ่มสุ่มได้</span><span><i class="sw" style="background:var(--seen)"></i>แท่งที่ episode นี้เล่น</span><span><i class="sw" style="background:var(--warn)"></i>จุดเริ่ม</span></div>
+    </div>
+    <p class="note">แบบ fit จุดเริ่มสุ่มได้แค่ถึงแท่งที่ <code>N − ep_len − 2</code> เพราะต้องเหลือที่ให้เล่นครบ ดังนั้น ep_len แท่งสุดท้ายของ Train จะถูกเล่นได้ก็ต่อเมื่อเป็น "หาง" ของ episode ที่เริ่มก่อนหน้า ยิ่งใกล้ท้ายยิ่งมีโอกาสน้อย และแท่งแรกๆ ก็ถูกเล่นได้แค่ตอน episode เริ่มใกล้ต้นมากๆ</p>
+  </section>
+
+  <!-- ============================ 3. coverage ============================ -->
+  <section>
+    <div class="eyebrow">3 · หลายร้อย episode = coverage</div>
+    <h2>รวมทุก episode ของการเทรนแล้ว แต่ละแท่งถูกเล่นกี่ครั้ง</h2>
+    <p>จำนวน step ที่ตั้ง (เช่น 60,000) หารด้วย ep_len คือจำนวน episode โดยประมาณ เพิ่ม episode ทีละอันแล้วดูแถบด้านล่างสะสม สีเข้ม = ถูกเล่นบ่อย สีแดง = ไม่เคยถูกเล่นเลย ตัวเลขใช้ค่าจริงของการทดลองเมื่อ 20 ต.ค. 2026 (USDJPY H4 จากปี 2019)</p>
+    <div class="fig">
+      <div class="ctl">
+        <label>แท่ง Train <input type="number" id="cvN" min="500" max="100000" step="100" value="7636"></label>
+        <label>ep_len <input type="number" id="cvL" min="50" max="20000" step="50" value="2000"></label>
+        <label>window <input type="number" id="cvW" min="2" max="60" value="15"></label>
+        <label>step ทั้งหมด <input type="number" id="cvS" min="1000" max="2000000" step="1000" value="60000"></label>
+        <label>วิธีสุ่ม <select id="cvMode"><option value="fit">fit (ค่าเริ่มต้น)</option><option value="uniform">uniform</option></select></label>
+      </div>
+      <div class="ctl">
+        <button id="cvStep">+1 episode</button>
+        <button id="cvRun">เล่นจนครบ step ▶</button>
+        <button class="ghost" id="cvReset">เริ่มใหม่ (seed ใหม่)</button>
+        <span id="cvLab" style="font:13px var(--mono);color:var(--muted)"></span>
+      </div>
+      <canvas id="cvCv" height="130"></canvas>
+      <div class="legend"><span><i class="sw" style="background:var(--seen)"></i>ถูกเล่น (เข้ม = บ่อย)</span><span><i class="sw" style="background:var(--bad)"></i>ไม่เคยถูกเล่น</span><span><i class="sw" style="background:var(--line)"></i>แท่งแรก window−1 แท่ง: เป็นได้แค่ประวัติย้อนหลัง ไม่ใช่จุดตัดสินใจ</span><span>ขีดด้านบน = จุดเริ่มของแต่ละ episode</span></div>
+      <div class="kpis">
+        <div class="kpi"><div class="k">covered</div><div class="v" id="kCov">–</div><div class="u">แท่งที่ถูกเล่นอย่างน้อย 1 ครั้ง</div></div>
+        <div class="kpi"><div class="k">never played</div><div class="v" id="kNever">–</div><div class="u">แท่ง</div></div>
+        <div class="kpi"><div class="k">plays / bar</div><div class="v" id="kPass">–</div><div class="u">เฉลี่ย (≈ step ÷ แท่ง)</div></div>
+        <div class="kpi"><div class="k">first 10%</div><div class="v" id="kFirst">–</div><div class="u">แท่งเก่าสุดถูกครอบคลุม</div></div>
+        <div class="kpi"><div class="k">last 10%</div><div class="v" id="kLast">–</div><div class="u">แท่งใหม่สุด ติดกับ Validation</div></div>
+        <div class="kpi"><div class="k">episodes</div><div class="v" id="kEp">–</div><div class="u">รวมที่เล่นแล้ว</div></div>
+      </div>
+    </div>
+    <div class="cols">
+      <div><p><strong>ลองแบบนี้</strong> ตั้ง step = 7,636 (เท่าจำนวนแท่งพอดี) แล้วกดเล่นจนครบ จะเห็นว่าถูกเล่นแค่ราว 60% ของข้อมูล เพราะบางช่วงถูกสุ่มซ้ำ บางช่วงไม่ถูกสุ่มเลย เกณฑ์ใน AGENTS.md ที่ให้ตั้ง step 5–10 เท่าของจำนวนแท่งมาจากตรงนี้</p></div>
+      <div><p><strong>สลับเป็น uniform</strong> แล้วเล่นใหม่ last 10% จะขึ้นไปเกือบ 100% ทันที เพราะจุดเริ่มกระจายทั่วทั้งช่วง นี่คือผลทางกลไกของวิธีสุ่ม ไม่ได้แปลว่าโมเดลจะเก่งขึ้น (ดูข้อ 4)</p></div>
+    </div>
+  </section>
+
+  <!-- ============================ 4. what it changed ============================ -->
+  <section>
+    <div class="eyebrow">4 · ทดลองจริงแล้วได้อะไร</div>
+    <h2>coverage ดีขึ้นแน่นอน แต่ผลการเทรดไม่ดีขึ้น และ reward บน Validation แย่ลง</h2>
+    <p>เทรนทั้งสองแบบบนข้อมูลเดียวกัน 60,000 step, 5 seed ต่อแบบ จับคู่ seed เดียวกันแล้วดูผลต่าง (ไฟล์ <code>docs/start_mode_2026-10-20.md</code>)</p>
+    <div class="tw"><table>
+      <tr><th>ตัวชี้วัด</th><th>fit (เดิม)</th><th>uniform</th><th>uniform ดีกว่าใน</th><th>CI95 ของผลต่าง</th><th></th></tr>
+      <tr><td>coverage 10% สุดท้ายของ Train</td><td>17–95% แล้วแต่ seed</td><td>99.9% ทุก seed</td><td>5/5</td><td>+11% ถึง +58%</td><td><span class="pill good">ต่างจริง (กลไก)</span></td></tr>
+      <tr><td>reward ดีที่สุดบน Validation (เฉลี่ย)</td><td>+2.10</td><td>−1.35</td><td>1/5</td><td>−5.4 ถึง −1.0</td><td><span class="pill bad">แย่ลงจริง</span></td></tr>
+      <tr><td>PF บน Test (รวม 5 seed)</td><td>0.81</td><td>0.79</td><td>3/5</td><td>−0.21 ถึง +0.13</td><td><span class="pill warn">แยกจาก noise ไม่ได้</span></td></tr>
+      <tr><td>return บน Test</td><td>≈ 0%</td><td>≈ 0%</td><td>3/5</td><td>−0.07% ถึง +0.06%</td><td><span class="pill warn">แยกจาก noise ไม่ได้</span></td></tr>
+    </table></div>
+    <p style="margin-top:12px"><strong>สรุปอย่างระวัง</strong> ทั้งสองแบบยังขาดทุนบน Test (PF ≈ 0.8) การเทียบนี้จึงเป็นการเทียบระหว่างสองแบบที่ยังไม่มี edge ทั้งคู่ 5 seed กับ Test ช่วงเดียวเป็นตัวอย่างเล็ก ช่วงความเชื่อมั่นที่คร่อมศูนย์แปลว่า "ยังไม่มีหลักฐาน" ไม่ใช่ "ไม่มีผล" ค่าเริ่มต้นจึงยังเป็น fit</p>
+    <p class="note"><strong>สมมติฐานที่ยังไม่ได้ทดสอบ</strong> ว่าทำไม Validation แย่ลง: แบบ uniform มี episode สั้นๆ ที่จบเพราะข้อมูลหมด และ env นับการจบแบบนั้นเป็นจบเกมจริง (ไม่ bootstrap ค่า V) critic จึงเรียนรู้ว่าสภาวะตลาดช่วงท้าย Train มี "อนาคตสั้น" ซึ่งเป็นสัญญาณจากตำแหน่งในข้อมูลที่ policy มองไม่เห็น ถ้าจะพิสูจน์ต้องแก้ให้การจบเพราะหมดข้อมูล/ครบความยาวเป็นแบบตัดกลางคัน (truncated) แล้วเทรนเทียบใหม่</p>
+  </section>
+
+  <footer>ตัวเลขและกฎทั้งหมดอ้างอิงโค้ดจริง: <code>trading_env.py</code> (reset: min_start = window−1, max_start = N − max_steps − 2; start_mode fit|uniform), <code>rl_train.py --ep_len/--start_mode</code>, <code>episode_log.py</code> (ไฟล์ episodes.json + การ์ด TRAINING DATA COVERAGE ในหน้า Monitor) · สร้าง 2026-10-20</footer>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const css = k => getComputedStyle(document.body).getPropertyValue(k).trim();
+  const mul32 = s => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const fitCanvas = (cv, h) => { const w = cv.clientWidth || 600; cv.width = w; cv.height = h; cv.style.height = h + "px"; return cv.getContext("2d"); };
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---------------- 1. observation window ----------------
+  const NB = 60, rnd1 = mul32(7);
+  const price = []; let p = 100; for (let i = 0; i < NB; i++) { p *= 1 + (rnd1() - 0.5) * 0.02; price.push(p); }
+  const ohlc = price.map((c, i) => { const o = i ? price[i - 1] : c; const hi = Math.max(o, c) * (1 + rnd1() * 0.006), lo = Math.min(o, c) * (1 - rnd1() * 0.006); return { o, c, hi, lo }; });
+  const NF = 12, feat = Array.from({ length: NB }, () => Array.from({ length: NF }, () => rnd1() * 2 - 1));
+  let obsPlaying = null;
+  function drawObs() {
+    const t = +$("obsT").value, W = Math.max(3, Math.min(20, +$("obsW").value || 10));
+    const cv = $("obsBars"), g = fitCanvas(cv, 150), w = cv.width, h = 150, x0 = 10, x1 = w - 10, bw = (x1 - x0) / NB;
+    const lo = Math.min(...ohlc.map(b => b.lo)), hi = Math.max(...ohlc.map(b => b.hi)), Y = v => 14 + (hi - v) / (hi - lo) * (h - 40);
+    g.clearRect(0, 0, w, h);
+    const seen = css("--seen"), dim = css("--line"), warn = css("--warn");
+    g.fillStyle = css("--accent-soft"); g.globalAlpha = 0.6; g.fillRect(x0 + (t - W + 1) * bw, 6, W * bw, h - 24); g.globalAlpha = 1;
+    ohlc.forEach((b, i) => {
+      const inW = i > t - W && i <= t, x = x0 + i * bw + bw / 2;
+      g.strokeStyle = g.fillStyle = inW ? seen : dim; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, Y(b.hi)); g.lineTo(x, Y(b.lo)); g.stroke();
+      const top = Y(Math.max(b.o, b.c)), bot = Y(Math.min(b.o, b.c));
+      g.fillRect(x - bw * 0.3, top, bw * 0.6, Math.max(1.5, bot - top));
+    });
+    g.fillStyle = warn; g.fillRect(x0 + t * bw, 2, bw, h - 16);
+    g.fillStyle = css("--muted"); g.font = "11px " + css("--mono"); g.textAlign = "left"; g.fillText("เก่า", x0, h - 2); g.textAlign = "right"; g.fillText("ใหม่ (อนาคต = ยังไม่เห็น)", x1, h - 2);
+    g.textAlign = "center"; g.fillStyle = warn; g.fillText("t", x0 + t * bw + bw / 2, h - 2);
+    // grid
+    const gv = $("obsGrid"), gg = fitCanvas(gv, 110), gw = gv.width, cw = Math.min(26, (gw - 150) / (NF + 4)), ch = Math.min(9, 80 / W), gx = 56, gy = 16;
+    gg.clearRect(0, 0, gw, 110);
+    gg.fillStyle = css("--muted"); gg.font = "11px " + css("--mono"); gg.textAlign = "left";
+    gg.fillText(`${W} แท่ง × ${NF} feature`, gx, 10); gg.fillText("+ state 3 ค่า", gx + cw * NF + 14, 10);
+    for (let r = 0; r < W; r++) {
+      const bar = t - W + 1 + r;
+      gg.textAlign = "right"; gg.fillStyle = css("--muted"); gg.fillText(r === W - 1 ? "t" : `t−${W - 1 - r}`, gx - 6, gy + r * ch + ch - 1);
+      for (let c = 0; c < NF; c++) { const v = feat[bar][c]; gg.fillStyle = v >= 0 ? css("--accent") : css("--bad"); gg.globalAlpha = 0.25 + 0.75 * Math.abs(v); gg.fillRect(gx + c * cw, gy + r * ch, cw - 1.5, ch - 1.5); }
+    }
+    gg.globalAlpha = 1; gg.fillStyle = warn;
+    for (let k = 0; k < 3; k++) gg.fillRect(gx + cw * NF + 14 + k * cw, gy, cw - 1.5, ch * W - 1.5);
+    gg.fillStyle = css("--muted"); gg.textAlign = "left"; gg.font = "10px " + css("--mono");
+    ["pos", "upnl", "bars"].forEach((s, k) => gg.fillText(s, gx + cw * NF + 14 + k * cw, gy + ch * W + 11));
+    $("obsLab").textContent = `observation = ${W}×${NF} + 3 = ${W * NF + 3} ค่า · แท่ง ${t - W + 1}…${t} จาก 0…${NB - 1}`;
+  }
+  $("obsT").oninput = drawObs; $("obsW").oninput = () => { $("obsT").min = Math.max(2, +$("obsW").value - 1); drawObs(); };
+  $("obsPlay").onclick = () => {
+    if (obsPlaying) { clearInterval(obsPlaying); obsPlaying = null; $("obsPlay").textContent = "เดินทีละแท่ง ▶"; return; }
+    $("obsPlay").textContent = "หยุด ■";
+    obsPlaying = setInterval(() => { const s = $("obsT"); s.value = +s.value + 1 >= NB ? +s.min : +s.value + 1; drawObs(); }, reduced ? 900 : 380);
+  };
+
+  // ---------------- 2. one episode ----------------
+  const EP = { N: 7636, L: 2000, W: 15 }; let rnd2 = mul32(11), ep = null;
+  function newEpisode() {
+    const mode = $("epMode").value, minS = EP.W - 1, maxFit = EP.N - EP.L - 2;
+    const start = mode === "fit" ? minS + Math.floor(rnd2() * (maxFit - minS + 1)) : minS + Math.floor(rnd2() * (EP.N - 3 - minS + 1));
+    const len = Math.min(EP.L, EP.N - 2 - start);
+    ep = { start, len, mode };
+    drawEp();
+  }
+  function drawEp() {
+    const cv = $("epCv"), g = fitCanvas(cv, 120), w = cv.width, x0 = 10, x1 = w - 10, X = i => x0 + i / EP.N * (x1 - x0);
+    g.clearRect(0, 0, w, 120);
+    const minS = EP.W - 1, maxS = $("epMode").value === "fit" ? EP.N - EP.L - 2 : EP.N - 3;
+    g.fillStyle = css("--line"); g.fillRect(x0, 40, x1 - x0, 34);
+    g.fillStyle = css("--accent-soft"); g.fillRect(X(minS), 40, X(maxS) - X(minS), 34);
+    g.strokeStyle = css("--accent"); g.lineWidth = 1; g.strokeRect(X(minS), 40, X(maxS) - X(minS), 34);
+    if (ep) {
+      g.fillStyle = css("--seen"); g.fillRect(X(ep.start), 40, Math.max(2, X(ep.start + ep.len) - X(ep.start)), 34);
+      g.fillStyle = css("--warn"); g.fillRect(X(ep.start) - 1.5, 30, 3, 54);
+      g.fillStyle = css("--muted"); g.font = "11px " + css("--mono"); g.textAlign = "center";
+      g.fillText(`เริ่มแท่ง ${ep.start.toLocaleString()} → เล่น ${ep.len.toLocaleString()} แท่ง`, Math.min(x1 - 90, Math.max(x0 + 90, X(ep.start + ep.len / 2))), 24);
+    }
+    g.fillStyle = css("--muted"); g.font = "11px " + css("--mono"); g.textAlign = "left"; g.fillText("Train เก่าสุด (2019)", x0, 92); g.textAlign = "right"; g.fillText("ใหม่สุด (2023) → Validation", x1, 92);
+    g.textAlign = "center"; g.fillText(`จุดเริ่มสุ่มได้: แท่ง ${minS} … ${maxS.toLocaleString()}  (${((maxS - minS + 1) / EP.N * 100).toFixed(0)}% ของ Train)`, w / 2, 110);
+    $("epLab").textContent = ep ? (ep.len < EP.L ? `episode สั้น: ข้อมูลหมดก่อนครบ ${EP.L}` : `episode เต็ม ${EP.L} แท่ง`) : "";
+  }
+  $("epNew").onclick = newEpisode; $("epMode").onchange = () => { ep = null; drawEp(); };
+
+  // ---------------- 3. coverage simulator ----------------
+  let C = null, cvTimer = null;
+  function cvInit(seed) {
+    const N = +$("cvN").value || 7636, L = +$("cvL").value || 2000, W = +$("cvW").value || 15, S = +$("cvS").value || 60000;
+    C = { N, L, W, S, mode: $("cvMode").value, rnd: mul32(seed), cnt: new Int32Array(N), starts: [], steps: 0, eps: 0 };
+    drawCv();
+  }
+  function cvEpisode() {
+    if (!C || C.steps >= C.S) return false;
+    const minS = C.W - 1, maxS = C.mode === "fit" ? Math.max(minS, C.N - C.L - 2) : Math.max(minS, C.N - 3);
+    const start = minS + Math.floor(C.rnd() * (maxS - minS + 1));
+    const len = Math.min(C.L, C.N - 2 - start, C.S - C.steps);
+    for (let i = start; i < start + len; i++) C.cnt[i]++;
+    C.starts.push(start); C.steps += len; C.eps++;
+    return true;
+  }
+  function drawCv() {
+    const cv = $("cvCv"), g = fitCanvas(cv, 130), w = cv.width, x0 = 10, x1 = w - 10, top = 22, sh = 54, N = C.N, X = i => x0 + i / N * (x1 - x0);
+    g.clearRect(0, 0, w, 130);
+    let mx = 1; for (let i = 0; i < N; i++) if (C.cnt[i] > mx) mx = C.cnt[i];
+    const seen = css("--seen"), bad = css("--bad");
+    g.fillStyle = css("--line"); g.fillRect(x0, top, x1 - x0, sh);
+    const px = x1 - x0, lo = C.W - 1;
+    for (let q = 0; q < px; q++) {
+      const a = Math.floor(q / px * N), b = Math.max(a + 1, Math.floor((q + 1) / px * N));
+      if (b <= lo) continue;
+      let s = 0, z = 0; for (let i = Math.max(a, lo); i < b; i++) { s += C.cnt[i]; if (!C.cnt[i]) z++; }
+      const n = b - Math.max(a, lo);
+      if (z === n) { g.fillStyle = bad; g.globalAlpha = 0.6; } else { g.fillStyle = seen; g.globalAlpha = 0.15 + 0.85 * Math.sqrt(s / n / mx); }
+      g.fillRect(x0 + q, top, 1, sh);
+    }
+    g.globalAlpha = 1; g.fillStyle = css("--muted");
+    C.starts.forEach(s => g.fillRect(X(s), top - 8, 1.2, 6));
+    g.font = "11px " + css("--mono"); g.textAlign = "left"; g.fillText("เก่าสุด", x0, top + sh + 14); g.textAlign = "right"; g.fillText("ใหม่สุด → Validation", x1, top + sh + 14);
+    g.textAlign = "center"; g.fillText(`${C.mode}: จุดเริ่มสุ่มได้ถึงแท่ง ${(C.mode === "fit" ? C.N - C.L - 2 : C.N - 3).toLocaleString()} จาก ${C.N.toLocaleString()}`, w / 2, top + sh + 32);
+    // kpis
+    const c = C.cnt.subarray(lo), n = c.length, k = Math.max(1, Math.floor(n / 10));
+    let cov = 0, never = 0, f = 0, l = 0, sum = 0;
+    for (let i = 0; i < n; i++) { if (c[i]) cov++; else never++; sum += c[i]; if (i < k && c[i]) f++; if (i >= n - k && c[i]) l++; }
+    const pct = (a, b) => (100 * a / b).toFixed(1) + "%";
+    $("kCov").textContent = pct(cov, n); $("kCov").style.color = cov / n >= 0.95 ? css("--good") : cov / n >= 0.8 ? css("--warn") : css("--bad");
+    $("kNever").textContent = never.toLocaleString(); $("kNever").style.color = never ? css("--bad") : css("--good");
+    $("kPass").textContent = (sum / n).toFixed(2);
+    $("kFirst").textContent = pct(f, k); $("kFirst").style.color = f / k < 0.6 ? css("--warn") : "";
+    $("kLast").textContent = pct(l, k); $("kLast").style.color = l / k < 0.6 ? css("--warn") : "";
+    $("kEp").textContent = C.eps.toLocaleString();
+    $("cvLab").textContent = `step ${C.steps.toLocaleString()} / ${C.S.toLocaleString()}` + (C.steps >= C.S ? " · ครบแล้ว" : "");
+  }
+  let cvSeed = 1;
+  $("cvStep").onclick = () => { if (!cvEpisode()) return; drawCv(); };
+  $("cvRun").onclick = () => {
+    if (cvTimer) { clearInterval(cvTimer); cvTimer = null; $("cvRun").textContent = "เล่นจนครบ step ▶"; return; }
+    $("cvRun").textContent = "หยุด ■";
+    const total = Math.max(1, Math.ceil(C.S / C.L)), per = Math.max(1, Math.ceil(total / 40));
+    cvTimer = setInterval(() => { let ok = true; for (let i = 0; i < per && ok; i++) ok = cvEpisode(); drawCv(); if (!ok) { clearInterval(cvTimer); cvTimer = null; $("cvRun").textContent = "เล่นจนครบ step ▶"; } }, reduced ? 400 : 70);
+  };
+  $("cvReset").onclick = () => { if (cvTimer) { clearInterval(cvTimer); cvTimer = null; $("cvRun").textContent = "เล่นจนครบ step ▶"; } cvInit(++cvSeed); };
+  ["cvN", "cvL", "cvW", "cvS", "cvMode"].forEach(id => $(id).onchange = () => { if (cvTimer) { clearInterval(cvTimer); cvTimer = null; $("cvRun").textContent = "เล่นจนครบ step ▶"; } cvInit(cvSeed); });
+
+  function all() { drawObs(); drawEp(); if (C) drawCv(); }
+  drawObs(); newEpisode(); cvInit(cvSeed);
+  // a filled first frame: the fit run already played, so the page shows the result at rest
+  while (cvEpisode()) {} drawCv();
+  addEventListener("resize", all);
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", all);
+  new MutationObserver(all).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+})();
+</script>
+</body>
+</html>

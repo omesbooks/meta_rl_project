@@ -123,8 +123,9 @@ function liveOpen(o) { const L = BT.live; if (!L) return; L.opens.push({ i: L.id
 // time ticks for a span of timestamps: ~1 label per 110 px, format by the span (hours within a few days,
 // day within a few months, month otherwise); returns [[index, label], ...] in the given index range
 function timeTicks(tsAt, i0, i1, widthPx, dpr) {
-  const n = Math.min(10, Math.floor(widthPx / (110 * dpr))), out = [];
-  if (i1 <= i0 || n < 1) return i1 > i0 ? [[i0, tsAt(i0).slice(0, 16)]] : out;   // too narrow for two labels: just the start
+  // a label is ~75 px wide: two need ~150 px, every further one ~110 px more; narrower = the start label only
+  const n = Math.min(10, Math.floor((widthPx - 40 * dpr) / (110 * dpr))), out = [];
+  if (i1 <= i0 || n < 1) return i1 > i0 ? [[i0, tsAt(i0).slice(0, 16)]] : out;
   const t0 = Date.parse(tsAt(i0).replace(" ", "T")), t1 = Date.parse(tsAt(i1).replace(" ", "T")), days = (t1 - t0) / 864e5;
   const fmt = t => days <= 4 ? t.slice(5, 16) : days <= 400 ? t.slice(0, 10) : t.slice(0, 7);
   for (let k = 0; k <= n; k++) { const i = Math.round(i0 + (i1 - i0) * k / n); out.push([i, fmt(tsAt(i))]); }

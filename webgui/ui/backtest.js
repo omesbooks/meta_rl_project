@@ -89,6 +89,16 @@ function liveStart(s) {
       <button type="button" class="d" id="bt_cd_follow" style="padding:4px 10px;font-size:12px">follow</button></div>
     <canvas id="bt_live" width="900" height="220" style="width:100%;max-width:100%;border-radius:12px;display:block"></canvas></div>`;
   $("bt_cd_pos").oninput = e => { const L = BT.live; if (!L) return; L.follow = +e.target.value >= L.cursor; candlesDraw(+e.target.value); };
+  const cdc = $("bt_candles");
+  cdc.onmousemove = e => { const L = BT.live; if (!L || !L.ohlc) return; const r = cdc.getBoundingClientRect(), dpr = devicePixelRatio || 1, W = cdc.width;
+    const x0 = 10 * dpr, x1 = W - 62 * dpr, end = Math.min(L.ohlc.ts.length - 1, Math.max(0, L.viewEnd ?? 0)), a = Math.max(0, end - L.view + 1);
+    const i = a + Math.floor(((e.clientX - r.left) * dpr - x0) / ((x1 - x0) / (end - a + 1))); L.hoverC = i >= a && i <= end ? i : null; candlesDraw(); };
+  cdc.onmouseleave = () => { const L = BT.live; if (L) { L.hoverC = null; candlesDraw(); } };
+  const eqc = $("bt_live");
+  eqc.onmousemove = e => { const L = BT.live; if (!L || L.pts.length < 2) return; const r = eqc.getBoundingClientRect(), dpr = devicePixelRatio || 1, W = eqc.width;
+    const x0 = 64 * dpr, x1 = W - 16 * dpr, b = ((e.clientX - r.left) * dpr - x0) / (x1 - x0) * L.bars;
+    let best = 0; for (let i = 1; i < L.pts.length; i++) if (Math.abs(L.pts[i][0] - b) < Math.abs(L.pts[best][0] - b)) best = i; L.hoverE = best; liveDraw(); };
+  eqc.onmouseleave = () => { const L = BT.live; if (L) { L.hoverE = null; liveDraw(); } };
   $("bt_cd_follow").onclick = () => { const L = BT.live; if (!L) return; L.follow = true; $("bt_cd_pos").value = String(L.cursor); candlesDraw(); };
   $("bt_mcimg").innerHTML = ""; $("bt_report").innerHTML = `<div class="empty">live run · the full report (realism, baseline, Monte Carlo) appears when it finishes</div>`;
   $("bt_report_txt").textContent = "the text report is written when the run finishes";
@@ -110,13 +120,32 @@ function liveTrade(t) {
 function liveOpen(o) { const L = BT.live; if (!L) return; L.opens.push({ i: L.idx.get(o.time), ...o }); }
 // candles of the backtest range with the trades on them (MT visual-tester style): ▲ long entry, ▼ short entry,
 // dotted line to the exit square (green = won, red = lost); an open position runs to the live cursor.
+// time ticks for a span of timestamps: ~1 label per 110 px, format by the span (hours within a few days,
+// day within a few months, month otherwise); returns [[index, label], ...] in the given index range
+function timeTicks(tsAt, i0, i1, widthPx, dpr) {
+  const n = Math.max(1, Math.min(10, Math.floor(widthPx / (110 * dpr)))), out = [];
+  if (i1 <= i0) return out;
+  const t0 = Date.parse(tsAt(i0).replace(" ", "T")), t1 = Date.parse(tsAt(i1).replace(" ", "T")), days = (t1 - t0) / 864e5;
+  const fmt = t => days <= 4 ? t.slice(5, 16) : days <= 400 ? t.slice(0, 10) : t.slice(0, 7);
+  for (let k = 0; k <= n; k++) { const i = Math.round(i0 + (i1 - i0) * k / n); out.push([i, fmt(tsAt(i))]); }
+  return out;
+}
+function labelBox(g, x, y, lines, dpr, fg, bg, W) {
+  g.font = `${11 * dpr}px sans-serif`; g.textAlign = "left";
+  const w = Math.max(...lines.map(l => g.measureText(l).width)) + 12 * dpr, h = lines.length * 14 * dpr + 8 * dpr;
+  const bx = Math.min(Math.max(4 * dpr, x + 10 * dpr), W - w - 4 * dpr), by = Math.max(4 * dpr, y - h - 6 * dpr);
+  g.fillStyle = bg; g.globalAlpha = 0.92; g.fillRect(bx, by, w, h); g.globalAlpha = 1;
+  g.fillStyle = fg; lines.forEach((l, i) => g.fillText(l, bx + 6 * dpr, by + 15 * dpr + i * 14 * dpr));
+}
 function candlesDraw(endAt) {
   const L = BT.live, cv = $("bt_candles"); if (!L || !cv || !L.ohlc) return;
-  const B = L.ohlc, n = B.ts.length, end = Math.min(n - 1, Math.max(0, endAt != null ? endAt : L.cursor >= 0 ? L.cursor : L.view - 1));
+  const B = L.ohlc, n = B.ts.length;
+  if (endAt != null) L.viewEnd = endAt; else if (L.follow || L.viewEnd == null) L.viewEnd = L.cursor >= 0 ? L.cursor : L.view - 1;
+  const end = Math.min(n - 1, Math.max(0, L.viewEnd));
   const a = Math.max(0, end - L.view + 1), m = end - a + 1;
   const dpr = devicePixelRatio || 1, W = cv.width = Math.max(300, cv.clientWidth * dpr), H = cv.height = 260 * dpr;
   const g = cv.getContext("2d"), cs = getComputedStyle(document.body), col = k => cs.getPropertyValue(k).trim();
-  const fg = col("--fg") || "#111", dim = col("--dim") || "#888", line = col("--line") || "#ccc", green = col("--green") || "#1c8a55", red = col("--red") || "#c24135", accent = col("--accent") || "#245b8f";
+  const fg = col("--fg") || "#111", dim = col("--dim") || "#888", line = col("--line") || "#ccc", green = col("--green") || "#1c8a55", red = col("--red") || "#c24135", accent = col("--acc") || "#245b8f";
   g.clearRect(0, 0, W, H);
   const x0 = 10 * dpr, x1 = W - 62 * dpr, y0 = 16 * dpr, y1 = H - 24 * dpr, bw = (x1 - x0) / m;
   let lo = Infinity, hi = -Infinity;
@@ -146,14 +175,23 @@ function candlesDraw(endAt) {
   if (L.cursor >= a && L.cursor <= end) { g.strokeStyle = accent; g.globalAlpha = 0.5; g.beginPath(); g.moveTo(X(L.cursor), y0); g.lineTo(X(L.cursor), y1); g.stroke(); g.globalAlpha = 1; }
   g.fillStyle = dim; g.font = `${11 * dpr}px sans-serif`; g.textAlign = "left";
   g.fillText(hi.toFixed(hi > 100 ? 2 : 5), x1 + 4 * dpr, y0 + 8 * dpr); g.fillText(lo.toFixed(lo > 100 ? 2 : 5), x1 + 4 * dpr, y1);
-  g.fillStyle = fg; g.fillText(B.ts[a].slice(0, 16), x0, H - 8 * dpr); g.textAlign = "right"; g.fillText(B.ts[end].slice(0, 16), x1, H - 8 * dpr);
+  const ticks = timeTicks(i => B.ts[i], a, end, x1 - x0, dpr);
+  ticks.forEach(([i, lab], k) => {
+    g.strokeStyle = line; g.globalAlpha = 0.7; g.beginPath(); g.moveTo(X(i), y0); g.lineTo(X(i), y1 + 3 * dpr); g.stroke(); g.globalAlpha = 1;
+    g.fillStyle = fg; g.textAlign = k === 0 ? "left" : k === ticks.length - 1 ? "right" : "center"; g.fillText(lab, X(i), H - 8 * dpr);
+  });
+  if (L.hoverC != null && L.hoverC >= a && L.hoverC <= end) {          // crosshair + the bar under the mouse
+    const i = L.hoverC; g.strokeStyle = fg; g.globalAlpha = 0.35; g.setLineDash([3 * dpr, 3 * dpr]); g.beginPath(); g.moveTo(X(i), y0); g.lineTo(X(i), y1); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+    const here = L.trades.filter(t => t.i0 === i || t.i1 === i).map(t => (t.i0 === i ? "entry " : "exit ") + t.side + (t.i1 === i ? ` ${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(2)} (${t.reason})` : ""));
+    labelBox(g, X(i), Y(B.h[i]), [B.ts[i].slice(0, 16), `O ${B.o[i]}  H ${B.h[i]}  L ${B.l[i]}  C ${B.c[i]}`, ...here], dpr, fg, (document.body.classList.contains("deep") ? "#0b1220" : "#ffffff"), W);
+  }
   const nOpen = L.opens.length, won = L.trades.filter(t => t.pnl >= 0).length;
   $("bt_cd_lab").textContent = `${m} bars · ${L.trades.length} closed (${won} won) · ${nOpen} open${L.follow ? " · following" : ""}`;
   $("bt_cd_follow").style.display = L.follow ? "none" : "";
 }
 function livePoint(p) {
   const L = BT.live; if (!L) return;
-  L.pts.push([p.bar, p.equity]); L.last = p; if (!L.t0) L.t0 = p.time; L.t1 = p.time;
+  L.pts.push([p.bar, p.equity, p.time, p.trades]); L.last = p; if (!L.t0) L.t0 = p.time; L.t1 = p.time;
   const ci = L.idx.get(p.time); if (ci != null) { L.cursor = ci; if (L.follow) $("bt_cd_pos").value = String(ci); }
   const ret = p.balance / L.initial - 1, pf = p.gross_loss > 0 ? p.gross_win / p.gross_loss : (p.gross_win > 0 ? Infinity : NaN), wr = p.trades ? p.wins / p.trades : NaN;
   $("bt_cards").innerHTML =
@@ -173,7 +211,7 @@ function liveDraw() {
   const L = BT.live, cv = $("bt_live"); if (!L || !cv) return;
   const W = cv.width = Math.max(300, cv.clientWidth * (devicePixelRatio || 1)), H = cv.height = 220 * (devicePixelRatio || 1);
   const g = cv.getContext("2d"), cs = getComputedStyle(document.body), col = k => cs.getPropertyValue(k).trim();
-  const fg = col("--fg") || "#111", dim = col("--dim") || "#888", line = col("--line") || "#ccc", green = col("--green") || "#1c8a55", red = col("--red") || "#c24135", accent = col("--accent") || "#245b8f";
+  const fg = col("--fg") || "#111", dim = col("--dim") || "#888", line = col("--line") || "#ccc", green = col("--green") || "#1c8a55", red = col("--red") || "#c24135", accent = col("--acc") || "#245b8f";
   g.clearRect(0, 0, W, H);
   const pts = L.pts; if (pts.length < 2) return;
   const x0 = 64 * (devicePixelRatio || 1), x1 = W - 16 * (devicePixelRatio || 1), y0 = 14 * (devicePixelRatio || 1), y1 = H - 26 * (devicePixelRatio || 1);
@@ -191,7 +229,16 @@ function liveDraw() {
   g.fillStyle = dim; g.font = `${11 * (devicePixelRatio || 1)}px sans-serif`; g.textAlign = "right";
   g.fillText(hi.toFixed(0), x0 - 6, y0 + 10); g.fillText(lo.toFixed(0), x0 - 6, y1);
   if (Math.min(Math.abs(yI - y0 - 6), Math.abs(y1 - yI - 4)) > 14 * (devicePixelRatio || 1)) g.fillText(L.initial.toFixed(0), x0 - 6, yI + 4);   // skip when it would overlap hi/lo
-  g.textAlign = "left"; g.fillStyle = fg; g.fillText(String(L.t0).slice(0, 16), x0, H - 8); g.textAlign = "right"; g.fillText(String(L.t1).slice(0, 16), x1, H - 8);
+  const dprE = devicePixelRatio || 1, ticksE = timeTicks(i => pts[i][2], 0, pts.length - 1, X(pts[pts.length - 1][0]) - X(pts[0][0]), dprE);
+  ticksE.forEach(([i, lab], k) => {
+    const x = X(pts[i][0]); g.strokeStyle = line; g.globalAlpha = 0.7; g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y1 + 3 * dprE); g.stroke(); g.globalAlpha = 1;
+    g.fillStyle = fg; g.textAlign = k === 0 ? "left" : k === ticksE.length - 1 ? "right" : "center"; g.fillText(lab, x, H - 8);
+  });
+  if (L.hoverE != null && L.hoverE < pts.length) {                    // crosshair + the point under the mouse
+    const [b, v, t, ntr] = pts[L.hoverE], x = X(b); g.strokeStyle = fg; g.globalAlpha = 0.35; g.setLineDash([3 * dprE, 3 * dprE]); g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y1); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+    g.fillStyle = accent; g.beginPath(); g.arc(x, Y(v), 3 * dprE, 0, Math.PI * 2); g.fill();
+    labelBox(g, x, Y(v), [String(t).slice(0, 16), `equity ${v.toFixed(2)} (${fmtPct(v / L.initial - 1)}) · bar ${b.toLocaleString()} · ${ntr} trades`], dprE, fg, (document.body.classList.contains("deep") ? "#0b1220" : "#ffffff"), W);
+  }
   g.textAlign = "center"; g.fillStyle = dim; g.fillText(`equity · live · ${lb.toLocaleString()} / ${L.bars.toLocaleString()} bars`, (x0 + x1) / 2, y0 + 10);
 }
 function onBacktestEvent(ev) {

@@ -457,28 +457,36 @@ int CountMyPositions()
 //+------------------------------------------------------------------+
 void CalcSLTP(int direction, double price, double &out_sl, double &out_tp)
 {
+   out_sl = 0.0;
+   out_tp = 0.0;
+   // A multiplier <= 0 means "no stop on that side". The old code fell back to
+   // stops_level + 5 points (0.5 pip on USDJPY), which sits inside the spread and
+   // every order failed with [invalid stops].
+   if(InpATR_SL_Mult <= 0.0 && InpATR_TP_Mult <= 0.0) return;
    double atr_buf[];
    // Always size entries from the dedicated ATR(14) reference.  The dynamic
    // ATR grid may not contain period 14 when ATR_PSTEP != 1.
-   if(CopyBuffer(g_h_atr14_ref, 0, 1, 1, atr_buf) <= 0) {
-      out_sl = 0;
-      out_tp = 0;
-      return;
-   }
-   double atr = atr_buf[0];
-   double point_size = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   double min_dist   = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point_size;
+   if(CopyBuffer(g_h_atr14_ref, 0, 1, 1, atr_buf) <= 0) return;
+   double atr    = atr_buf[0];
+   double point  = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   int    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   double bid    = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask    = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   long   level  = MathMax(SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL),
+                           SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL));
+   double min_dist = level * point + 5 * point;   // broker minimum + a small margin
 
-   double sl_dist = MathMax(atr * InpATR_SL_Mult, min_dist + 5 * point_size);
-   double tp_dist = MathMax(atr * InpATR_TP_Mult, min_dist + 5 * point_size);
-
+   // Stops are checked on the other side of the spread: a buy's SL/TP against Bid,
+   // a sell's against Ask. Widen to the broker minimum from that side.
    if(direction > 0) {  // long
-      out_sl = price - sl_dist;
-      out_tp = price + tp_dist;
+      if(InpATR_SL_Mult > 0.0) out_sl = MathMin(price - atr * InpATR_SL_Mult, bid - min_dist);
+      if(InpATR_TP_Mult > 0.0) out_tp = MathMax(price + atr * InpATR_TP_Mult, bid + min_dist);
    } else {             // short
-      out_sl = price + sl_dist;
-      out_tp = price - tp_dist;
+      if(InpATR_SL_Mult > 0.0) out_sl = MathMax(price + atr * InpATR_SL_Mult, ask + min_dist);
+      if(InpATR_TP_Mult > 0.0) out_tp = MathMin(price - atr * InpATR_TP_Mult, ask - min_dist);
    }
+   if(out_sl > 0.0) out_sl = NormalizeDouble(out_sl, digits);
+   if(out_tp > 0.0) out_tp = NormalizeDouble(out_tp, digits);
 }
 
 //+------------------------------------------------------------------+

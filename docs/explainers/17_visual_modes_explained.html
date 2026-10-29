@@ -183,6 +183,69 @@
     <p>หน้าต่าง live เล่น snapshot แต่ละอันหนึ่งรอบแล้ว "หลับ" (ข้อความ 💤 IDLE) จน eval ถัดไปมาถึงหรือขยับเมาส์ ย่อหน้าต่างไว้ก็หยุดวาด และหยุดหลังกด pause ไว้ 8 วินาที</p>
   </section>
 
+  <!-- ============================ 1b. how a layer is computed ============================ -->
+  <section>
+    <div class="eyebrow">1b · L1 / L2 / L3 คำนวณจากอะไร</div>
+    <h2>ทุกชั้นคือ "ผลรวมถ่วงน้ำหนักของชั้นก่อนหน้า" แล้วบีบด้วย tanh</h2>
+    <p>ไม่มีสูตรเทคนิคอลซ่อนอยู่ข้างใน neuron แต่ละตัวทำสิ่งเดียวกัน: รับทุกค่าจากชั้นก่อนหน้า คูณน้ำหนักของตัวเอง บวกกัน บวกค่าคงที่ (bias) แล้วผ่าน tanh ให้อยู่ในช่วง −1 ถึง +1 น้ำหนักทั้งหมดเริ่มจากค่าสุ่ม และ PPO ค่อยๆ ปรับทุกรอบ rollout</p>
+    <figure>
+      <svg viewBox="0 0 760 210" role="img" aria-label="one neuron: weighted sum of inputs, bias, tanh" style="width:100%;max-width:760px;display:block;font-family:var(--mono);font-size:12px">
+        <g fill="var(--accent)" opacity=".9"><circle cx="40" cy="30" r="7"/><circle cx="40" cy="70" r="7"/><circle cx="40" cy="110" r="7"/><circle cx="40" cy="180" r="7"/></g>
+        <g fill="var(--muted)" font-size="11"><text x="54" y="34">x₁ = candle_hammer@-9</text><text x="54" y="74">x₂ = ex_fractal_down@-6</text><text x="54" y="114">x₃ = d1_atr@-2</text><text x="54" y="150">⋮  (1,823 ค่า)</text><text x="54" y="184">x₁₈₂₃ = bars_in_position</text></g>
+        <g stroke="var(--warn)" stroke-width="1.5" fill="none"><path d="M47 30 C 200 30, 240 100, 330 105"/><path d="M47 70 C 200 70, 240 100, 330 105"/><path d="M47 110 C 200 110, 240 105, 330 105"/><path d="M47 180 C 200 180, 240 110, 330 105"/></g>
+        <g fill="var(--warn)" font-size="11"><text x="150" y="26">w₁ = +0.259</text><text x="150" y="64">w₂ = −0.309</text><text x="150" y="104">w₃ = −0.235</text><text x="150" y="176">w₁₈₂₃</text></g>
+        <rect x="330" y="80" width="150" height="50" rx="10" fill="var(--accent-soft)" stroke="var(--accent)"/><text x="405" y="100" text-anchor="middle" fill="var(--ink)">Σ wᵢ·xᵢ + b</text><text x="405" y="120" text-anchor="middle" fill="var(--muted)" font-size="11">b = +0.063</text>
+        <path d="M480 105 L 525 105" stroke="var(--line)" stroke-width="2"/><polygon points="525,100 535,105 525,110" fill="var(--line)"/>
+        <rect x="540" y="80" width="90" height="50" rx="10" fill="var(--warn-soft)" stroke="var(--warn)"/><text x="585" y="110" text-anchor="middle" fill="var(--ink)">tanh</text>
+        <path d="M630 105 L 672 105" stroke="var(--line)" stroke-width="2"/><polygon points="672,100 682,105 672,110" fill="var(--line)"/>
+        <circle cx="705" cy="105" r="12" fill="#c2410c"/><text x="705" y="140" text-anchor="middle" fill="var(--muted)" font-size="11">neuron L1 #28</text><text x="705" y="156" text-anchor="middle" fill="var(--muted)" font-size="11">ค่า −1 … +1 = สีจุด</text>
+      </svg>
+      <figcaption>neuron 1 ตัวใน L1 ของ rl_prod_v1 (ตัวที่ #28) ตัวเลขทุกตัวเป็นค่าจริงที่อ่านจากไฟล์โมเดล</figcaption>
+    </figure>
+
+    <h3>ไล่ทีละชั้น (rl_prod_v1: window 10 × 182 feature)</h3>
+    <div class="tw"><table>
+      <tr><th>ชั้น</th><th>รับอะไรเข้ามา</th><th>คำนวณอะไร</th><th>ออกมากี่ค่า</th><th>จำนวนน้ำหนัก</th></tr>
+      <tr><td>INPUT</td><td>10 แท่ง × 182 feature + state 3 ค่า</td><td>ค่า normalize แล้ว: (ค่า − mean ของ Train) ÷ std ของ Train</td><td>1,823</td><td>–</td></tr>
+      <tr><td>L1</td><td>ทั้ง 1,823 ค่า</td><td>neuronⱼ = tanh(Σᵢ wⱼᵢ·xᵢ + bⱼ)</td><td>128</td><td>1,823 × 128 = 233,344 (+128 bias)</td></tr>
+      <tr><td>L2</td><td>128 ค่าจาก L1</td><td>สูตรเดียวกัน</td><td>64</td><td>128 × 64 = 8,192 (+64)</td></tr>
+      <tr><td>head ของ actor</td><td>64 ค่าจาก L2</td><td>4 logit (ไม่ผ่าน tanh) → softmax = HOLD/BUY/SELL/CLOSE %</td><td>4</td><td>64 × 4 = 256 (+4)</td></tr>
+      <tr><td>head ของ critic</td><td>64 ค่าจาก L2 ของ tower ตัวเอง</td><td>1 ค่า = V(s)</td><td>1</td><td>64 × 1 = 64 (+1)</td></tr>
+    </table></div>
+    <p class="cap">รวมฝั่ง actor 241,988 พารามิเตอร์ ฝั่ง critic เป็น network แยกอีกชุดขนาดเท่ากัน · โมเดล g0 (window 15) มี 3 ชั้น 256 → 128 → 64 ตามกฎ auto ของ <code>--net_arch</code>: window &lt; 20 = 128 → 64, 20–49 = 256 → 128 → 64, ≥ 50 = 512 → 256 → 128 ตัวเลขเหล่านี้เป็นค่าตั้งตอนเทรน ไม่ได้คำนวณจากข้อมูล</p>
+
+    <h3>ตัวอย่างจริง: neuron L1 #28 ของ rl_prod_v1</h3>
+    <div class="pair">
+      <div class="tw"><table>
+        <tr><th>input ที่ให้น้ำหนักมากที่สุด</th><th>น้ำหนัก w</th></tr>
+        <tr><td>ex_fractal_down@-6</td><td>−0.309</td></tr>
+        <tr><td>candle_hammer@-9</td><td>+0.259</td></tr>
+        <tr><td>candle_harami@-9</td><td>−0.236</td></tr>
+        <tr><td>d1_atr@-2</td><td>−0.235</td></tr>
+        <tr><td>ex_fractal_down@-5</td><td>+0.217</td></tr>
+        <tr><td>atr_30@-4</td><td>−0.207</td></tr>
+        <tr><td>d1_atr@-5</td><td>−0.207</td></tr>
+        <tr><td>d1_atr@-1</td><td>−0.203</td></tr>
+        <tr><td>atr_56@-8</td><td>−0.202</td></tr>
+        <tr><td>atr_42@0</td><td>−0.199</td></tr>
+      </table></div>
+      <div>
+        <p>neuron นี้ "ฟัง" กลุ่มความผันผวน (ATR หลายช่วง, d1_atr) และ pattern แท่งเทียนเมื่อ 5–9 แท่งก่อน เป็นหลัก โดยน้ำหนักเกือบทั้งหมดเป็นลบ: ยิ่ง ATR สูง neuron ยิ่งออกค่าลบ</p>
+        <p><b>เช็กด้วยมือที่แท่ง 150 ของ eval ล่าสุด:</b> Σ w·x + b = +23.1 → tanh(+23.1) = +1.000 ตรงกับค่าที่ snapshot เก็บไว้และที่หน้า 3D ใช้ลงสีจุดพอดี ค่า +23 ไกลจากศูนย์มาก tanh จึง "อิ่ม" ที่ +1 นี่คือเหตุที่จุดหลายจุดใน L1 สว่างเต็มที่ตลอด และเป็นข้อจำกัดของ tanh: เมื่ออิ่มแล้ว input เปลี่ยนอีกก็แทบไม่เปลี่ยนค่า</p>
+        <p>ชั้นลึกกว่านี้ตีความยากขึ้น: L2 ไม่เห็น input โดยตรง เห็นแค่ 128 ค่าสรุปจาก L1 จึงเป็น "การผสมของการผสม"</p>
+      </div>
+    </div>
+
+    <h3>หน้า 3D หยิบอะไรจากการคำนวณนี้มาแสดง</h3>
+    <dl>
+      <dt>จุด</dt><dd>ค่า tanh ของ neuron ณ แท่งนั้น (ส้ม = บวก, ฟ้า = ลบ, สว่าง = ใกล้ ±1)</dd>
+      <dt>เส้นเชื่อม</dt><dd>น้ำหนัก wⱼᵢ แต่วาดเฉพาะเส้นที่ |w| × ความผันผวนของต้นทาง สูงสุด 4–16 เส้นต่อ neuron (จาก 233,344 เส้นในชั้นแรก) สีบอกเครื่องหมายของ w × x ณ แท่งนั้น</dd>
+      <dt>ป้าย L1 · 128</dt><dd>ลำดับชั้นและจำนวน neuron อ่านจากไฟล์โมเดลตรงๆ (ชื่อ L1/L2 ไม่เกี่ยวกับ L1/L2 regularization)</dd>
+      <dt>การจัดกลุ่ม sorted</dt><dd>ที่ชั้นสุดท้ายของ actor ดูน้ำหนักของ head ว่า neuron ตัวนั้นส่งค่าไป action ไหนแรงที่สุด</dd>
+      <dt>TOP DRIVERS</dt><dd>ไม่ได้ดูน้ำหนักตรงๆ แต่ดู gradient × input ของ action ที่เลือก คือ "ถ้าขยับ input นี้นิดเดียว logit ของ action นี้เปลี่ยนเท่าไร" ซึ่งรวมผลของทุกชั้นไว้แล้ว</dd>
+    </dl>
+  </section>
+
   <!-- ============================ 2. looks ============================ -->
   <section>
     <div class="eyebrow">2 · look</div>

@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Particle Burst Effect</title>
+<!--
+================================================================================
+ HANDOFF SPEC — "particle burst" trade effect (Meta RL Trading · Neural Trader)
+ Source of truth: pycaret_trainer/tools/viz/network3d.html
+   burst()            ~line 421   spawn
+   per-frame update   ~line 819   in updateChart()
+   glowPoints()       ~line 305   point material + shaders
+   colours            ~line 333   C_UP / C_DN / C_GOLD
+ Extracted 2026-11-03. This file reproduces it 1:1 (WebGL path) and shows a
+ Canvas 2D port. Open it in a browser: buttons fire each event.
+
+ WHEN IT FIRES (chart pixel space, y UP, origin bottom-left, 1 unit = 1 CSS px)
+   open long  -> burst(x, yOf(low)  - 14, C_UP,   90)   below the bar
+   open short -> burst(x, yOf(high) + 14, C_DN,   90)   above the bar
+   close win  -> burst(x, yOf(close),     C_GOLD, 50)
+   close loss -> burst(x, yOf(close),     C_DN,   50)
+   x = the replay head (current bar) on the chart.
+
+ SPAWN (per particle)
+   angle a       = random * 2*PI
+   speed v       = 60 + random * 260            px/s
+   vx            = cos(a) * v
+   vy            = sin(a) * v + 80              (+80 = upward bias)
+   life          = 0.5 + random * 0.8           s   (0.5 .. 1.3)
+   brightness b  = 0.8 + random * 1.4           (0.8 .. 2.2, >1 blows out in additive)
+   colour        = baseColour * b
+   pool          = 900 particles, ring buffer (oldest slot reused)
+
+ UPDATE (every frame, dt in s)
+   if life <= 0: size = 0, skip
+   life -= dt
+   x += vx * dt ;  y += vy * dt
+   vy -= 260 * dt                               gravity 260 px/s^2 (y up)
+   size = max(0, life) * 16                     px, times devicePixelRatio
+   -> particles shrink to nothing as they die; no alpha fade beyond that
+
+ RENDER (THREE.Points, ShaderMaterial, transparent, depthWrite false)
+   pointSize = aSize * pixelRatio  (pixel-space, no perspective)
+   dark theme:  blending Additive
+     d = length(gl_PointCoord - 0.5)
+     a = smoothstep(0.5, 0.0, d); a = a*a
+     if a < 0.003 discard
+     rgb = colour * (a + smoothstep(0.10, 0.0, d) * 0.6)   // soft disc + hot core
+     alpha = a
+   light theme: blending Normal
+     inten = max(r,g,b); al = a * clamp(inten*2.2, 0, 1); if al < 0.004 discard
+     hue = colour / inten
+     rgb = hue * mix(0.62, 0.42, smoothstep(0.16, 0.0, d)); alpha = al
+
+ COLOURS            dark (neon, linear-ish RGB)      light (ink)
+   C_UP   (buy)     (0.00, 1.00, 0.55)               #0f9a5a
+   C_DN   (sell/loss)(1.00, 0.10, 0.42)              #d01e52
+   C_GOLD (win)     (1.00, 0.72, 0.12)               #c98a00
+
+ PORTING NOTES
+   - Keep the numbers; the look comes from many small, fast, short-lived dots,
+     the upward bias + gravity arc, and size shrinking with remaining life.
+   - Canvas 2D: ctx.globalCompositeOperation = "lighter" for the dark theme,
+     draw each particle as a radial gradient (centre bright, edge 0), radius =
+     size/2, and flip y (canvasY = height - y).
+   - The real app draws this in an orthographic "chart" scene layered over the
+     3D scene; nothing else in the scene interacts with the particles.
+================================================================================
+-->
+<style>
+  :root { --bg: #f2f4f8; --fg: #16212e; --muted: #5d6b7e; --line: #d6dde7; --panel: #ffffff; --acc: #0c7c8a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0b1018; --fg: #e6edf5; --muted: #98a6b8; --line: #263241; --panel: #131b26; --acc: #3fc1cf; color-scheme: dark } }
+  :root[data-theme="dark"] { --bg: #0b1018; --fg: #e6edf5; --muted: #98a6b8; --line: #263241; --panel: #131b26; --acc: #3fc1cf; color-scheme: dark }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, "Segoe UI", sans-serif;
+         padding-block: 24px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 980px; margin: 0 auto; display: grid; gap: 18px; }
+  h1 { font-size: 24px; margin: 0; } p { margin: 0; color: var(--muted); max-width: 72ch; }
+  .stage { position: relative; width: 100%; aspect-ratio: 16 / 7; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, select { font: 600 13px system-ui, sans-serif; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); cursor: pointer; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+  .b-up { color: #0f9a5a; } .b-dn { color: #d01e52; } .b-gold { color: #c98a00; }
+  .meta { font: 12px ui-monospace, Consolas, monospace; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; } td, th { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; } code { font: 12.5px ui-monospace, Consolas, monospace; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Particle burst — trade effect</h1>
+    <p>1:1 reproduction of the effect in the Neural Trader viewer. Press a button to fire an event at the current bar. The full spec and the original code are in the comment at the top of this file.</p>
+  </header>
+
+  <div class="bar">
+    <button class="b-up" id="bBuy">▲ open long</button>
+    <button class="b-dn" id="bSell">▼ open short</button>
+    <button class="b-gold" id="bWin">● close · win</button>
+    <button class="b-dn" id="bLoss">● close · loss</button>
+    <button id="bAuto" aria-pressed="false">auto replay ▶</button>
+    <label class="meta">theme <select id="theme"><option value="dark">dark (additive)</option><option value="light">light (normal)</option></select></label>
+    <label class="meta">renderer <select id="rend"><option value="webgl">WebGL · original shader</option><option value="canvas">Canvas 2D · port</option></select></label>
+    <span class="meta" id="info"></span>
+  </div>
+
+  <div class="stage" id="stage">
+    <canvas id="chart"></canvas>
+    <canvas id="fxCanvas"></canvas>
+  </div>
+
+  <section>
+    <table>
+      <tr><th>event</th><th>where</th><th>colour (dark / light)</th><th>particles</th></tr>
+      <tr><td>open long</td><td>14 px below the bar's low</td><td>(0.00, 1.00, 0.55) / #0f9a5a</td><td>90</td></tr>
+      <tr><td>open short</td><td>14 px above the bar's high</td><td>(1.00, 0.10, 0.42) / #d01e52</td><td>90</td></tr>
+      <tr><td>close · win</td><td>at the bar's close</td><td>(1.00, 0.72, 0.12) / #c98a00</td><td>50</td></tr>
+      <tr><td>close · loss</td><td>at the bar's close</td><td>(1.00, 0.10, 0.42) / #d01e52</td><td>50</td></tr>
+    </table>
+    <p class="meta" style="margin-top:10px">spawn: angle U(0,2π) · speed 60+U·260 px/s · vy +80 · life 0.5+U·0.8 s · brightness 0.8+U·1.4 · update: gravity 260 px/s² · size = life × 16 px · pool 900 (ring buffer)</p>
+  </section>
+</main>
+
+<script type="module">
+// ----------------------------------------------------------------------------- shared particle state (identical to network3d.html)
+const NB = 900;
+const pos = new Float32Array(NB * 3), col = new Float32Array(NB * 3), size = new Float32Array(NB);
+const bVel = new Float32Array(NB * 2), bLife = new Float32Array(NB);
+let burstNext = 0;
+const $ = id => document.getElementById(id);
+let LIGHT = false;
+const PAL = {
+  dark:  { up: [0.0, 1.0, 0.55], dn: [1.0, 0.1, 0.42], gold: [1.0, 0.72, 0.12] },
+  light: { up: hex("#0f9a5a"), dn: hex("#d01e52"), gold: hex("#c98a00") },
+};
+function hex(h) { const n = parseInt(h.slice(1), 16); return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255].map(c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)); }
+const C = k => PAL[LIGHT ? "light" : "dark"][k];
+
+// spawn — verbatim logic of burst(x, y, col, n) in network3d.html (y is UP)
+function burst(x, y, c, n = 70) {
+  for (let j = 0; j < n; j++) {
+    const i = burstNext; burstNext = (burstNext + 1) % NB;
+    const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 260;
+    pos.set([x, y, 0], i * 3); bVel[i * 2] = Math.cos(a) * v; bVel[i * 2 + 1] = Math.sin(a) * v + 80;
+    bLife[i] = 0.5 + Math.random() * 0.8; const b = 0.8 + Math.random() * 1.4;
+    col.set([c[0] * b, c[1] * b, c[2] * b], i * 3);
+  }
+}
+// per-frame update — verbatim logic of the loop in updateChart()
+function step(dt) {
+  let alive = 0;
+  for (let i = 0; i < NB; i++) {
+    if (bLife[i] <= 0) { size[i] = 0; continue; }
+    bLife[i] -= dt; pos[i * 3] += bVel[i * 2] * dt; pos[i * 3 + 1] += bVel[i * 2 + 1] * dt; bVel[i * 2 + 1] -= 260 * dt;
+    size[i] = Math.max(0, bLife[i]) * 16; alive++;
+  }
+  return alive;
+}
+
+// ----------------------------------------------------------------------------- a small candle chart to fire on (Canvas 2D underlay)
+const stage = $("stage"), chart = $("chart"), cg = chart.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+const bars = (() => { const out = []; let p = 150; for (let i = 0; i < 70; i++) { const o = p, c = o + (Math.random() - 0.48) * 0.6; const h = Math.max(o, c) + Math.random() * 0.25, l = Math.min(o, c) - Math.random() * 0.25; out.push({ o, h, l, c }); p = c; } return out; })();
+let head = 40;
+const CH = () => ({ x0: 40, x1: W - 50, y0: 24, y1: H - 24 });       // chart box in CSS px, y measured from the BOTTOM
+function yOf(v) { const b = CH(), lo = Math.min(...bars.map(x => x.l)), hi = Math.max(...bars.map(x => x.h)); return b.y0 + (v - lo) / (hi - lo) * (b.y1 - b.y0); }
+function xOf(i) { const b = CH(); return b.x0 + (i + 0.5) * (b.x1 - b.x0) / bars.length; }
+function drawChart() {
+  const css = getComputedStyle(document.documentElement);
+  cg.setTransform(DPR, 0, 0, DPR, 0, 0);
+  cg.fillStyle = LIGHT ? "#f7f9fc" : "#05070d"; cg.fillRect(0, 0, W, H);
+  const bw = (CH().x1 - CH().x0) / bars.length * 0.6;
+  bars.forEach((b, i) => {
+    const up = b.c >= b.o, x = xOf(i), cy = v => H - yOf(v);
+    cg.strokeStyle = cg.fillStyle = i > head ? (LIGHT ? "#cfd6e2" : "#1b2332") : up ? (LIGHT ? "#0f9a5a" : "#00c983") : (LIGHT ? "#d01e52" : "#e0336f");
+    cg.beginPath(); cg.moveTo(x, cy(b.h)); cg.lineTo(x, cy(b.l)); cg.stroke();
+    const t = cy(Math.max(b.o, b.c)), btm = cy(Math.min(b.o, b.c)); cg.fillRect(x - bw / 2, t, bw, Math.max(1, btm - t));
+  });
+  cg.strokeStyle = LIGHT ? "#c98a00" : "#ffc53d"; cg.globalAlpha = 0.6; cg.beginPath(); cg.moveTo(xOf(head), 8); cg.lineTo(xOf(head), H - 8); cg.stroke(); cg.globalAlpha = 1;
+}
+function fire(kind) {
+  const b = bars[head], x = xOf(head);
+  if (kind === "buy")  burst(x, yOf(b.l) - 14, C("up"), 90);
+  if (kind === "sell") burst(x, yOf(b.h) + 14, C("dn"), 90);
+  if (kind === "win")  burst(x, yOf(b.c), C("gold"), 50);
+  if (kind === "loss") burst(x, yOf(b.c), C("dn"), 50);
+}
+
+// ----------------------------------------------------------------------------- renderer A: WebGL with the original shader (three r160)
+let gl3 = null;
+async function initWebGL() {
+  try {
+    const THREE = await import("https://unpkg.com/three@0.160.0/build/three.module.js");
+    const canvas = $("fxCanvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    const scene = new THREE.Scene(), cam = new THREE.OrthographicCamera(0, 1, 1, 0, -10, 10);   // pixel space, y up
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.setAttribute("aColor", new THREE.BufferAttribute(col, 3));
+    g.setAttribute("aSize", new THREE.BufferAttribute(size, 1));
+    const vert = `attribute vec3 aColor; attribute float aSize; uniform float uScale; varying vec3 vC;
+      void main() { vC = aColor; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uScale; gl_Position = projectionMatrix * mv; }`;
+    const fragDark = `varying vec3 vC;
+      void main() { float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a = a * a;
+        if (a < 0.003) discard; gl_FragColor = vec4(vC * (a + smoothstep(0.10, 0.0, d) * 0.6), a); }`;
+    const fragLight = `varying vec3 vC;
+      void main() { float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a = a * a;
+        float inten = max(max(vC.r, vC.g), vC.b); float al = a * clamp(inten * 2.2, 0.0, 1.0);
+        if (al < 0.004) discard; vec3 hue = vC / max(inten, 1e-4);
+        gl_FragColor = vec4(hue * mix(0.62, 0.42, smoothstep(0.16, 0.0, d)), al); }`;
+    const mat = new THREE.ShaderMaterial({ uniforms: { uScale: { value: 1 } }, vertexShader: vert, fragmentShader: fragDark,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    const pts = new THREE.Points(g, mat); pts.frustumCulled = false; scene.add(pts);
+    gl3 = {
+      THREE, renderer, scene, cam, g, mat,
+      resize() { renderer.setPixelRatio(DPR); renderer.setSize(W, H, false); cam.right = W; cam.top = H; cam.updateProjectionMatrix(); mat.uniforms.uScale.value = DPR; },
+      theme() { mat.fragmentShader = LIGHT ? fragLight : fragDark; mat.blending = LIGHT ? THREE.NormalBlending : THREE.AdditiveBlending; mat.needsUpdate = true; },
+      draw() { for (const k of ["position", "aColor", "aSize"]) g.attributes[k].needsUpdate = true; renderer.render(scene, cam); },
+      clear() { renderer.clear(); },
+    };
+    return true;
+  } catch (e) {
+    console.warn("WebGL path unavailable (offline or no WebGL); using the Canvas 2D port", e);
+    return false;
+  }
+}
+
+// ----------------------------------------------------------------------------- renderer B: Canvas 2D port (same numbers, approximated shading)
+const fxc = $("fxCanvas"); let c2 = null;
+function drawCanvas2D() {
+  if (!c2) c2 = fxc.getContext("2d");
+  c2.setTransform(DPR, 0, 0, DPR, 0, 0); c2.clearRect(0, 0, W, H);
+  c2.globalCompositeOperation = LIGHT ? "source-over" : "lighter";
+  for (let i = 0; i < NB; i++) {
+    if (size[i] <= 0) continue;
+    const r = size[i] / 2, x = pos[i * 3], y = H - pos[i * 3 + 1];
+    let cr = col[i * 3], cgc = col[i * 3 + 1], cb = col[i * 3 + 2];
+    const inten = Math.max(cr, cgc, cb);
+    if (LIGHT) { cr /= inten; cgc /= inten; cb /= inten; }
+    const k = LIGHT ? 0.55 : 1, to = v => Math.round(Math.min(1, v * k) * 255);
+    const grad = c2.createRadialGradient(x, y, 0, x, y, r);
+    const alpha = LIGHT ? Math.min(1, inten * 2.2) : 1;
+    grad.addColorStop(0, `rgba(${to(cr * 1.6)},${to(cgc * 1.6)},${to(cb * 1.6)},${alpha})`);   // hot core
+    grad.addColorStop(0.2, `rgba(${to(cr)},${to(cgc)},${to(cb)},${alpha * 0.64})`);
+    grad.addColorStop(1, `rgba(${to(cr)},${to(cgc)},${to(cb)},0)`);
+    c2.fillStyle = grad; c2.beginPath(); c2.arc(x, y, r, 0, Math.PI * 2); c2.fill();
+  }
+  c2.globalCompositeOperation = "source-over";
+}
+
+// ----------------------------------------------------------------------------- loop, controls
+let mode = "webgl", last = performance.now(), auto = null;
+function resize() {
+  const r = stage.getBoundingClientRect(); W = r.width; H = r.height; DPR = Math.min(2, devicePixelRatio || 1);
+  chart.width = W * DPR; chart.height = H * DPR;
+  if (mode === "canvas" || !gl3) { fxc.width = W * DPR; fxc.height = H * DPR; } else gl3.resize();
+  drawChart();
+}
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const alive = step(dt);
+  if (mode === "webgl" && gl3) gl3.draw(); else drawCanvas2D();
+  $("info").textContent = `${alive} live particles · ${mode === "webgl" && gl3 ? "WebGL (original shader)" : "Canvas 2D port"}`;
+  requestAnimationFrame(frame);
+}
+function setTheme(t) {
+  LIGHT = t === "light"; document.documentElement.dataset.theme = t;
+  if (gl3) gl3.theme(); drawChart();
+}
+async function setRenderer(m) {
+  // a canvas keeps whichever context it got first, so swap in a fresh one
+  const fresh = document.createElement("canvas"); fresh.id = "fxCanvas"; stage.replaceChild(fresh, $("fxCanvas"));
+  c2 = null; gl3 = null; mode = m;
+  if (m === "webgl" && !(await initWebGL())) { mode = "canvas"; $("rend").value = "canvas"; }
+  if (mode === "webgl") gl3.theme();
+  resize();
+}
+$("bBuy").onclick = () => fire("buy"); $("bSell").onclick = () => fire("sell");
+$("bWin").onclick = () => fire("win"); $("bLoss").onclick = () => fire("loss");
+$("theme").onchange = e => setTheme(e.target.value);
+$("rend").onchange = e => setRenderer(e.target.value);
+$("bAuto").onclick = () => {
+  const on = !auto; $("bAuto").setAttribute("aria-pressed", on); $("bAuto").textContent = on ? "auto replay ■" : "auto replay ▶";
+  if (!on) { clearInterval(auto); auto = null; return; }
+  let pos = 0;   // 0 flat, 1 long, -1 short
+  auto = setInterval(() => {
+    head = (head + 1) % bars.length; drawChart();
+    if (pos === 0 && Math.random() < 0.25) { pos = Math.random() < 0.5 ? 1 : -1; fire(pos > 0 ? "buy" : "sell"); }
+    else if (pos !== 0 && Math.random() < 0.2) { const b = bars[head], win = (b.c - b.o) * pos > 0; fire(win ? "win" : "loss"); pos = 0; }
+  }, 420);
+};
+addEventListener("resize", resize);
+const prefersLight = matchMedia("(prefers-color-scheme: light)").matches;
+$("theme").value = prefersLight ? "light" : "dark"; LIGHT = prefersLight;
+document.documentElement.dataset.theme = $("theme").value;
+await setRenderer("webgl");
+fire("buy");
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

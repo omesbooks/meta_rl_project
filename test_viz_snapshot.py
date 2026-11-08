@@ -78,6 +78,25 @@ def test_capture_shapes(net_arch, activation, profile, n_actions):
     assert snap["edges"]["actor"][-1]["rows"] == n_actions
     assert snap["edges"]["critic"][-1]["rows"] == 1
     json.dumps(snap)                                   # must be serialisable as-is
+    # 2026-11-08: per-bar env reward (CRITIC tab on eval replays) + each layer's activation name
+    assert len(snap["reward"]) == snap["frames"] and all(np.isfinite(snap["reward"]))
+    act = "relu" if activation is torch.nn.ReLU else "tanh"
+    assert snap["layer_act"] == {"actor": [act] * len(net_arch), "critic": [act] * len(net_arch)}
+
+
+def test_layer_delta_measures_how_far_each_layer_moved():
+    policy, _, _ = _policy_and_env([32, 16], torch.nn.Tanh, "basic_4")
+    w0 = snap_mod.layer_weights(policy)
+    assert [w.shape for w in w0["actor"]] == [(32, WINDOW * len(FEATS) + 3), (16, 32)]
+    same = snap_mod.layer_delta(w0, snap_mod.layer_weights(policy))
+    assert same["actor"] == [0.0, 0.0] and same["critic"] == [0.0, 0.0] and same["actor_head"] == 0.0
+    with torch.no_grad():                               # move only actor L2 by exactly 10% of its norm
+        lin = [m for m in policy.mlp_extractor.policy_net if isinstance(m, torch.nn.Linear)][1]
+        lin.weight.mul_(1.10)
+    d = snap_mod.layer_delta(w0, snap_mod.layer_weights(policy))
+    assert d["actor"][0] == 0.0 and abs(d["actor"][1] - 0.10) < 1e-6 and d["critic"] == [0.0, 0.0]
+    w0["actor"][1][:] = 999                             # copies, not views of the live parameters
+    assert float(lin.weight.abs().max()) < 999
 
 
 def test_summary_matches_snapshot():

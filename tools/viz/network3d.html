@@ -59,7 +59,15 @@
   #insight .note, #insight .leg, #insight .tip { font: 500 10.5px/1.4 var(--hud); color: var(--dim); text-shadow: none; margin-top: 5px; }
   #insight .tip { color: var(--fg); min-height: 14px; }
   #insight canvas { display: block; border-radius: 8px; }
-  #insRegime { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(128,140,170,.25); }
+  .itabs { display: flex; gap: 4px; margin-bottom: 9px; flex-wrap: wrap; }
+  .itabs button { font: 700 9.5px/1 var(--hud); letter-spacing: .14em; padding: 5px 7px; border-radius: 7px; cursor: pointer;
+                  border: 1px solid rgba(128,140,170,.35); background: transparent; color: var(--dim); text-shadow: none; }
+  .itabs button.on { color: var(--fg); border-color: var(--fg); background: rgba(128,140,170,.14); }
+  #insight .big { font: 600 11px/1.5 var(--hud); color: var(--fg); text-shadow: none; margin-bottom: 4px; }
+  #insight .big b { font-size: 20px; margin-right: 4px; }
+  .lbl.lyr .hl { display: none; font: 700 9.5px/1.25 var(--hud); letter-spacing: .04em; margin-top: 3px; text-align: center; }
+  .lbl.lyr .hl.on { display: block; } .lbl.lyr .hl.warn { color: var(--gold); } .lbl.lyr .hl.bad { color: var(--mag); } .lbl.lyr .hl.ok { color: var(--green); }
+  .lbl .real { font-size: 11px; color: var(--gold); margin-left: 6px; }
   body.dash #insight, body.show #insight { display: none !important; }
   body.show #drivers, body.show .lbl.grp { display: none !important; }
   body.show #ctrl label.c3d:has(#iIn), body.show #ctrl label.c3d:has(#iIns) { display: none; }
@@ -173,7 +181,7 @@
 </div>
 <div id="labels"></div>
 <div id="drivers" class="hud"><div class="k"><span id="drvHead">TOP DRIVERS</span> · <span id="drvWhat">this decision</span></div><div id="drvList"></div><div id="drvNote"></div></div>
-<div id="insight" class="hud"><div id="insHealth"></div><div id="insRegime"></div></div>
+<div id="insight" class="hud"><div class="itabs" id="insTabs"></div><div id="insHealth"></div><div id="insLearn"></div><div id="insUse"></div><div id="insCritic"></div><div id="insRegime"></div></div>
 <div id="dash"></div>
 <div id="mon"></div>
 <div id="chartLbl" class="hud"></div>
@@ -194,7 +202,7 @@
   <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
   <label class="c3d">layers <select id="iShape"><option value="sorted">sorted</option><option value="grid">grid</option><option value="column">column</option><option value="disc">disc</option></select></label>
   <label class="c3d">inputs <select id="iIn"><option value="attr">attribution</option><option value="use">usage (decision test)</option><option value="act">activation</option></select></label>
-  <label class="c3d">insight <select id="iIns"><option value="off">off</option><option value="health">layer health</option><option value="regime">regime map</option><option value="both">both</option></select></label>
+  <label class="c3d">insight <select id="iIns"><option value="off">off</option><option value="health">layer health</option><option value="learning">layer learning</option><option value="inputs">input usage</option><option value="critic">critic check</option><option value="regime">regime map</option></select></label>
   <label class="c3d">synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
   <label class="c3d darkonly">glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
   <label class="c3d">fps <select id="iFps"><option>15</option><option>20</option><option>30</option><option>60</option></select></label>
@@ -224,7 +232,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createDashboard } from "viz-dashboard";
 import { createMonitor } from "viz-monitor";
-import { layerHealth, renderHealth, createRegime } from "viz-insight";
+import { layerHealth, renderHealth, createRegime, summarizeEval, renderLearning, createUsageMap, createCritic } from "viz-insight";
 
 const params = new URLSearchParams(location.search);
 // ?look=showcase: the presentation look (for clips/screens) — always the dark neon scene, textbook
@@ -647,22 +655,23 @@ function buildNet(s) {
   rings.renderOrder = 2; scene.add(rings);
   // labels
   const outLbl = s.labels.map((n, a) => mkLbl("out", `${n} <span>0%</span><span class="bar"></span>`, s.colors[a]));
-  const valLbl = mkLbl("out", `V(s) <span>0</span>`, LIGHT ? "#0a66ff" : "#19e6ff");
+  const valLbl = mkLbl("out", `V(s) <span>0</span><span class="real"></span>`, LIGHT ? "#0a66ff" : "#19e6ff");
   const tA = s.towerLayers[0], tC = s.towerLayers[1];
   const tags = [[mkLbl("tag", `INPUT · ${s.WIN} BARS × ${s.NFEAT} FEATURES`), [X_IN, IN_H / 2 + 2.7, 0]]];
   // tower name over the middle of the tower, then every layer's index and size above its disc
   const mid = tl => (tl[0].x + tl[tl.length - 1].x) / 2, maxR = tl => Math.max(...tl.map(L => L.hh));
   if (tA.length) tags.push([mkLbl("tag", `ACTOR · POLICY · ${tA.length} HIDDEN`), [mid(tA), Y_TOWER[0] + maxR(tA) + 3.6, 0]]);
   if (tC.length) tags.push([mkLbl("tag", `CRITIC · VALUE · ${tC.length} HIDDEN`), [mid(tC), Y_TOWER[1] - maxR(tC) - 3.6, 0]]);
-  tA.forEach((L, i) => tags.push([mkLbl("lyr", `L${i + 1} · ${L.size}`), [L.x, Y_TOWER[0] + L.hh + 1.4, 0]]));
-  tC.forEach((L, i) => tags.push([mkLbl("lyr", `L${i + 1} · ${L.size}`), [L.x, Y_TOWER[1] + L.hh + 1.0, 0]]));
+  const lyrLbl = [];   // [label, layer]: the insight tab writes a second line under 'L<i> · <size>'
+  tA.forEach((L, i) => { const el = mkLbl("lyr", `L${i + 1} · ${L.size}<span class="hl"></span>`); lyrLbl.push([el, L]); tags.push([el, [L.x, Y_TOWER[0] + L.hh + 1.4, 0]]); });
+  tC.forEach((L, i) => { const el = mkLbl("lyr", `L${i + 1} · ${L.size}<span class="hl"></span>`); lyrLbl.push([el, L]); tags.push([el, [L.x, Y_TOWER[1] + L.hh + 1.0, 0]]); });
   tA.forEach(L => (L.groups || []).forEach(G => {               // sorted: name each action group beside its bar
     const b = -(L.hw + 0.45) - 0.95, y = (G.y0 + G.y1) / 2;
     tags.push([mkLbl("grp", G.g < s.NA ? s.labels[G.g] : "OTHER", G.g < s.NA ? s.colors[G.g] : null), [L.x + b * DISC_V[0], Y_TOWER[0] + y, b * DISC_V[1]]]);
   }));   // above: below it runs into the chart strip, where labels hide
   NET = { nodes, synapses, pulses, eGeo, eSrc, eDst, eW, eInt: new Float32Array(NE), rankEnd, NE, NP,
           pEdge: new Int32Array(NP).fill(-1), pT: new Float32Array(NP), pSp: new Float32Array(NP),
-          outLbl, valLbl, tags, rings, fills, impulse: new Float32Array(s.NA),
+          outLbl, valLbl, tags, lyrLbl, rings, fills, impulse: new Float32Array(s.NA),
           outColorsLin: s.colors.map(c => new THREE.Color(c).convertSRGBToLinear()) };
   s.buyIdx = s.names.indexOf("buy"); s.sellIdx = s.names.indexOf("sell");
 }
@@ -1035,6 +1044,7 @@ async function poll() {
     const r = await fetch(`run/index.json?t=${Date.now()}`, { cache: "no-store" });
     if (r.ok) {
       const j = await r.json(); index = (j.snapshots || []).slice().sort((a, b) => a.i - b.i);
+      if ((insightMode === "learning" || insightMode === "inputs") && index.some(e => !hist.has(e.file))) loadHistory();
       if (index.length) last = index[index.length - 1];
     }
   } catch (e) { /* server not ready yet */ }
@@ -1179,7 +1189,7 @@ function frame(now) {
     updateNetwork(dt);
     const ch = updateChart(fpos, dt);
     const fi = Math.floor(fpos);
-    if (fi !== lastFrame) { for (let i = lastFrame + 1; i <= fi; i++) onNewBar(i, ch); lastFrame = fi; if (insightOn.regime) regime.frame(fi); }
+    if (fi !== lastFrame) { for (let i = lastFrame + 1; i <= fi; i++) onNewBar(i, ch); lastFrame = fi; if (insightMode === "regime") regime.frame(fi); else if (insightMode === "critic") critic.frame(fi); }
     let best = 0;
     for (let a = 1; a < S.NA; a++) if (S.cur[S.OFF_PROB + a] > S.cur[S.OFF_PROB + best]) best = a;
     for (let a = 0; a < S.NA; a++) {
@@ -1190,6 +1200,8 @@ function frame(now) {
     }
     const v = S.cur[S.OFF_VAL] * S.D.value_max;
     NET.valLbl.children[0].textContent = (v >= 0 ? "+" : "") + v.toFixed(3);
+    { const r = insightMode === "critic" ? critic.real(Math.floor(fpos)) : null;   // critic tab: what really followed this bar
+      NET.valLbl.children[1].textContent = r == null ? "" : `real ${r >= 0 ? "+" : ""}${r.toFixed(3)}`; }
     $("sV").textContent = (v >= 0 ? "+" : "") + v.toFixed(3); $("sV").style.color = v >= 0 ? "var(--orange)" : "var(--cyan)";
     placeLabel(NET.valLbl, S.posOf[S.OFF_VAL * 3], S.posOf[S.OFF_VAL * 3 + 1], 0);
     for (const [el, p] of NET.tags) placeLabel(el, p[0], p[1], p[2]);
@@ -1265,26 +1277,98 @@ $("bRec").onclick = () => {      // records the WebGL canvas (HUD text is HTML a
     a.download = `${(S && S.D.meta && S.D.meta.model) || "neural"}_trader.webm`; a.click(); rec = null; b.textContent = "● rec"; };
   rec.start(); b.textContent = "■ stop";
 };
-// ---- layer insight panel: health table (dead / pinned / dims) + regime map (PCA of one actor layer, coloured by outcome)
-const INS_OPTS = ["off", "health", "regime", "both"];
-let insightMode = INS_OPTS.includes(params.get("insight")) ? params.get("insight") : (SHOW ? "off" : "health");
-const insightOn = { get health() { return insightMode === "health" || insightMode === "both"; }, get regime() { return insightMode === "regime" || insightMode === "both"; } };
-const regime = createRegime($("insRegime"), {
-  onSeek: i => { seek(i); playing = false; $("bPlay").textContent = "▶"; wake("input"); },
-  css: () => { const cs = getComputedStyle(document.body); return { up: cs.getPropertyValue("--green").trim(), dn: cs.getPropertyValue("--mag").trim(), gold: cs.getPropertyValue("--gold").trim(),
-                dim: cs.getPropertyValue("--dim").trim(), fg: cs.getPropertyValue("--fg").trim(), grid: LIGHT ? "rgba(15,26,43,.18)" : "rgba(25,230,255,.25)" }; },
-});
+// ---- layer insight panel (left): one tab at a time, each tied to the 3D scene
+//   health   dead / pinned / dims per layer (snapshot)            → label line "pinned · dims", dead neurons grey
+//   learning weight change + pinned share per layer over evals  → label line "Δ weights this eval"
+//   inputs   decision-test usage of every input over evals      → input layer painted by usage
+//   critic   V(s) vs the realised return over the bars          → V(s) label shows "real R"
+//   regime   PCA map of one actor layer, coloured by outcome    → click = seek
+const TABS = [["health", "HEALTH", "insHealth"], ["learning", "LEARNING", "insLearn"], ["inputs", "INPUTS", "insUse"], ["critic", "CRITIC", "insCritic"], ["regime", "MAP", "insRegime"]];
+const INS_OPTS = ["off", ...TABS.map(x => x[0])];
+let insightMode = params.get("insight") === "both" ? "health" : INS_OPTS.includes(params.get("insight")) ? params.get("insight") : (SHOW ? "off" : "health");
+const insCss = () => { const cs = getComputedStyle(document.body), v = k => cs.getPropertyValue(k).trim();
+  return { up: v("--green"), dn: v("--mag"), gold: v("--gold"), dim: v("--dim"), fg: v("--fg"), cyan: v("--cyan"), use: USE_CSS,
+           grid: LIGHT ? "rgba(15,26,43,.18)" : "rgba(25,230,255,.25)" }; };
+const regime = createRegime($("insRegime"), { onSeek: i => { seek(i); playing = false; $("bPlay").textContent = "▶"; wake("input"); }, css: insCss });
+const critic = createCritic($("insCritic"), { css: insCss });
+const usageMap = createUsageMap($("insUse"), { css: insCss, onPickEval: i => pickEval(i) });
+$("insTabs").innerHTML = TABS.map(([k, lab]) => `<button data-k="${k}">${lab}</button>`).join("");
+$("insTabs").onclick = e => { const k = e.target.dataset && e.target.dataset.k; if (k) setInsight(k); };
+
+// history: one summarizeEval row per evaluation snapshot of the run (fetched once each, on demand)
+const hist = new Map();
+let histBusy = false, histStatus = "";
+const histRows = () => [...hist.values()].sort((a, b) => a.i - b.i);
+const curEvalI = () => (S && !S.ROLL && S.D.meta && S.D.meta.eval_index != null) ? S.D.meta.eval_index : (evalD && evalD.meta ? evalD.meta.eval_index : -1);
+async function loadHistory() {
+  if (histBusy) return;
+  if (!LIVE) { if (S && !S.ROLL && !hist.size) hist.set("page", summarizeEval(S)); histStatus = "one snapshot in this page — open the run in the live viewer for the history"; renderHistory(); return; }
+  const todo = index.filter(e => !hist.has(e.file));
+  if (!todo.length) return;
+  histBusy = true;
+  try {
+    for (const [k, e] of todo.entries()) {
+      histStatus = `loading eval ${k + 1}/${todo.length}…`; renderHistory();
+      let D = evalD && evalD.meta && evalD.meta.eval_index === e.i ? evalD : null;
+      if (!D) { const r = await fetch(`run/${e.file}?t=${Date.now()}`, { cache: "no-store" }); if (!r.ok) continue; D = await r.json(); }
+      try { const s = prepare(D); hist.set(e.file, summarizeEval(s)); } catch (err) { console.warn("history", e.file, err); }
+      await new Promise(r => setTimeout(r, 0));
+    }
+  } catch (err) { console.warn("history load failed", err); }
+  histBusy = false; histStatus = ""; renderHistory();
+}
+function renderHistory() {
+  if (insightMode === "learning") renderLearning($("insLearn"), histRows(), curEvalI(), histStatus);
+  if (insightMode === "inputs") usageMap.set(histRows(), curEvalI(), histStatus);
+  if (insightMode === "critic" && S) critic.set(S, histRows());
+  updateLayerLabels();
+}
+function pickEval(i) {
+  const e = index.find(x => x.i === i); if (!e) return;
+  follow = false; srcPinned = true;
+  if (source !== "eval") { source = "eval"; $("iSrc").value = "eval"; }
+  loadSnap(e);
+}
+const pctS = v => (v * 100).toFixed(v > 0 && v < 0.1 ? 1 : 0) + "%";
+function updateLayerLabels() {
+  if (!NET || !S || !NET.lyrLbl) return;
+  const rows = histRows(), row = rows.find(r => r.i === curEvalI());
+  for (const [el, L] of NET.lyrLbl) {
+    const sp = el.querySelector(".hl"), li = S.layers.indexOf(L), tw = L.tower ? "critic" : "actor";
+    let txt = "", cls = "";
+    if (insightMode === "health" && S.health) {
+      const h = S.health[li]; cls = h.cls;
+      txt = `${h.satShare == null ? "" : pctS(h.satShare) + " pinned · "}${h.dims.toFixed(h.dims < 10 ? 1 : 0)} dims` + (h.nDead ? ` · ${h.nDead} dead` : "");
+    } else if (insightMode === "learning") {
+      const d = (S.D.meta && S.D.meta.layer_delta) || (row && row.delta), v = d && d[tw] ? d[tw][L.idx] : null;
+      const h = S.health && S.health[li], sat = h && h.satShare != null ? ` · ${pctS(h.satShare)} pinned` : "";
+      cls = h ? h.cls : "";
+      txt = (v == null ? "Δ n/a" : `Δ ${(v * 100).toFixed(2)}%/eval`) + sat;
+    }
+    sp.textContent = txt; sp.className = "hl" + (txt ? " on " + cls : "");
+  }
+}
 function insightUpdate() {
   const show = !!S && insightMode !== "off" && mode !== "dashboard" && mode !== "monitor";
   $("insight").style.display = show ? "block" : "none";
-  $("insHealth").style.display = insightOn.health ? "block" : "none";
-  $("insRegime").style.display = insightOn.regime ? "block" : "none";
-  if (!show) return;
-  if (insightOn.health) renderHealth($("insHealth"), S, S.health);
-  if (insightOn.regime) { regime.set(S); regime.frame(Math.min(S.NF - 1, Math.floor(fpos))); }
+  for (const [k, , id] of TABS) $(id).style.display = k === insightMode ? "block" : "none";
+  for (const b of $("insTabs").children) b.classList.toggle("on", b.dataset.k === insightMode);
+  if (show) {
+    const fi = Math.min(S.NF - 1, Math.floor(fpos));
+    if (insightMode === "health") renderHealth($("insHealth"), S, S.health);
+    if (insightMode === "regime") { regime.set(S); regime.frame(fi); }
+    if (insightMode === "critic") { critic.set(S, histRows()); critic.frame(fi); }
+    if (insightMode === "learning" || insightMode === "inputs" || insightMode === "critic") { renderHistory(); loadHistory(); }
+  }
+  updateLayerLabels();
+}
+function setInsight(k) {
+  insightMode = k; $("iIns").value = k;
+  if (k === "inputs" && inputMode !== "use") { inputMode = "use"; $("iIn").value = "use"; }   // paint the input layer by the same test
+  insightUpdate(); if (S) drivers(Math.min(S.NF - 1, Math.floor(fpos))); wake("input");
 }
 $("iIns").value = insightMode;
-$("iIns").onchange = e => { insightMode = e.target.value; insightUpdate(); wake("input"); };
+$("iIns").onchange = e => setInsight(e.target.value);
 const dash = createDashboard($("dash"), {
   colors: ACTION_COLORS,
   fetchSnapshot: async e => { const r = await fetch(`run/${e.file}?t=${Date.now()}`, { cache: "no-store" }); return r.json(); },

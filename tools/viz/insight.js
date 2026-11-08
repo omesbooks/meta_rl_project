@@ -99,8 +99,8 @@ export function healthAdvice(H) {
   if (pinned.length) {
     const worst = pinned.reduce((a, b) => b.satShare > a.satShare ? b : a);
     out.push({ cls: worst.satShare >= SAT_BAD ? "bad" : "warn",
-      t: `${names(pinned)} pinned at ±1 (${names([worst])} ${pct(worst.satShare)}): tanh gradients vanish there, so the layer acts as on/off switches and hardly learns any more. `
-       + `Try activation_fn=ReLU, a lower learning rate or a smaller window, and A/B against this run.` });
+      t: `${names(pinned)} pinned at ±1 (${names([worst])} ${pct(worst.satShare)}): there tanh passes almost no gradient and the neuron acts as an on/off switch, so the layer carries less information and learns only through the unpinned rest. `
+       + `Whether it still learns shows in the LEARNING tab (Δ weights). To A/B: activation_fn=ReLU, a lower learning rate or a smaller window.` });
   }
   if (dead.length) {
     const worst = dead.reduce((a, b) => b.deadShare > a.deadShare ? b : a);
@@ -308,5 +308,231 @@ export function createRegime(el, { onSeek, css }) {
     redraw: draw,
     pxOf(t) { return px && t >= 0 && t < R.rows.length ? { x: px[t * 2], y: px[t * 2 + 1], bar: R.rows[t] } : null; },   // tests
     get n() { return R ? R.rows.length : 0; },
+  };
+}
+
+// ================================================================== 2026-11-08 (b): LEARNING · INPUTS · CRITIC tabs
+// Each reads either the loaded snapshot or the per-evaluation history (one summarizeEval row per eval
+// snapshot of the run, fetched by the viewer when the tab opens).
+
+// names of the usage groups: every feature (all lags together), then the state inputs
+export function groupNames(s) {
+  const n = s.D.input_names || [], out = [];
+  for (let f = 0; f < s.NFEAT; f++) out.push((n[f] || `f${f}`).split("@")[0]);
+  for (let i = s.WIN * s.NFEAT; i < s.NIN; i++) out.push(n[i] || `in ${i}`);
+  return out;
+}
+
+// ---- critic check: does V(s) predict what actually came after the bar?
+// R on a training rollout = GAE return (advantage + V), exactly the target the critic is trained on;
+// on an eval replay = discounted reward sum (gamma from meta, default 0.99), bootstrapped with V at the last bar.
+export function discountedReturns(reward, values, gamma) {
+  const n = reward.length, R = new Float64Array(n);
+  let g = values.length ? values[n - 1] : 0;
+  for (let t = n - 1; t >= 0; t--) { g = reward[t] + gamma * g; R[t] = g; }
+  return R;
+}
+export function explainedVariance(V, R) {
+  const n = Math.min(V.length, R.length);
+  if (n < 3) return null;
+  let mr = 0, md = 0; for (let t = 0; t < n; t++) { mr += R[t]; md += R[t] - V[t]; } mr /= n; md /= n;
+  let vr = 0, vd = 0; for (let t = 0; t < n; t++) { vr += (R[t] - mr) ** 2; const d = R[t] - V[t] - md; vd += d * d; }
+  return vr > 1e-18 ? 1 - vd / vr : null;
+}
+function corr(a, b) {
+  const n = Math.min(a.length, b.length); let ma = 0, mb = 0;
+  for (let t = 0; t < n; t++) { ma += a[t]; mb += b[t]; } ma /= n; mb /= n;
+  let sab = 0, sa = 0, sb = 0; for (let t = 0; t < n; t++) { const x = a[t] - ma, y = b[t] - mb; sab += x * y; sa += x * x; sb += y * y; }
+  return sa > 0 && sb > 0 ? sab / Math.sqrt(sa * sb) : null;
+}
+export function criticCheck(s) {
+  const D = s.D, n = s.NF, V = new Float64Array(n), vmax = D.value_max || 1;
+  for (let f = 0; f < n; f++) V[f] = s.Q[f * s.W + s.OFF_VAL] / 127 * vmax;
+  let R, kind;
+  if (D.adv && D.adv.length === n) { R = Float64Array.from(D.adv, (a, f) => a + V[f]); kind = "gae"; }
+  else if (D.reward && D.reward.length === n) { R = discountedReturns(D.reward, V, (D.meta && D.meta.gamma) || 0.99); kind = "mc"; }
+  else return null;
+  return { V, R, kind, ev: explainedVariance(V, R), corr: corr(V, R), gamma: (D.meta && D.meta.gamma) || 0.99 };
+}
+export function criticVerdict(ev) {
+  if (ev == null) return { cls: "warn", t: "not enough bars to judge" };
+  if (ev < 0) return { cls: "bad", t: `explained variance ${ev.toFixed(2)} < 0: V(s) is worse than predicting the average return. The advantages that steer the policy are mostly noise, so more steps help little — check the reward scale, vf_coef or the critic's size first.` };
+  if (ev < 0.2) return { cls: "warn", t: `explained variance ${ev.toFixed(2)}: the critic explains little of what follows a bar — advantages are noisy and the policy learns slowly.` };
+  if (ev < 0.6) return { cls: "ok", t: `explained variance ${ev.toFixed(2)}: the critic tracks part of the return — usable advantages.` };
+  return { cls: "ok", t: `explained variance ${ev.toFixed(2)}: the critic predicts the return well. If the policy still does not improve, look at the reward or the features, not the critic.` };
+}
+
+// ---- one row per evaluation snapshot (history for LEARNING and INPUTS)
+export function summarizeEval(s) {
+  const m = s.D.meta || {}, H = s.health || layerHealth(s), C = criticCheck(s);
+  return { i: m.eval_index != null ? m.eval_index : -1, step: m.step != null ? m.step : null,
+           reward: Number.isFinite(m.eval_reward) ? m.eval_reward : null,
+           layers: H.map(h => ({ tower: h.tower, idx: h.idx, size: h.size, sat: h.satShare, dead: h.deadShare, dims: h.dims })),
+           delta: m.layer_delta || null, use: s.D.use_flip || null, names: groupNames(s), ev: C ? C.ev : null };
+}
+
+export function learningAdvice(rows) {
+  const out = [], last = rows[rows.length - 1];
+  if (!last) return out;
+  const withD = rows.filter(r => r.delta);
+  const lname = (tw, i) => `${tw === "critic" ? "CRITIC" : "ACTOR"} L${i + 1}`;
+  if (withD.length >= 2) {
+    const first = withD[0].delta, now = withD[withD.length - 1].delta, ratios = [];
+    for (const tw of ["actor", "critic"]) (now[tw] || []).forEach((v, i) => { const f = (first[tw] || [])[i]; if (f > 0) ratios.push([lname(tw, i), v / f, v]); });
+    const rew = rows.map(r => r.reward), best = rew.reduce((b, v, k) => v != null && (b < 0 || v > rew[b]) ? k : b, -1);
+    const stale = best >= 0 && rows.length - 1 - best >= 3;
+    if (ratios.length && ratios.every(r => r[1] < 0.25) && stale)
+      out.push({ cls: "bad", t: `learning has stalled: every layer now moves < 25% of its first-evaluation change and the best eval reward is from eval ${rows[best].i + 1} (${rows.length - 1 - best} evals ago). More steps are unlikely to help — stop, or change the learning rate / architecture.` });
+    const all = ratios.map(r => r[2]).sort((a, b) => a - b), med = all[Math.floor(all.length / 2)] || 0;
+    for (const [nm, , v] of ratios) if (med > 0 && v < 0.2 * med)
+      out.push({ cls: "warn", t: `${nm} moves ${(med / Math.max(v, 1e-12)).toFixed(0)}× less than the median layer — it is (nearly) frozen while the others still learn.` });
+  } else out.push({ cls: "warn", t: "weight change per layer is recorded by runs trained from 2026-11-08 on (rl_train --viz); this run shows the pinned trend only." });
+  const firstRow = rows[0];
+  if (rows.length >= 2) last.layers.forEach((h, k) => {
+    const a = firstRow.layers[k] && firstRow.layers[k].sat, b = h.sat;
+    const nm = `${h.tower ? "CRITIC" : "ACTOR"} L${h.idx + 1}`;
+    if (a != null && b != null && b - a >= 0.2)
+      out.push({ cls: b >= SAT_BAD ? "bad" : "warn", t: `${nm} saturated while it trained: pinned ${pct(a)} at eval ${firstRow.i + 1} → ${pct(b)} now.` });
+    else if (a != null && b != null && a >= SAT_BAD && b >= SAT_BAD)
+      out.push({ cls: "bad", t: `${nm} was already ${pct(a)} pinned at eval ${firstRow.i + 1} (step ${firstRow.step != null ? firstRow.step.toLocaleString() : "?"}) and is ${pct(b)} now: it saturated early; compare with its Δ weights to see whether it still learns.` });
+  });
+  if (!out.length) out.push({ cls: "ok", t: "every layer is still moving and none saturated over training" });
+  return out;
+}
+
+export function usageAdvice(rows, used = 0.01, strong = 0.05) {
+  const R = rows.filter(r => r.use), out = [];
+  if (R.length < 2) return [{ cls: "warn", t: R.length ? "one evaluation with a decision test so far — the trend needs two or more." : "no decision test in these snapshots (made before 2026-10-19)." }];
+  const names = R[R.length - 1].names, n = R[R.length - 1].use.length;
+  const never = [], dropped = [], rising = [];
+  for (let f = 0; f < n; f++) {
+    const v = R.map(r => r.use[f] || 0), mx = Math.max(...v), lastV = v[v.length - 1], firstV = v[0];
+    if (mx < used) never.push(names[f]);
+    else if (Math.max(...v.slice(0, Math.ceil(v.length / 2))) >= strong && lastV < used) dropped.push(names[f]);
+    else if (firstV < used && lastV >= strong) rising.push(names[f]);
+  }
+  const list = a => a.slice(0, 6).join(", ") + (a.length > 6 ? ` +${a.length - 6}` : "");
+  if (never.length) out.push({ cls: "warn", t: `${never.length} of ${n} inputs never changed ≥${pct(used)} of decisions at any evaluation (${list(never)}) — candidates to drop; confirm with obs_ablation.` });
+  if (dropped.length) out.push({ cls: "warn", t: `${dropped.length} inputs mattered early and are ignored now (${list(dropped)}).` });
+  if (rising.length) out.push({ cls: "ok", t: `${rising.length} inputs the policy learned to use during training (${list(rising)}).` });
+  if (!never.length) out.push({ cls: "ok", t: `every input changes ≥${pct(used)} of decisions at some evaluation. On an indecisive policy almost any shuffle flips a decision, so "used" ≠ "carries edge".` });
+  return out;
+}
+
+// ---- small DOM helpers
+function sparkSvg(vals, { w = 74, h = 18, color = "currentColor", mark = -1, lo = null, hi = null } = {}) {
+  const f = vals.filter(v => v != null && Number.isFinite(v));
+  if (!f.length) return `<svg width="${w}" height="${h}"></svg>`;
+  const a = lo != null ? lo : Math.min(...f), b0 = hi != null ? hi : Math.max(...f), b = b0 === a ? a + 1e-9 : b0;
+  const n = vals.length, x = k => (2 + k * (w - 4) / Math.max(1, n - 1)).toFixed(1);
+  const pts = []; vals.forEach((v, k) => { if (v != null && Number.isFinite(v)) pts.push(`${x(k)},${(h - 2 - (v - a) / (b - a) * (h - 4)).toFixed(1)}`); });
+  const mk = mark >= 0 ? `<line x1="${x(mark)}" x2="${x(mark)}" y1="1" y2="${h - 1}" stroke="currentColor" stroke-opacity=".35"/>` : "";
+  return `<svg width="${w}" height="${h}" style="vertical-align:middle">${mk}<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="1.4"/></svg>`;
+}
+const advHtml = A => A.map(a => `<div class="adv ${a.cls}">${a.t}</div>`).join("");
+
+// ---- LEARNING tab: per layer, how much the weights moved each evaluation + how saturated it got
+export function renderLearning(el, rows, curI, status) {
+  if (!rows.length) { el.innerHTML = `<div class="k">LAYER LEARNING</div><div class="note">${status || "no evaluations yet"}</div>`; return; }
+  const last = rows[rows.length - 1], mark = rows.findIndex(r => r.i === curI);
+  const lines = last.layers.map((h, k) => {
+    const tw = h.tower ? "critic" : "actor", d = rows.map(r => r.delta && r.delta[tw] ? r.delta[tw][h.idx] : null);
+    const sat = rows.map(r => r.layers[k] ? r.layers[k].sat : null), dNow = d[mark >= 0 ? mark : d.length - 1];
+    const cls = h.sat != null && h.sat >= SAT_BAD ? "bad" : h.sat != null && h.sat >= SAT_WARN ? "warn" : "";
+    return `<tr class="${cls}"><td>${h.tower ? "CRITIC" : "ACTOR"} L${h.idx + 1}</td><td>${dNow == null ? "–" : (dNow * 100).toFixed(2) + "%"}</td>
+      <td>${sparkSvg(d, { mark, lo: 0 })}</td><td>${sparkSvg(sat, { mark, lo: 0, hi: 1 })}</td></tr>`;
+  }).join("");
+  el.innerHTML = `<div class="k">LAYER LEARNING · ${rows.length} evaluations${status ? " · " + status : ""}</div>
+    <table class="hl"><tr><th></th><th>Δ weights</th><th>Δ per eval</th><th>pinned ±1 (0–100%)</th></tr>${lines}</table>${advHtml(learningAdvice(rows))}
+    <div class="note">Δ weights = ‖W − W<sub>previous eval</sub>‖ / ‖W<sub>previous eval</sub>‖: how far each layer moved since the previous evaluation (≈0 = it stopped learning). The vertical tick is the evaluation shown in 3D; the layer labels in 3D show the same numbers.</div>`;
+}
+
+// ---- INPUTS tab: decision-test usage of every input at every evaluation (heatmap) + verdicts
+export function createUsageMap(el, { css, onPickEval }) {
+  let rows = [], curI = -1, hover = null, W = 316, H = 190, dpr = 1, order = [];
+  el.innerHTML = `<div class="k"><span class="ttl">INPUT USAGE OVER TRAINING</span></div><canvas></canvas><div class="tip">&nbsp;</div><div class="advs"></div>
+    <div class="note">Rows = inputs (most used at the latest eval on top), columns = evaluations, brightness = share of decisions that change when that input is shuffled.
+    The outlined column is the eval shown in 3D (its usage also colours the input layer); click a column to load that evaluation.</div>`;
+  const cv = el.querySelector("canvas"), ctx = cv.getContext("2d");
+  const R = () => rows.filter(r => r.use);
+  function geom() { const rr = R(), n = rr.length ? rr[rr.length - 1].use.length : 0; return { rr, n, cw: rr.length ? W / rr.length : W, rh: n ? H / n : H }; }
+  function draw() {
+    dpr = Math.min(2, devicePixelRatio || 1); cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + "px"; cv.style.height = H + "px";
+    const C = css(), { rr, n, cw, rh } = geom();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    if (!rr.length) return;
+    const last = rr[rr.length - 1].use; order = [...Array(n).keys()].sort((a, b) => (last[b] || 0) - (last[a] || 0));
+    let mx = 0; for (const r of rr) for (const v of r.use) mx = Math.max(mx, v || 0);
+    for (let c = 0; c < rr.length; c++) for (let k = 0; k < n; k++) {
+      const v = rr[c].use[order[k]] || 0;
+      ctx.globalAlpha = v <= 0 ? 0.06 : 0.12 + 0.88 * Math.sqrt(v / (mx || 1)); ctx.fillStyle = v <= 0 ? C.dim : C.use;
+      ctx.fillRect(c * cw + 0.5, k * rh, Math.max(1, cw - 1), Math.max(0.8, rh));
+    }
+    ctx.globalAlpha = 1;
+    const ci = rr.findIndex(r => r.i === curI);
+    if (ci >= 0) { ctx.strokeStyle = C.fg; ctx.lineWidth = 1.5; ctx.strokeRect(ci * cw + 0.75, 0.75, cw - 1.5, H - 1.5); }
+    if (hover) { ctx.strokeStyle = C.gold; ctx.lineWidth = 1; ctx.strokeRect(0.5, hover.k * rh, W - 1, Math.max(1.5, rh)); }
+  }
+  cv.onmousemove = ev => {
+    const { rr, n, cw, rh } = geom(); if (!rr.length) return;
+    const b = cv.getBoundingClientRect(), c = Math.min(rr.length - 1, Math.floor((ev.clientX - b.left) / cw)), k = Math.min(n - 1, Math.floor((ev.clientY - b.top) / rh));
+    hover = { c, k }; const f = order[k], r = rr[c];
+    el.querySelector(".tip").textContent = `${r.names[f] || "in " + f} · eval ${r.i + 1}${r.step != null ? " (step " + r.step.toLocaleString() + ")" : ""} · changes ${pct(r.use[f] || 0)} of decisions`;
+    cv.style.cursor = "pointer"; draw();
+  };
+  cv.onmouseleave = () => { hover = null; el.querySelector(".tip").innerHTML = "&nbsp;"; draw(); };
+  cv.onclick = () => { const { rr } = geom(); if (hover && rr[hover.c] && onPickEval) onPickEval(rr[hover.c].i); };
+  return {
+    set(r, cur, status) {
+      rows = r; curI = cur; const rr = R();
+      el.querySelector(".ttl").textContent = `INPUT USAGE OVER TRAINING · ${rr.length} evaluations${status ? " · " + status : ""}`;
+      el.querySelector(".advs").innerHTML = advHtml(usageAdvice(rows)); draw();
+    },
+  };
+}
+
+// ---- CRITIC tab: V(s) against the realised return over the bars, with the replay cursor
+export function createCritic(el, { css }) {
+  let s = null, C = null, cur = -1, W = 316, H = 130, dpr = 1, hist = [];
+  el.innerHTML = `<div class="k">CRITIC CHECK · <span class="ttl"></span></div><div class="big"></div><canvas></canvas><div class="leg"></div><div class="advs"></div><div class="note"></div>`;
+  const cv = el.querySelector("canvas"), ctx = cv.getContext("2d");
+  function draw() {
+    dpr = Math.min(2, devicePixelRatio || 1); cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + "px"; cv.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    if (!C) return;
+    const K = css(), n = C.V.length;
+    let lo = Infinity, hi = -Infinity; for (let t = 0; t < n; t++) { lo = Math.min(lo, C.V[t], C.R[t]); hi = Math.max(hi, C.V[t], C.R[t]); }
+    const pad = (hi - lo) * 0.08 || 1e-3; lo -= pad; hi += pad;
+    const X = t => 4 + t * (W - 8) / Math.max(1, n - 1), Y = v => H - 4 - (v - lo) / (hi - lo) * (H - 8);
+    ctx.strokeStyle = K.grid; ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+    if (lo < 0 && hi > 0) { ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(0, Y(0)); ctx.lineTo(W, Y(0)); ctx.stroke(); ctx.setLineDash([]); }
+    for (const [arr, col, lw] of [[C.R, K.gold, 1.2], [C.V, K.cyan, 1.6]]) {
+      ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath();
+      for (let t = 0; t < n; t++) t ? ctx.lineTo(X(t), Y(arr[t])) : ctx.moveTo(X(t), Y(arr[t])); ctx.stroke();
+    }
+    if (cur >= 0 && cur < n) { ctx.strokeStyle = K.fg; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.moveTo(X(cur), 0); ctx.lineTo(X(cur), H); ctx.stroke(); ctx.globalAlpha = 1;
+      for (const [arr, col] of [[C.R, K.gold], [C.V, K.cyan]]) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(X(cur), Y(arr[cur]), 3, 0, Math.PI * 2); ctx.fill(); } }
+  }
+  function text() {
+    const K = css();
+    el.querySelector(".ttl").textContent = s.ROLL ? "training rollout (what the critic trains on)" : "eval replay";
+    if (!C) {
+      el.querySelector(".big").innerHTML = "";
+      el.querySelector(".advs").innerHTML = advHtml([{ cls: "warn", t: "This eval snapshot has no per-bar rewards (captured before 2026-11-08). Switch source to Training (live): rollouts always carry the returns the critic trains on." }]);
+      el.querySelector(".leg").innerHTML = ""; el.querySelector(".note").textContent = ""; return;
+    }
+    const evs = hist.map(r => r.ev), ev = C.ev;
+    el.querySelector(".big").innerHTML = `<b>${ev == null ? "–" : ev.toFixed(2)}</b> explained variance · corr ${C.corr == null ? "–" : C.corr.toFixed(2)} · ${C.V.length} bars`
+      + (evs.filter(v => v != null).length >= 2 ? ` · over evals ${sparkSvg(evs, { w: 70, h: 16 })}` : "");
+    el.querySelector(".leg").innerHTML = `<span style="color:${K.cyan}">━</span> V(s) predicted &nbsp; <span style="color:${K.gold}">━</span> realised return R`;
+    el.querySelector(".advs").innerHTML = advHtml([criticVerdict(ev)]);
+    el.querySelector(".note").textContent = C.kind === "gae"
+      ? "R = advantage + V(s) from the rollout buffer (the GAE return the critic is fitted to); explained variance = 1 − Var(R − V) / Var(R), the same number SB3 logs as train/explained_variance. The V(s) label in 3D shows the realised R next to the prediction."
+      : `R = discounted sum of the env rewards that followed each bar (γ = ${C.gamma}), bootstrapped with V at the last bar. The greedy replay is not the policy the critic was trained on, so expect it lower than on a rollout. The V(s) label in 3D shows the realised R next to the prediction.`;
+  }
+  return {
+    set(snap, history) { s = snap; C = criticCheck(s); hist = history || []; cur = -1; text(); draw(); },
+    frame(f) { if (f !== cur) { cur = f; draw(); } },
+    real(f) { return C && f >= 0 && f < C.R.length ? C.R[f] : null; },
   };
 }

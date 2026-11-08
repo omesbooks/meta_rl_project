@@ -180,6 +180,28 @@ def feature_usage(policy, obs, window, repeats=USAGE_REPEATS, seed=0):
     return flip / len(perms), tv / len(perms)
 
 
+def layer_weights(policy):
+    """Copies of every Linear weight matrix of both towers + the two heads (viewer order)."""
+    out = {}
+    for name in ("actor", "critic"):
+        seq = policy.mlp_extractor.policy_net if name == "actor" else policy.mlp_extractor.value_net
+        out[name] = [m.weight.detach().cpu().numpy().copy() for m in seq if isinstance(m, torch.nn.Linear)]
+    out["actor_head"] = policy.action_net.weight.detach().cpu().numpy().copy()
+    out["critic_head"] = policy.value_net.weight.detach().cpu().numpy().copy()
+    return out
+
+
+def layer_delta(prev, now):
+    """Relative change ||W_now - W_prev|| / ||W_prev|| (Frobenius) per layer: how much each layer
+    moved since the previous evaluation. ~0 for a layer = it has stopped learning."""
+    def rel(a, b):
+        return round(float(np.linalg.norm(b - a) / max(1e-12, np.linalg.norm(a))), 6)
+    out = {name: [rel(a, b) for a, b in zip(prev[name], now[name])] for name in ("actor", "critic")}
+    for head in ("actor_head", "critic_head"):
+        out[head] = rel(prev[head], now[head])
+    return out
+
+
 def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, feature_names=None,
          usage=True):
     """Build a snapshot dict from observations the policy saw.
@@ -285,7 +307,7 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None, fea
     df = env.df
     obs = env._get_obs()
     device = getattr(policy, "device", torch.device("cpu"))
-    rows, bar_idx, acts, pos, eq, tpnl, gates = [], [], [], [], [], [], []
+    rows, bar_idx, acts, pos, eq, tpnl, gates, rewards = [], [], [], [], [], [], [], []
     gate_arr = getattr(env, "_gate", None)
     for _ in range(int(frames)):
         t = torch.as_tensor(obs[None], dtype=torch.float32, device=device)
@@ -296,7 +318,8 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None, fea
         if gate_arr is not None:
             gates.append(float(gate_arr[env.t]))
         n_tr = len(env.trades)
-        obs, _, term, trunc, _ = env.step(a)
+        obs, r, term, trunc, _ = env.step(a)
+        rewards.append(float(r))
         acts.append(a)
         pos.append(int(env.position))
         eq.append(float(env._curve[-1]))
@@ -308,7 +331,7 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None, fea
             "l": df["low"].iloc[bar_idx].tolist(), "c": df["close"].iloc[bar_idx].tolist(),
             "act": acts, "pos": pos, "eq": eq, "tpnl": tpnl}
     snap = pack(policy, np.stack(rows), window, bars, k=k, names=action_names,
-                meta=dict(meta or {}, source="eval"), extra={"gate": gates} if gates else None,
+                meta=dict(meta or {}, source="eval"), extra=dict({"reward": rewards}, **({"gate": gates} if gates else {})),
                 feature_names=feature_names or list(getattr(env, "feature_cols", []) or []))
     snap["meta"]["capture_s"] = round(time.perf_counter() - t_start, 3)
     return snap

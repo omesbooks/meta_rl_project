@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layer Health Reading Guide</title>
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+  /* layout: one real screenshot with numbered zones on top, then one card per zone (crop + what it says + how to act), ending with the verdict for this model */
+  :root {
+    --bg: #f3f5f8; --paper: #ffffff; --ink: #16212e; --muted: #5d6b7e; --line: #d6dde7;
+    --accent: #0c7c8a; --accent-soft: #d9f0f2; --warn: #a8690f; --warn-soft: #fbeed3;
+    --bad: #c0392b; --bad-soft: #fadbd8; --good: #1f8a4c; --good-soft: #d9f2e3; --mark: #ffc53d; --mark-ink: #1a1300;
+    --font: "IBM Plex Sans Thai", "Sarabun", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0f151d; --paper: #182029; --ink: #e6edf5; --muted: #98a6b8; --line: #2c3845;
+    --accent: #3fc1cf; --accent-soft: #123b42; --warn: #e2a84a; --warn-soft: #3d2d12;
+    --bad: #ef6b5e; --bad-soft: #43201c; --good: #4ecf84; --good-soft: #133523; color-scheme: dark } }
+  :root[data-theme="dark"] {
+    --bg: #0f151d; --paper: #182029; --ink: #e6edf5; --muted: #98a6b8; --line: #2c3845;
+    --accent: #3fc1cf; --accent-soft: #123b42; --warn: #e2a84a; --warn-soft: #3d2d12;
+    --bad: #ef6b5e; --bad-soft: #43201c; --good: #4ecf84; --good-soft: #133523; color-scheme: dark }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.7 var(--font);
+         padding-block: 32px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main { max-width: 1040px; margin: 0 auto; display: grid; gap: 24px; }
+  h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.2; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 21px; margin: 0 0 8px; text-wrap: balance; display: flex; align-items: center; gap: 10px; }
+  h3 { font-size: 16px; margin: 18px 0 6px; }
+  p { max-width: 72ch; margin: 0 0 10px; }
+  ul { margin: 0 0 10px; padding-left: 22px; max-width: 72ch; }
+  li { margin-bottom: 4px; }
+  .lead { color: var(--muted); font-size: 17px; }
+  .eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  section { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 22px 22px 18px; min-width: 0; }
+  code, .m { font-family: var(--mono); font-size: .92em; }
+  .num { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 13px; background: var(--mark); color: var(--mark-ink); font: 700 13px/1 var(--mono); flex: none; }
+  .shot { position: relative; width: 100%; aspect-ratio: 968 / 608; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+  .shot img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .shot .z { position: absolute; border: 2px solid var(--mark); border-radius: 6px; background: rgba(255,197,61,.10); }
+  .shot .z::before { content: attr(data-n); position: absolute; top: -11px; left: -11px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; background: var(--mark); color: var(--mark-ink); font: 700 12px/22px var(--mono); text-align: center; }
+  .shot.nolab .z { display: none; }
+  .toggle { display: flex; gap: 8px; align-items: center; margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 16px; margin-top: 12px; font-size: 14px; }
+  .legend a { color: var(--ink); text-decoration: none; display: flex; gap: 8px; align-items: center; }
+  .legend a:hover span:last-child { text-decoration: underline; }
+  figure { margin: 10px 0 14px; }
+  figure img { width: 100%; max-width: 100%; display: block; border-radius: 10px; border: 1px solid var(--line); }
+  figure.w { max-width: 620px; } figure.n { max-width: 480px; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; align-items: start; }
+  .pair > * { min-width: 0; }
+  .tw { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; letter-spacing: .03em; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font: 600 12px var(--mono); white-space: nowrap; }
+  .pill.good { background: var(--good-soft); color: var(--good); } .pill.bad { background: var(--bad-soft); color: var(--bad); } .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .callout { border-radius: 10px; padding: 12px 14px; margin: 12px 0; font-size: 15px; }
+  .callout.warn { background: var(--warn-soft); } .callout.bad { background: var(--bad-soft); } .callout.good { background: var(--good-soft); } .callout.info { background: var(--accent-soft); }
+  .callout p:last-child, .callout ul:last-child { margin-bottom: 0; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 12px 0; }
+  .kv div { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .kv b { display: block; font: 600 24px/1.2 var(--mono); }
+  .kv span { font-size: 13px; color: var(--muted); }
+  .muted { color: var(--muted); }
+  a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="eyebrow">Neural Trader · insight · HEALTH</div>
+  <h1>อ่านแท็บ HEALTH จากภาพจริง</h1>
+  <p class="lead">ภาพข้างล่างคือหน้าจอจริงของโมเดล <code>rl_prod_v1</code> ที่ eval รอบที่ 16 (step 160,000) วัดบน 300 แท่งของช่วง validation (USDJPY H4, 2025-08-22 → 2025-10-31) แต่ละหมายเลขอธิบายด้านล่างว่าบอกอะไร และถ้าเจอค่าแบบนี้ควรทำอะไรต่อ</p>
+</header>
+
+<section aria-labelledby="map">
+  <h2 id="map">ภาพรวมหน้าจอ</h2>
+  <div class="shot" id="shot">
+    <img src="img/18/u_full.jpg" alt="หน้าจอ Neural Trader แท็บ HEALTH ของ rl_prod_v1: แผงตารางด้านซ้าย และเครือข่าย 3D actor กับ critic ด้านขวา">
+    <a class="z" data-n="1" href="#s1" style="left:3.1%;top:7.2%;width:34%;height:4.4%" aria-label="1 แท็บ"></a>
+    <a class="z" data-n="2" href="#s2" style="left:3.1%;top:16.6%;width:36.3%;height:22.6%" aria-label="2 ตาราง"></a>
+    <a class="z" data-n="3" href="#s3" style="left:3.3%;top:39.9%;width:35.4%;height:17.3%" aria-label="3 กล่องคำเตือน"></a>
+    <a class="z" data-n="4" href="#s4" style="left:3.1%;top:57.6%;width:36.3%;height:14.9%" aria-label="4 หมายเหตุ"></a>
+    <a class="z" data-n="5" href="#s5" style="left:43.8%;top:46.4%;width:36%;height:9.4%" aria-label="5 ป้ายชั้น"></a>
+    <a class="z" data-n="6" href="#s6" style="left:44.6%;top:56.5%;width:9.9%;height:11.5%" aria-label="6 วงกลมกลวง"></a>
+    <a class="z" data-n="7" href="#s7" style="left:41.6%;top:69.6%;width:41%;height:8.6%" aria-label="7 ป้ายชั้น critic"></a>
+    <a class="z" data-n="8" href="#s8" style="left:67%;top:54.2%;width:32.6%;height:14.2%" aria-label="8 action"></a>
+    <a class="z" data-n="9" href="#s8" style="left:82.4%;top:79.2%;width:10.4%;height:3.6%" aria-label="9 V(s)"></a>
+  </div>
+  <label class="toggle"><input type="checkbox" id="lab" checked> แสดงกรอบหมายเลข</label>
+  <div class="legend">
+    <a href="#s1"><span class="num">1</span><span>แท็บของแผง insight</span></a>
+    <a href="#s2"><span class="num">2</span><span>ตารางสุขภาพแต่ละชั้น</span></a>
+    <a href="#s3"><span class="num">3</span><span>กล่องคำเตือน (สรุปปัญหา)</span></a>
+    <a href="#s4"><span class="num">4</span><span>หมายเหตุอธิบายสัญลักษณ์</span></a>
+    <a href="#s5"><span class="num">5</span><span>ป้ายใต้ชื่อชั้น (actor)</span></a>
+    <a href="#s6"><span class="num">6</span><span>วงกลมกลวงและเส้นจาง</span></a>
+    <a href="#s7"><span class="num">7</span><span>ป้ายชั้น critic</span></a>
+    <a href="#s8"><span class="num">8</span><span>ความน่าจะเป็นของ action</span></a>
+    <a href="#s8"><span class="num">9</span><span>V(s) ของ critic</span></a>
+  </div>
+</section>
+
+<section aria-labelledby="bg">
+  <h2 id="bg">ต้องรู้ก่อน 2 อย่าง</h2>
+  <div class="pair">
+    <div>
+      <h3>สมองมีสองส่วน</h3>
+      <p><b>Actor</b> (ด้านบน) คือส่วนที่ตัดสินใจว่าจะ HOLD / BUY / SELL / CLOSE ส่วน <b>Critic</b> (ด้านล่าง) ประเมินว่าสถานการณ์ตอนนี้ดีหรือแย่ แต่ละส่วนมี 3 ชั้น ชั้นละ 256 → 128 → 64 นิวรอน</p>
+    </div>
+    <div>
+      <h3>นิวรอนแต่ละตัวให้ค่าระหว่าง −1 ถึง +1</h3>
+      <p>โมเดลนี้ใช้ฟังก์ชัน <code>tanh</code> ซึ่งบีบผลรวมของอินพุตให้อยู่ในช่วง −1 ถึง +1 ค่าตรงกลางไล่ระดับได้ละเอียด แต่ถ้าผลรวมใหญ่มาก ค่าจะไปติดที่ขอบ −1 หรือ +1 และขยับต่อไม่ได้อีก เรียกว่า <b>pinned</b> (ติดขอบ)</p>
+    </div>
+  </div>
+</section>
+
+<section id="s1" aria-labelledby="h1x">
+  <h2 id="h1x"><span class="num">1</span> แท็บ</h2>
+  <figure class="n"><img src="img/18/u_table.jpg" alt="แท็บ HEALTH LEARNING INPUTS CRITIC MAP อยู่บนสุดของตาราง"></figure>
+  <p>แผงนี้แสดงทีละแท็บ เลือกได้จากแถวปุ่มนี้หรือเมนู <code>insight</code> ด้านล่างจอ หน้านี้อธิบายเฉพาะแท็บ <b>HEALTH</b> ซึ่งตอบคำถามว่า "แต่ละชั้นของสมองทำงานเต็มที่ไหม"</p>
+  <p>บรรทัดถัดมา <span class="m">LAYER HEALTH · 300 bars of this validation replay</span> บอกว่าตัวเลขทั้งหมดวัดจาก 300 แท่งที่โมเดลเล่นในช่วง validation ของ snapshot นี้ ถ้าเปลี่ยน eval หรือเปลี่ยน source ตัวเลขจะคำนวณใหม่</p>
+</section>
+
+<section id="s2" aria-labelledby="h2x">
+  <h2 id="h2x"><span class="num">2</span> ตารางสุขภาพแต่ละชั้น</h2>
+  <p>หนึ่งแถว = หนึ่งชั้น สีของชื่อชั้นคือผลประเมิน: <span class="pill bad">แดง</span> มีปัญหาหนัก, <span class="pill warn">ทอง</span> ควรระวัง, <span class="pill good">ดำ/ปกติ</span> ไม่มีปัญหา</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>คอลัมน์</th><th>คืออะไร</th><th>ค่าในภาพ (ACTOR L1)</th><th>อ่านว่า</th></tr></thead>
+    <tbody>
+      <tr><td>size</td><td>จำนวนนิวรอนในชั้น</td><td class="n">256</td><td>ชั้นแรกมี 256 นิวรอน</td></tr>
+      <tr><td>dead</td><td>% นิวรอนที่ให้ค่าเดิมทุกแท่ง (ค่าแกว่งน้อยกว่า 0.02) ไม่ว่าตลาดเป็นยังไง จึงส่งข้อมูลอะไรต่อไม่ได้</td><td class="n">0%</td><td>ไม่มีนิวรอนตาย</td></tr>
+      <tr><td>pinned ±1</td><td>% ของค่าทั้งหมด (256 นิวรอน × 300 แท่ง) ที่ติดขอบ |ค่า| ≥ 0.97 แถบสียาวตามเปอร์เซ็นต์</td><td class="n">95%</td><td>เกือบทุกครั้งที่ชั้นนี้คำนวณ ค่าออกมาเป็น −1 หรือ +1</td></tr>
+      <tr><td>switches</td><td>จำนวนนิวรอนที่ติดขอบใน ≥ 90% ของแท่ง แต่ยังสลับไปมาระหว่าง −1 กับ +1 ได้ คือทำงานเหมือน<b>สวิตช์เปิด/ปิด</b></td><td class="n">255</td><td>255 จาก 256 ตัวเป็นสวิตช์ เหลือตัวเดียวที่ให้ค่าไล่ระดับได้</td></tr>
+      <tr><td>dims</td><td>จำนวน "มุมมองอิสระ" ที่ชั้นใช้จริง ถ้าทุกนิวรอนขยับไปพร้อมกันจะได้ 1 ถ้าแต่ละตัวขยับอิสระจะเข้าใกล้ขนาดชั้น</td><td class="n">6.2</td><td>256 นิวรอนแต่ข้อมูลที่ส่งต่อมีมิติราว 6 มุมเท่านั้น</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>ค่าของทุกชั้นในภาพ</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>ชั้น</th><th>size</th><th>dead</th><th>pinned ±1</th><th>switches</th><th>dims</th><th>สรุป</th></tr></thead>
+    <tbody>
+      <tr><td style="color:var(--bad)">ACTOR L1</td><td class="n">256</td><td class="n">0%</td><td class="n">95%</td><td class="n">255</td><td class="n">6.2</td><td>ทั้งชั้นเป็นสวิตช์</td></tr>
+      <tr><td style="color:var(--warn)">ACTOR L2</td><td class="n">128</td><td class="n">0%</td><td class="n">37%</td><td class="n">0</td><td class="n">4.9</td><td>ติดขอบบ้าง แต่ไม่มีตัวไหนติดตลอด</td></tr>
+      <tr><td>ACTOR L3</td><td class="n">64</td><td class="n">0%</td><td class="n">16%</td><td class="n">0</td><td class="n">6.6</td><td>ปกติ ชั้นที่ตัดสินใจขั้นสุดท้ายยังไล่ระดับได้</td></tr>
+      <tr><td style="color:var(--bad)">CRITIC L1</td><td class="n">256</td><td class="n">0.8%</td><td class="n">92%</td><td class="n">196</td><td class="n">6.9</td><td>เป็นสวิตช์ส่วนใหญ่ และมีนิวรอนตาย 2 ตัว</td></tr>
+      <tr><td style="color:var(--warn)">CRITIC L2</td><td class="n">128</td><td class="n">0.8%</td><td class="n">48%</td><td class="n">1</td><td class="n">6.5</td><td>ติดขอบเกือบครึ่ง ตาย 1 ตัว</td></tr>
+      <tr><td style="color:var(--warn)">CRITIC L3</td><td class="n">64</td><td class="n">1.6%</td><td class="n">29%</td><td class="n">0</td><td class="n">6.7</td><td>ติดขอบพอประมาณ ตาย 1 ตัว</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>เกณฑ์ที่ใช้ระบายสี</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th></th><th>dead</th><th>pinned ±1</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill warn">ทอง</span></td><td class="n">≥ 10%</td><td class="n">≥ 25%</td></tr>
+      <tr><td><span class="pill bad">แดง</span></td><td class="n">≥ 25%</td><td class="n">≥ 50%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">dims ไม่มีเกณฑ์สี ใช้ดูประกอบ: ถ้าชั้นกว้าง 256 แต่ใช้แค่ 6 มิติ แปลว่าชั้นกว้างเกินกว่าที่ข้อมูลต้องการมาก</p>
+</section>
+
+<section id="s3" aria-labelledby="h3x">
+  <h2 id="h3x"><span class="num">3</span> กล่องคำเตือน</h2>
+  <figure class="w"><img src="img/18/u_advice.jpg" alt="กล่องคำเตือนสีแดงในแผง"></figure>
+  <p>กล่องนี้สรุปปัญหาที่เจอจากตารางเป็นประโยคเดียว สีกรอบตามปัญหาที่หนักที่สุด แปลเป็นไทยได้ว่า:</p>
+  <div class="callout bad">
+    <p><b>ACTOR L1, ACTOR L2, CRITIC L1, CRITIC L2, CRITIC L3 ติดขอบ ±1</b> (หนักสุดคือ ACTOR L1 95%) ตรงที่ติดขอบ tanh แทบไม่ส่งสัญญาณสำหรับการเรียนรู้ (gradient) กลับไป นิวรอนจึงทำงานเป็นแค่สวิตช์เปิด/ปิด ชั้นนั้นส่งต่อข้อมูลได้น้อยลง และเรียนรู้ได้ผ่านส่วนที่ยังไม่ติดขอบเท่านั้น</p>
+    <p>ถ้าอยากรู้ว่ายังเรียนรู้อยู่ไหม ให้ดูแท็บ LEARNING (Δ weights) ถ้าจะ A/B ให้ลอง <code>activation_fn=ReLU</code>, ลด learning rate หรือลดขนาด window</p>
+  </div>
+  <div class="callout warn">
+    <p><b>ข้อควรระวัง:</b> นี่คือการวินิจฉัย ยังไม่ได้พิสูจน์ว่าแก้แล้วกำไรดีขึ้น และ <b>ติดขอบไม่ได้แปลว่าหยุดเรียน</b> ในรันทดสอบ 20,000 step ชั้น L1 ติดขอบ 70% แต่น้ำหนักยังขยับ 36% ต่อรอบ eval ส่วน rl_prod_v1 เทรนก่อนจะมีการบันทึกค่า Δ จึงยังไม่รู้ว่าชั้น L1 ยังเรียนอยู่หรือไม่</p>
+  </div>
+  <h3>ทำไม ACTOR L1 ถึงติดขอบเกือบหมด</h3>
+  <p>ชั้นแรกรับอินพุต 1,823 ตัว (20 แท่ง × 182 feature + สถานะ 3 ตัว) ผลรวมที่เข้านิวรอนแต่ละตัวจึงใหญ่มาก ผมวัดจากโมเดลจริงได้ค่ากลางประมาณ 12 ซึ่ง tanh(12) = 1.0 พอดี ชั้นแรกเลยกลายเป็นชุดสวิตช์ที่บอกแค่ว่า "ผลรวมเป็นบวกหรือลบ"</p>
+</section>
+
+<section id="s4" aria-labelledby="h4x">
+  <h2 id="h4x"><span class="num">4</span> หมายเหตุใต้ตาราง</h2>
+  <figure class="w"><img src="img/18/u_note.jpg" alt="หมายเหตุอธิบายสัญลักษณ์ในภาพ 3D"></figure>
+  <p>สรุปความหมายของสัญลักษณ์ในภาพ 3D และนิยามของแต่ละคอลัมน์:</p>
+  <ul>
+    <li><b>จุดสีเทาเล็ก</b> = นิวรอนตาย</li>
+    <li><b>วงกลมกลวง</b> = นิวรอนสวิตช์ (ติดขอบ ≥ 90% ของแท่ง)</li>
+    <li><b>เส้นจาง</b> = เส้นที่ออกจากนิวรอนตายหรือนิวรอนสวิตช์ ส่งค่าคงที่หรือค่าเปิด/ปิด ไม่ใช่ค่าไล่ระดับ แต่สัญญาณยังแรงได้</li>
+    <li><b>dead</b> = ค่าแกว่ง &lt; 0.02 บนแท่งเหล่านี้, <b>pinned</b> = |tanh| ≥ 0.97, <b>dims</b> = จำนวนทิศทางอิสระที่ชั้นใช้จริง</li>
+  </ul>
+</section>
+
+<section id="s5" aria-labelledby="h5x">
+  <h2 id="h5x"><span class="num">5</span> ป้ายใต้ชื่อชั้นในภาพ 3D</h2>
+  <figure><img src="img/18/u_actor_labels.jpg" alt="ป้าย L1 · 256, 95% pinned · 6.2 dims เป็นสีแดง; L2 · 128, 37% pinned · 4.9 dims สีทอง; L3 · 64, 16% pinned · 6.6 dims สีเขียว"></figure>
+  <p>ป้ายแต่ละชั้นมีสองบรรทัด บรรทัดแรกคือชื่อและขนาด (<span class="m">L1 · 256</span>) บรรทัดที่สองคือตัวเลขสำคัญจากตาราง ระบายสีตามเกณฑ์เดียวกัน ทำให้ไม่ต้องเหลือบไปดูตารางก็รู้ว่าชั้นไหนมีปัญหา</p>
+  <ul>
+    <li><span style="color:var(--bad)"><b>แดง</b></span> L1: ติดขอบ 95%, ใช้ 6.2 มิติ</li>
+    <li><span style="color:var(--warn)"><b>ทอง</b></span> L2: ติดขอบ 37%</li>
+    <li><span style="color:var(--good)"><b>เขียว</b></span> L3: ปกติ</li>
+  </ul>
+  <p class="muted">ถ้ามีนิวรอนตาย บรรทัดนี้จะเพิ่ม "· N dead" ต่อท้าย</p>
+</section>
+
+<section id="s6" aria-labelledby="h6x">
+  <h2 id="h6x"><span class="num">6</span> วงกลมกลวงและเส้นจาง</h2>
+  <p>สองภาพนี้เป็นมุมกล้องเดียวกันของโมเดลเดียวกัน ภาพซ้ายปิด insight ภาพขวาเปิดแท็บ HEALTH</p>
+  <div class="pair">
+    <figure><img src="img/18/c_rings_off.jpg" alt="insight ปิด: ทุกนิวรอนเป็นจุดทึบ เส้นเข้มทุกเส้น"><figcaption>insight = off: ทุกนิวรอนเป็นจุดทึบ เส้นทุกเส้นเข้มเท่ากัน มองไม่ออกว่าชั้นไหนมีปัญหา</figcaption></figure>
+    <figure><img src="img/18/c_rings_on.jpg" alt="แท็บ HEALTH: ชั้น L1 เป็นวงกลมกลวงทั้งชั้น เส้นที่ออกจาก L1 จางลง ชั้น L2 ยังเป็นจุดทึบ"><figcaption>HEALTH: L1 เป็นวงกลมกลวงทั้งชั้น เส้นที่ออกจาก L1 ไป L2 จางลง ส่วน L2 ยังเป็นจุดทึบและเส้นจาก L2 ไป L3 ยังเข้ม</figcaption></figure>
+  </div>
+  <figure class="n"><img src="img/18/c_rings_zoom.jpg" alt="ขยายชั้น L1: วงกลมกลวงสีส้มและน้ำเงิน"><figcaption>ขยายชั้น ACTOR L1: วงสีส้ม = ตอนนี้ค้างที่ +1, วงสีน้ำเงิน = ค้างที่ −1 พอเล่น replay สีจะสลับไปมาเหมือนสวิตช์</figcaption></figure>
+  <h3>อ่านยังไง</h3>
+  <ul>
+    <li><b>วงกลมกลวง</b> = นิวรอนนี้ตอบแค่ "ใช่/ไม่ใช่" แยกรายละเอียดไม่ได้</li>
+    <li><b>จุดทึบ</b> = นิวรอนยังไล่ระดับได้ ขนาดและความเข้มเปลี่ยนตามค่าในแท่งนั้น</li>
+    <li><b>เส้นจาง</b> = ข้อมูลที่ไหลผ่านเส้นนี้เป็นแบบเปิด/ปิด ไม่ได้แปลว่าสัญญาณอ่อน ในความจริงสวิตช์ส่งค่า ±1 ซึ่งแรงที่สุดด้วยซ้ำ</li>
+  </ul>
+  <div class="callout info"><p>ภาพนี้บอกเรื่องเดียวกับตัวเลข 95% ในตาราง แต่เห็นได้ทันทีว่าปัญหากระจุกอยู่ที่ชั้นแรก ส่วนชั้นหลังยังทำงานแบบไล่ระดับ</p></div>
+</section>
+
+<section id="s7" aria-labelledby="h7x">
+  <h2 id="h7x"><span class="num">7</span> ป้ายชั้น critic</h2>
+  <figure><img src="img/18/u_critic_labels.jpg" alt="ป้ายชั้น critic: L1 92% pinned 6.9 dims 2 dead, L2 48% pinned 6.5 dims 1 dead, L3 29% pinned 6.7 dims 1 dead"></figure>
+  <p>อ่านเหมือนข้อ 5 แต่เป็นส่วน critic: L1 ติดขอบ 92% และมีนิวรอนตาย 2 ตัว, L2 ติดขอบ 48% ตาย 1 ตัว, L3 ติดขอบ 29% ตาย 1 ตัว</p>
+  <p>นิวรอนตายจำนวนนี้ (ต่ำกว่า 2%) ถือว่าไม่เป็นปัญหา ผมทดลองแล้วว่านิวรอนตายจะเยอะจริงๆ ก็ต่อเมื่ออินพุตผิดสเกล เช่น normalize ไม่ทำงาน (ตายทั้งชั้น 100%) ส่วน data ที่เป็น noise ล้วนก็ไม่ทำให้นิวรอนตาย</p>
+  <div class="callout warn"><p><b>ปัญหาที่เห็นในภาพ:</b> ป้ายของ critic ซ้อนกัน ("2 dead" ทับ "L2 · 128" และบรรทัดของ L2 ทับ "L3 · 64") เพราะมุมกล้องทำให้ชั้นอยู่ใกล้กัน ตัวเลขยังถูกต้อง แค่อ่านยาก</p></div>
+</section>
+
+<section id="s8" aria-labelledby="h8x">
+  <h2 id="h8x"><span class="num">8</span><span class="num">9</span> Action และ V(s)</h2>
+  <figure class="n"><img src="img/18/u_outputs.jpg" alt="HOLD 22%, BUY 2%, SELL 4%, CLOSE 72% มีกรอบ และ V(s) −0.039"></figure>
+  <p>ส่วนนี้ไม่ได้มาจากแท็บ HEALTH แสดงอยู่ทุกแท็บ แต่ช่วยให้เข้าใจภาพ:</p>
+  <ul>
+    <li><b>HOLD 22% · BUY 2% · SELL 4% · CLOSE 72%</b> = ความน่าจะเป็นที่ actor ให้แต่ละ action ในแท่งนี้ ตัวที่มีกรอบ (CLOSE) คือ action ที่โมเดลเลือก แถบยาวตามเปอร์เซ็นต์</li>
+    <li><b>V(s) −0.039</b> = ค่าที่ critic ประเมินว่าจากแท่งนี้ไปจะได้ผลดีแค่ไหน ติดลบเล็กน้อยคือคาดว่าแย่ลงนิดหน่อย ถ้าอยากรู้ว่า critic ประเมินแม่นไหม ให้ดูแท็บ CRITIC ซึ่งจะแสดงค่าจริงต่อท้ายป้ายนี้</li>
+  </ul>
+</section>
+
+<section aria-labelledby="sum">
+  <h2 id="sum">สรุป: หน้าจอนี้บอกอะไรเกี่ยวกับ rl_prod_v1</h2>
+  <div class="kv">
+    <div><b>255/256</b><span>นิวรอน ACTOR L1 เป็นสวิตช์</span></div>
+    <div><b>6.2</b><span>มิติที่ ACTOR L1 ใช้จริง จาก 256</span></div>
+    <div><b>0%</b><span>นิวรอนตายในส่วน actor</span></div>
+    <div><b>16%</b><span>ติดขอบในชั้นสุดท้าย (ปกติ)</span></div>
+  </div>
+  <ul>
+    <li><b>ชั้นแรกของทั้ง actor และ critic อิ่มตัว</b> ข้อมูลจากอินพุต 1,823 ตัวถูกบีบเหลือสัญญาณเปิด/ปิด และใช้จริงแค่ราว 6 มิติ</li>
+    <li><b>ชั้นหลังยังทำงานแบบไล่ระดับ</b> และไม่มีนิวรอนตายที่มีนัยสำคัญ แปลว่าสเกลของอินพุตไม่ได้พัง</li>
+    <li><b>ยังไม่รู้</b>ว่าปัญหานี้ทำให้กำไรแย่ลงหรือไม่ และ L1 ยังเรียนรู้อยู่หรือเปล่า</li>
+  </ul>
+  <h3>ทำอะไรต่อ</h3>
+  <ol>
+    <li>เทรนรันใหม่ด้วยการตั้งค่าเดิม (seed เดียวกัน) แต่เปลี่ยนเป็น ReLU หรือลด learning rate แล้วเทียบผล validation / OOS กับรันเดิม</li>
+    <li>เปิดแท็บ LEARNING ของรันใหม่ เพื่อดูว่า L1 ยังขยับอยู่หรือไม่ (รันใหม่บันทึกค่า Δ weights แล้ว)</li>
+    <li>ถ้าผลดีขึ้นจริง ค่อยเปลี่ยนค่าเริ่มต้นของการเทรน ถ้าไม่ต่าง แปลว่าการติดขอบไม่ใช่สิ่งที่จำกัดกำไร</li>
+  </ol>
+</section>
+
+<footer class="muted" style="font-size:13px">
+  ภาพทั้งหมดมาจากโปรแกรมจริง (tools/viz/network3d.html) วันที่ 2026-11-08 · ภาพภาพรวมและภาพตัดย่อยมาจากหน้าจอของผู้ใช้ · ภาพเปรียบเทียบ off/HEALTH และภาพขยายถ่ายด้วย headless Chrome จาก live viewer ของ rl_prod_v1 run f439e5ba (eval 16)
+</footer>
+
+</main>
+<script>
+  const lab = document.getElementById("lab"), shot = document.getElementById("shot");
+  lab.addEventListener("change", () => shot.classList.toggle("nolab", !lab.checked));
+</script>
+</body>
+</html>

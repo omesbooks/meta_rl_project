@@ -45,8 +45,24 @@
   #drvNote { font: 500 11px/1.45 var(--hud); color: var(--dim); text-shadow: none; margin-top: 6px; }
   #drvNote:empty { display: none; }
   body.dash #drivers { display: none !important; }
+  /* layer insight (2026-11-08): health table + regime map, right side under the stats. 'insight' menu / ?insight= */
+  #insight { right: 24px; top: 150px; width: 340px; display: none; pointer-events: auto; padding: 10px 12px 8px; max-height: calc(100vh - 300px); overflow-y: auto; scrollbar-width: thin; }
+  #insight .k { font: 600 10px/1 var(--hud); letter-spacing: .26em; color: var(--dim); text-shadow: none; margin-bottom: 7px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #insight .k select { font: 600 10px var(--hud); letter-spacing: .08em; background: transparent; color: var(--fg); border: 1px solid rgba(128,140,170,.4); border-radius: 5px; padding: 1px 3px; }
+  #insight .hl { width: 100%; border-collapse: collapse; font: 600 11px/1.6 var(--hud); text-shadow: none; color: var(--fg); font-variant-numeric: tabular-nums; }
+  #insight .hl th { font-weight: 600; font-size: 9px; letter-spacing: .14em; color: var(--dim); text-align: right; }
+  #insight .hl th:first-child, #insight .hl td:first-child { text-align: left; } #insight .hl td { text-align: right; white-space: nowrap; }
+  #insight .hl tr.warn td { color: var(--gold); } #insight .hl tr.bad td { color: var(--mag); }
+  #insight .hb { display: inline-block; height: 5px; border-radius: 3px; background: currentColor; opacity: .55; margin-right: 5px; vertical-align: middle; }
+  #insight .adv { font: 600 11px/1.4 var(--hud); text-shadow: none; margin-top: 6px; padding: 4px 8px; border-radius: 7px; border: 1px solid currentColor; }
+  #insight .adv.ok { color: var(--green); } #insight .adv.warn { color: var(--gold); } #insight .adv.bad { color: var(--mag); }
+  #insight .note, #insight .leg, #insight .tip { font: 500 10.5px/1.4 var(--hud); color: var(--dim); text-shadow: none; margin-top: 5px; }
+  #insight .tip { color: var(--fg); min-height: 14px; }
+  #insight canvas { display: block; border-radius: 8px; }
+  #insRegime { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(128,140,170,.25); }
+  body.dash #insight, body.show #insight { display: none !important; }
   body.show #drivers, body.show .lbl.grp { display: none !important; }
-  body.show #ctrl label.c3d:has(#iIn) { display: none; }
+  body.show #ctrl label.c3d:has(#iIn), body.show #ctrl label.c3d:has(#iIns) { display: none; }
   #chartLbl { left: 24px; font: 600 10px/1 var(--hud); letter-spacing: .3em; color: var(--dim); text-shadow: none; }
   #pxHi, #pxLo { right: 24px; font: 600 12px/1 var(--hud); color: var(--dim); text-shadow: none; }
   .panel { position: fixed; background: rgba(6, 10, 24, .72); border: 1px solid rgba(25, 230, 255, .18);
@@ -79,7 +95,7 @@
             font: 700 16px var(--hud); letter-spacing: .3em; color: var(--gold); text-shadow: 0 0 14px var(--gold);
             opacity: 0; transition: opacity .35s; white-space: nowrap; }
   /* ---------- 3D-mode HUD: "deep glass" (dark frosted blue, specular line). ?hud=flat disables it. */
-  body:not(.dash):not(.flat) .panel, body:not(.dash):not(.flat) #stats, body:not(.dash):not(.flat) #rstats, body:not(.dash):not(.flat) #drivers, body:not(.dash):not(.flat) #idle {
+  body:not(.dash):not(.flat) .panel, body:not(.dash):not(.flat) #stats, body:not(.dash):not(.flat) #rstats, body:not(.dash):not(.flat) #drivers, body:not(.dash):not(.flat) #insight, body:not(.dash):not(.flat) #idle {
     background: linear-gradient(135deg, rgba(25,230,255,.10), rgba(25,230,255,.02) 40%, rgba(255,255,255,.015));
     backdrop-filter: blur(14px) saturate(170%); border: 1px solid rgba(25,230,255,.22); border-radius: 14px;
     box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(25,230,255,.08), 0 12px 36px rgba(0,0,0,.45); }
@@ -121,7 +137,7 @@
   body.clear .lbl.out .bar, body.clear #drivers .r .b { box-shadow: none; }
   body.clear #title h1 { color: #0f1a2b; text-shadow: none; letter-spacing: .26em; }
   body.clear:not(.dash):not(.flat) .panel, body.clear:not(.dash):not(.flat) #stats, body.clear:not(.dash):not(.flat) #rstats,
-  body.clear:not(.dash):not(.flat) #drivers, body.clear:not(.dash):not(.flat) #idle {
+  body.clear:not(.dash):not(.flat) #drivers, body.clear:not(.dash):not(.flat) #insight, body.clear:not(.dash):not(.flat) #idle {
     background: linear-gradient(140deg, rgba(255,255,255,.80), rgba(255,255,255,.52)); border: 1px solid rgba(255,255,255,.9);
     backdrop-filter: blur(24px) saturate(180%); border-radius: 18px; color: var(--dim);
     box-shadow: inset 0 1px 0 #fff, inset 0 -1px 0 rgba(15,26,43,.05), 0 14px 40px rgba(15,26,43,.14), 0 1px 2px rgba(15,26,43,.08); }
@@ -157,6 +173,7 @@
 </div>
 <div id="labels"></div>
 <div id="drivers" class="hud"><div class="k"><span id="drvHead">TOP DRIVERS</span> · <span id="drvWhat">this decision</span></div><div id="drvList"></div><div id="drvNote"></div></div>
+<div id="insight" class="hud"><div id="insHealth"></div><div id="insRegime"></div></div>
 <div id="dash"></div>
 <div id="mon"></div>
 <div id="chartLbl" class="hud"></div>
@@ -177,6 +194,7 @@
   <label class="c3d">speed <input id="iSpeed" type="range" min="1" max="20" value="6"></label>
   <label class="c3d">layers <select id="iShape"><option value="sorted">sorted</option><option value="grid">grid</option><option value="column">column</option><option value="disc">disc</option></select></label>
   <label class="c3d">inputs <select id="iIn"><option value="attr">attribution</option><option value="use">usage (decision test)</option><option value="act">activation</option></select></label>
+  <label class="c3d">insight <select id="iIns"><option value="off">off</option><option value="health">layer health</option><option value="regime">regime map</option><option value="both">both</option></select></label>
   <label class="c3d">synapses <select id="iK"><option value="4">4</option><option value="8" selected>8</option><option value="16">16</option></select></label>
   <label class="c3d darkonly">glow <input id="iGlow" type="range" min="0" max="30" value="9"></label>
   <label class="c3d">fps <select id="iFps"><option>15</option><option>20</option><option>30</option><option>60</option></select></label>
@@ -192,7 +210,8 @@
   "three": "./vendor/three/three.module.js",
   "three/addons/": "./vendor/three/addons/",
   "viz-dashboard": "./dashboard.js",
-  "viz-monitor": "./monitor.js"
+  "viz-monitor": "./monitor.js",
+  "viz-insight": "./insight.js"
 } }
 </script>
 <script>window.SNAPSHOT = /*__SNAPSHOT__*/null;</script>
@@ -205,6 +224,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { createDashboard } from "viz-dashboard";
 import { createMonitor } from "viz-monitor";
+import { layerHealth, renderHealth, createRegime } from "viz-insight";
 
 const params = new URLSearchParams(location.search);
 // ?look=showcase: the presentation look (for clips/screens) — always the dark neon scene, textbook
@@ -708,10 +728,11 @@ function updateNetwork(dt) {
     for (let i = 0; i < s.NIN; i++) { const v = cur[i], m = Math.min(1, Math.abs(v) * 1.3);
       if (LIGHT) inputInk(nCol, nSize, i, v, m * m, 2.5, 2.6); else { setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.07 + m * m * 0.85); nSize[i] = 1.5 + m * 1.7; } }
   }
-  for (const L of s.layers) for (let j = 0; j < L.size; j++) {
+  for (const L of s.layers) { const dead = L.dead; for (let j = 0; j < L.size; j++) {
     const i = L.off + j, v = cur[i], m = Math.abs(v);
+    if (dead && dead[j]) { setColor(nCol, i, C_INK_DIM, LIGHT ? 0.35 : 0.12); nSize[i] = L.dot * 0.45; continue; }   // dead: constant output, no signal
     setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.10 + m * m * m * 1.3); nSize[i] = L.dot * (0.6 + m * 0.9);
-  }
+  } }
   for (let a = 0; a < s.NA; a++) {
     const p = Math.max(0, cur[s.OFF_PROB + a]), i = s.OFF_PROB + a;
     N.impulse[a] = Math.max(0, N.impulse[a] - dt * 1.8);
@@ -935,7 +956,10 @@ function banner(text) { const b = $("banner"); b.textContent = text; b.style.opa
 let shown = "", source = "eval", srcPinned = false, evalD = null;
 function applySnapshot(D) {
   try { S = prepare(D); } catch (e) { fail("bad snapshot: " + e.message); return; }
+  S.health = layerHealth(S);
+  S.layers.forEach((L, i) => L.dead = S.health[i].dead);
   buildNet(S);
+  insightUpdate();
   START = Math.min(Math.max(0, Math.min(60, S.NF - 2)), S.NF - 2);
   seek(START);
   $("wait").style.display = "none";
@@ -1151,7 +1175,7 @@ function frame(now) {
     updateNetwork(dt);
     const ch = updateChart(fpos, dt);
     const fi = Math.floor(fpos);
-    if (fi !== lastFrame) { for (let i = lastFrame + 1; i <= fi; i++) onNewBar(i, ch); lastFrame = fi; }
+    if (fi !== lastFrame) { for (let i = lastFrame + 1; i <= fi; i++) onNewBar(i, ch); lastFrame = fi; if (insightOn.regime) regime.frame(fi); }
     let best = 0;
     for (let a = 1; a < S.NA; a++) if (S.cur[S.OFF_PROB + a] > S.cur[S.OFF_PROB + best]) best = a;
     for (let a = 0; a < S.NA; a++) {
@@ -1199,8 +1223,9 @@ function applyMode(name) {
   $("iMode").value = name;
   document.body.classList.toggle("dash", isPanel(name));
   document.body.classList.toggle("mon", name === "monitor");
-  if (isPanel(name)) { sleep("dashboard"); dashUpdate(); if (name === "monitor") loadPeers().then(() => monUpdate()); else monUpdate(); return; }
+  if (isPanel(name)) { $("insight").style.display = "none"; sleep("dashboard"); dashUpdate(); if (name === "monitor") loadPeers().then(() => monUpdate()); else monUpdate(); return; }
   if (leavingDash && idle) { idle = false; idleReason = ""; lastT = performance.now(); lastDraw = 0; requestAnimationFrame(frame); }
+  if (leavingDash) insightUpdate();
   bloom.enabled = OPT.bloom && !LIGHT; K = OPT.k; fpsCap = OPT.fps;
   renderer.setPixelRatio(Math.min(OPT.dpr, 2, devicePixelRatio || 1));
   composer.setPixelRatio(renderer.getPixelRatio());
@@ -1236,6 +1261,26 @@ $("bRec").onclick = () => {      // records the WebGL canvas (HUD text is HTML a
     a.download = `${(S && S.D.meta && S.D.meta.model) || "neural"}_trader.webm`; a.click(); rec = null; b.textContent = "● rec"; };
   rec.start(); b.textContent = "■ stop";
 };
+// ---- layer insight panel: health table (dead / pinned / dims) + regime map (PCA of one actor layer, coloured by outcome)
+const INS_OPTS = ["off", "health", "regime", "both"];
+let insightMode = INS_OPTS.includes(params.get("insight")) ? params.get("insight") : (SHOW ? "off" : "health");
+const insightOn = { get health() { return insightMode === "health" || insightMode === "both"; }, get regime() { return insightMode === "regime" || insightMode === "both"; } };
+const regime = createRegime($("insRegime"), {
+  onSeek: i => { seek(i); playing = false; $("bPlay").textContent = "▶"; wake("input"); },
+  css: () => { const cs = getComputedStyle(document.body); return { up: cs.getPropertyValue("--green").trim(), dn: cs.getPropertyValue("--mag").trim(), gold: cs.getPropertyValue("--gold").trim(),
+                dim: cs.getPropertyValue("--dim").trim(), fg: cs.getPropertyValue("--fg").trim(), grid: LIGHT ? "rgba(15,26,43,.18)" : "rgba(25,230,255,.25)" }; },
+});
+function insightUpdate() {
+  const show = !!S && insightMode !== "off" && mode !== "dashboard" && mode !== "monitor";
+  $("insight").style.display = show ? "block" : "none";
+  $("insHealth").style.display = insightOn.health ? "block" : "none";
+  $("insRegime").style.display = insightOn.regime ? "block" : "none";
+  if (!show) return;
+  if (insightOn.health) renderHealth($("insHealth"), S, S.health);
+  if (insightOn.regime) { regime.set(S); regime.frame(Math.min(S.NF - 1, Math.floor(fpos))); }
+}
+$("iIns").value = insightMode;
+$("iIns").onchange = e => { insightMode = e.target.value; insightUpdate(); wake("input"); };
 const dash = createDashboard($("dash"), {
   colors: ACTION_COLORS,
   fetchSnapshot: async e => { const r = await fetch(`run/${e.file}?t=${Date.now()}`, { cache: "no-store" }); return r.json(); },
@@ -1280,7 +1325,7 @@ addEventListener("resize", () => { clearTimeout(dashResize); dashResize = setTim
 window.__viz = { seek: i => S && seek(i), get frame() { return fpos; }, get drawn() { return drawn; }, get loaded() { return loadedI; },
                  get ready() { return !!S; }, get idle() { return idle ? idleReason : ""; }, get mode() { return mode; },
                  get dbg() { return { idle, idleReason, hostMinimized, visibility: document.visibilityState, fpsCap, lastDraw: Math.round(lastDraw), playing, endAt: Math.round(endAt) }; },
-                 get source() { return source; }, get shown() { return shown; }, get monitorRows() { return monData ? (monData.rows || []).length : 0; }, get inputMode() { return inputMode; }, get hasAttr() { return !!(S && S.ATTR); },
+                 get source() { return source; }, get shown() { return shown; }, get monitorRows() { return monData ? (monData.rows || []).length : 0; }, get inputMode() { return inputMode; }, get hasAttr() { return !!(S && S.ATTR); }, get health() { return S ? S.health : null; }, get insight() { return insightMode; }, regime,
                  get roll() { return { haveRollout, rollSeq, rollPending, rollLoading, loaded: shown === "rollout" && S ? S.D.meta.rollout : -1 }; },
                  setHidden, setMode: applyMode, setSource: s => setSource(s, true), wake: () => wake("input") };
 

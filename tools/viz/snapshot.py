@@ -234,6 +234,10 @@ def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, fea
         "schema": SCHEMA, "frames": nf, "n_in": n_in, "window": int(window),
         "n_features": int((n_in - 3) // window), "actor_layers": sizes["actor"],
         "critic_layers": sizes["critic"], "actions": names,
+        # activation of each hidden layer ("tanh" / "relu" / ...): insight.js counts pinned (|tanh| >= 0.97)
+        # neurons only for tanh layers; snapshots without this key are treated as tanh (the SB3 default)
+        "layer_act": {name: [type(m).__name__.lower() if tanh[name][li] or not isinstance(m, torch.nn.Linear) else "linear"
+                             for li, m in enumerate(_record_points(towers[name]))] for name in ("actor", "critic")},
         "action_labels": [SHORT_NAMES.get(n, n.upper()) for n in names],
         "width": int(q.shape[1]), "value_max": vmax, "q": b64(q),
         "ts": [str(x) for x in bars["ts"]],

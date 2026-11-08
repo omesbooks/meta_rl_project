@@ -45,8 +45,8 @@
   #drvNote { font: 500 11px/1.45 var(--hud); color: var(--dim); text-shadow: none; margin-top: 6px; }
   #drvNote:empty { display: none; }
   body.dash #drivers { display: none !important; }
-  /* layer insight (2026-11-08): health table + regime map, right side under the stats. 'insight' menu / ?insight= */
-  #insight { right: 24px; top: 150px; width: 340px; display: none; pointer-events: auto; padding: 10px 12px 8px; max-height: calc(100vh - 300px); overflow-y: auto; scrollbar-width: thin; }
+  /* layer insight (2026-11-08): health table + regime map, left side (where TOP DRIVERS was). 'insight' menu / ?insight= */
+  #insight { left: 24px; top: 150px; width: 340px; display: none; pointer-events: auto; padding: 10px 12px 8px; max-height: calc(100vh - 300px); overflow-y: auto; scrollbar-width: thin; }
   #insight .k { font: 600 10px/1 var(--hud); letter-spacing: .26em; color: var(--dim); text-shadow: none; margin-bottom: 7px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   #insight .k select { font: 600 10px var(--hud); letter-spacing: .08em; background: transparent; color: var(--fg); border: 1px solid rgba(128,140,170,.4); border-radius: 5px; padding: 1px 3px; }
   #insight .hl { width: 100%; border-collapse: collapse; font: 600 11px/1.6 var(--hud); text-shadow: none; color: var(--fg); font-variant-numeric: tabular-nums; }
@@ -881,8 +881,12 @@ function onNewBar(i, ch) {
   }
 }
 let inputMode = "attr";
+// TOP DRIVERS / USED BY THE POLICY list: off since 2026-11-08 (the left side holds the layer insight panel);
+// ?drivers=1 brings it back. The input layer is still coloured by the 'inputs' menu either way.
+const DRIVERS = params.get("drivers") === "1";
 function drivers(i) {
   const s = S, el = $("drivers");
+  if (!DRIVERS) { el.style.display = "none"; return; }
   if (s && inputMode === "use" && mode !== "dashboard" && mode !== "monitor") { usagePanel(s); return; }
   $("drvHead").textContent = "TOP DRIVERS"; $("drvNote").textContent = "";
   if (!s || !s.ATTR || inputMode !== "attr" || mode === "dashboard" || mode === "monitor") { el.style.display = "none"; return; }

@@ -102,6 +102,8 @@ class TemplateWiringTests(unittest.TestCase):
         self.assertIn('id="insHealth"', html); self.assertIn('id="insRegime"', html)
         self.assertIn("S.health = layerHealth(S);", html)
         self.assertIn("body.show #insight { display: none !important; }", html)
+        self.assertIn("#insight { left: 24px; top: 150px;", html)          # 2026-11-08: left side, drivers list off
+        self.assertIn('const DRIVERS = params.get("drivers") === "1";', html)
 
     def test_snapshot_records_layer_activation(self):
         src = (ROOT / "tools/viz/snapshot.py").read_text(encoding="utf-8")

@@ -84,6 +84,22 @@ def test_capture_shapes(net_arch, activation, profile, n_actions):
     assert snap["layer_act"] == {"actor": [act] * len(net_arch), "critic": [act] * len(net_arch)}
 
 
+def test_pack_records_each_drawn_synapse_weight_change():
+    policy, make, cfg = _policy_and_env([16, 8], torch.nn.Tanh, "basic_4")
+    w0 = snap_mod.layer_weights(policy)
+    with torch.no_grad():
+        for m in policy.mlp_extractor.policy_net:
+            if isinstance(m, torch.nn.Linear):
+                m.weight.add_(0.5)
+    snap = snap_mod.capture(policy, make(), WINDOW, 30, k=4, prev_weights=w0)
+    m0 = snap["edges"]["actor"][0]
+    dw = np.frombuffer(base64.b64decode(m0["dw"]), dtype=np.float32)
+    assert dw.size == m0["rows"] * m0["k"] and np.allclose(dw, 0.5, atol=1e-6)        # actor L1 moved by +0.5
+    head = snap["edges"]["actor"][-1]
+    assert np.allclose(np.frombuffer(base64.b64decode(head["dw"]), dtype=np.float32), 0.0)   # head untouched
+    assert "dw" not in snap_mod.capture(policy, make(), WINDOW, 30, k=4)["edges"]["actor"][0]  # no previous weights -> none
+
+
 def test_layer_delta_measures_how_far_each_layer_moved():
     policy, _, _ = _policy_and_env([32, 16], torch.nn.Tanh, "basic_4")
     w0 = snap_mod.layer_weights(policy)

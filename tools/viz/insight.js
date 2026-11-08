@@ -19,6 +19,7 @@
 export const DEAD_STD = 0.02, SAT = 0.97;
 export const DEAD_WARN = 0.10, DEAD_BAD = 0.25, SAT_WARN = 0.25, SAT_BAD = 0.5;
 export const MAX_ROWS = 400;
+export const SWITCH_RATE = 0.9;   // a neuron pinned on >= 90% of the bars = an on/off switch (hollow ring in 3D)
 
 const pct = v => (v * 100).toFixed(v > 0 && v < 0.1 ? 1 : 0) + "%";
 const layerName = h => `${h.tower ? "CRITIC" : "ACTOR"} L${h.idx + 1}`;
@@ -76,19 +77,21 @@ export function layerHealth(s) {
   return s.layers.map(L => {
     const M = layerMatrix(s, L, rows), { X, m, n } = M, tanh = isTanh(s, L);
     const sum = new Float64Array(n), sq = new Float64Array(n);
-    let pinned = 0;
+    let pinned = 0; const pinN = new Uint16Array(n);
     for (let t = 0; t < m; t++) for (let j = 0; j < n; j++) {
-      const v = X[t * n + j]; sum[j] += v; sq[j] += v * v; if (tanh && Math.abs(v) >= SAT) pinned++;
+      const v = X[t * n + j]; sum[j] += v; sq[j] += v * v; if (tanh && Math.abs(v) >= SAT) { pinned++; pinN[j]++; }
     }
     const dead = new Uint8Array(n); let nDead = 0;
     for (let j = 0; j < n; j++) {
       const mu = sum[j] / m, sd = Math.sqrt(Math.max(0, sq[j] / m - mu * mu));
       if (sd < DEAD_STD) { dead[j] = 1; nDead++; }
     }
+    const sw = new Uint8Array(n); let nSwitch = 0;     // pinned nearly always but not constant: flips between -1 and +1
+    for (let j = 0; j < n; j++) if (!dead[j] && pinN[j] >= SWITCH_RATE * m) { sw[j] = 1; nSwitch++; }
     const dims = participation(centerCols(M));
     const deadShare = nDead / n, satShare = tanh ? pinned / (m * n) : null, sat = satShare || 0;
     const cls = deadShare >= DEAD_BAD || sat >= SAT_BAD ? "bad" : deadShare >= DEAD_WARN || sat >= SAT_WARN ? "warn" : "ok";
-    return { tower: L.tower, idx: L.idx, size: n, bars: m, tanh, dead, nDead, deadShare, satShare, dims, cls };
+    return { tower: L.tower, idx: L.idx, size: n, bars: m, tanh, dead, nDead, sw, nSwitch, deadShare, satShare, dims, cls };
   });
 }
 
@@ -178,12 +181,13 @@ export function renderHealth(el, s, H) {
   const rowsHtml = H.map(h => `<tr class="${h.cls}"><td>${layerName(h)}</td><td>${h.size}</td>
       <td><span class="hb" style="width:${Math.max(1, h.deadShare * 60).toFixed(0)}px"></span>${pct(h.deadShare)}</td>
       <td>${h.satShare == null ? "–" : `<span class="hb" style="width:${Math.max(1, h.satShare * 60).toFixed(0)}px"></span>${pct(h.satShare)}`}</td>
-      <td>${h.dims.toFixed(h.dims < 10 ? 1 : 0)}</td></tr>`).join("");
+      <td>${h.nSwitch}</td><td>${h.dims.toFixed(h.dims < 10 ? 1 : 0)}</td></tr>`).join("");
   const adv = healthAdvice(H).map(a => `<div class="adv ${a.cls}">${a.t}</div>`).join("");
   const src = s.ROLL ? "training rollout" : ((s.D.meta && s.D.meta.slice) || "validation") + " replay";
   el.innerHTML = `<div class="k">LAYER HEALTH · ${H[0] ? H[0].bars : 0} bars of this ${src}</div>
-    <table class="hl"><tr><th></th><th>size</th><th>dead</th><th>pinned ±1</th><th>dims used</th></tr>${rowsHtml}</table>${adv}
-    <div class="note">dead = output std &lt; ${DEAD_STD} on these bars (grey dots in the layer) · pinned = |tanh| ≥ ${SAT} ·
+    <table class="hl"><tr><th></th><th>size</th><th>dead</th><th>pinned ±1</th><th>switches</th><th>dims</th></tr>${rowsHtml}</table>${adv}
+    <div class="note">In 3D: grey dot = dead neuron, hollow ring = on/off switch (pinned on ≥ ${SWITCH_RATE * 100}% of the bars), faint lines = leaving a dead or switch neuron
+    (a constant or on/off signal, not a graded one — it can still be strong). dead = output std &lt; ${DEAD_STD} on these bars · pinned = |tanh| ≥ ${SAT} ·
     dims = how many independent directions the layer's activity spans (participation ratio). Few dims in a wide layer = more width than the data needs.</div>`;
 }
 
@@ -444,7 +448,8 @@ export function renderLearning(el, rows, curI, status) {
   }).join("");
   el.innerHTML = `<div class="k">LAYER LEARNING · ${rows.length} evaluations${status ? " · " + status : ""}</div>
     <table class="hl"><tr><th></th><th>Δ weights</th><th>Δ per eval</th><th>pinned ±1 (0–100%)</th></tr>${lines}</table>${advHtml(learningAdvice(rows))}
-    <div class="note">Δ weights = ‖W − W<sub>previous eval</sub>‖ / ‖W<sub>previous eval</sub>‖: how far each layer moved since the previous evaluation (≈0 = it stopped learning). The vertical tick is the evaluation shown in 3D; the layer labels in 3D show the same numbers.</div>`;
+    <div class="note">Δ weights = ‖W − W<sub>previous eval</sub>‖ / ‖W<sub>previous eval</sub>‖: how far each layer moved since the previous evaluation (≈0 = it stopped learning). The vertical tick is the evaluation shown in 3D. In 3D: layer labels show the same numbers, each layer frame turns from grey (barely moving) to green
+    (the most-moving layer of this eval), and the lines turn green by how much that weight changed since the previous eval (runs trained from 2026-11-08 on; older runs keep the normal line colours).</div>`;
 }
 
 // ---- INPUTS tab: decision-test usage of every input at every evaluation (heatmap) + verdicts

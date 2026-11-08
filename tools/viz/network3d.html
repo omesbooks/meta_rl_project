@@ -73,6 +73,7 @@
   body.show #ctrl label.c3d:has(#iIn), body.show #ctrl label.c3d:has(#iIns) { display: none; }
   #chartLbl { left: 24px; font: 600 10px/1 var(--hud); letter-spacing: .3em; color: var(--dim); text-shadow: none; }
   #pxHi, #pxLo { right: 24px; font: 600 12px/1 var(--hud); color: var(--dim); text-shadow: none; }
+  body.nochart #chartLbl, body.nochart #pxHi, body.nochart #pxLo { display: none !important; }
   .panel { position: fixed; background: rgba(6, 10, 24, .72); border: 1px solid rgba(25, 230, 255, .18);
            border-radius: 12px; backdrop-filter: blur(6px); font-size: 13px; color: var(--dim); }
   #ctrl { right: 18px; bottom: 14px; display: flex; gap: 10px; align-items: center; padding: 7px 12px; }
@@ -306,8 +307,13 @@ const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 60
 // ?view=az,pol,dist,tx,ox,amp,fov,oy overrides it; ?sway=0 starts with the auto-orbit off.
 // The defaults look along the input slab from the front-left so its 10 bar rows read as a grid between the
 // drivers panel and the hidden-layer towers, and keep the output labels clear of the stats panel.
-const VIEW = SHOW ? { az: 0.0, pol: 1.5, dist: 84, tx: -2, ox: 0, amp: 0.1, fov: 34, oy: 0.09 }
-                  : { az: -0.62, pol: 1.2, dist: 78, tx: -4, ox: 0.06, amp: 0.16, fov: 36, oy: 0.10 };
+// Without the candle chart (default since 2026-11-08, ?chart=1 = old layout) the scene is centred lower and
+// a little closer, shifted right so the insight panel on the left does not cover the input slab.
+const VIEW = params.get("chart") === "1"
+  ? (SHOW ? { az: 0.0, pol: 1.5, dist: 84, tx: -2, ox: 0, amp: 0.1, fov: 34, oy: 0.09 }
+          : { az: -0.62, pol: 1.2, dist: 78, tx: -4, ox: 0.06, amp: 0.16, fov: 36, oy: 0.10 })
+  : (SHOW ? { az: 0.0, pol: 1.5, dist: 80, tx: -2, ox: 0, amp: 0.1, fov: 34, oy: 0.0 }
+          : { az: -0.62, pol: 1.2, dist: 74, tx: -4, ox: 0.11, amp: 0.16, fov: 36, oy: -0.02 });
 if (params.has("view")) params.get("view").split(",").forEach((v, i) => { const k = ["az", "pol", "dist", "tx", "ox", "amp", "fov", "oy"][i]; if (k && v !== "" && isFinite(+v)) VIEW[k] = +v; });
 camera.fov = VIEW.fov; camera.updateProjectionMatrix();
 camera.position.setFromSphericalCoords(VIEW.dist * 1.1, VIEW.pol, VIEW.az).add(new THREE.Vector3(VIEW.tx, 0, 0));
@@ -324,6 +330,7 @@ const chartCam = new THREE.OrthographicCamera(0, innerWidth, innerHeight, 0, -10
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const chartPass = new RenderPass(chartScene, chartCam); chartPass.clear = false; chartPass.clearDepth = true;
+if (params.get("chart") !== "1") chartPass.enabled = false;
 composer.addPass(chartPass);
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.9, 0.45, 0.22);
 composer.addPass(bloom);
@@ -335,21 +342,25 @@ const glowPoints = (n, pixelSpace = false) => {
   g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
   g.setAttribute("aColor", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
   g.setAttribute("aSize", new THREE.BufferAttribute(new Float32Array(n), 1));
+  g.setAttribute("aRing", new THREE.BufferAttribute(new Float32Array(n), 1));   // 1 = hollow ring (an on/off 'switch' neuron)
   const m = new THREE.ShaderMaterial({
     uniforms: { uScale: { value: 1 } },
-    vertexShader: `attribute vec3 aColor; attribute float aSize; uniform float uScale; varying vec3 vC;
-      void main() { vC = aColor; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vertexShader: `attribute vec3 aColor; attribute float aSize; attribute float aRing; uniform float uScale; varying vec3 vC; varying float vR;
+      void main() { vC = aColor; vR = aRing; vec4 mv = modelViewMatrix * vec4(position, 1.0);
         gl_PointSize = ${pixelSpace ? "aSize * uScale" : "aSize * uScale / -mv.z"}; gl_Position = projectionMatrix * mv; }`,
     fragmentShader: LIGHT
       // light: hue = colour / its strongest channel, strength -> alpha (a dim node is a faint dot, not a black one)
-      ? `varying vec3 vC;
+      ? `varying vec3 vC; varying float vR;
       void main() { float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a = a * a;
+        if (vR > 0.5) a = smoothstep(0.5, 0.42, d) * smoothstep(0.22, 0.31, d) * 1.6;
         float inten = max(max(vC.r, vC.g), vC.b); float al = a * clamp(inten * 2.2, 0.0, 1.0);
         if (al < 0.004) discard; vec3 hue = vC / max(inten, 1e-4);
         gl_FragColor = vec4(hue * mix(0.62, 0.42, smoothstep(0.16, 0.0, d)), al); }`
-      : `varying vec3 vC;
+      : `varying vec3 vC; varying float vR;
       void main() { float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); a = a * a;
-        if (a < 0.003) discard; gl_FragColor = vec4(vC * (a + smoothstep(0.10, 0.0, d) * 0.6), a); }`,
+        float core = smoothstep(0.10, 0.0, d) * 0.6;
+        if (vR > 0.5) { a = smoothstep(0.5, 0.42, d) * smoothstep(0.22, 0.31, d) * 1.4; core = 0.0; }
+        if (a < 0.003) discard; gl_FragColor = vec4(vC * (a + core), a); }`,
     transparent: true, depthWrite: false, blending: BLEND,
   });
   const p = new THREE.Points(g, m); p.frustumCulled = false; return p;
@@ -361,6 +372,8 @@ const C_SHOW = new THREE.Color(1.0, 0.55, 0.18);          // showcase: one warm 
 const C_UP = LIGHT ? new THREE.Color("#0f9a5a") : new THREE.Color(0.0, 1.0, 0.55);
 const C_DN = LIGHT ? new THREE.Color("#d01e52") : new THREE.Color(1.0, 0.1, 0.42);
 const C_GOLD = LIGHT ? new THREE.Color("#c98a00") : new THREE.Color(1.0, 0.72, 0.12);
+const C_LEARN = LIGHT ? new THREE.Color("#0f9a5a") : new THREE.Color(0.0, 1.0, 0.55);   // LEARNING: changed weights, learning layers
+const C_FROZEN = LIGHT ? new THREE.Color("#94a3b8") : new THREE.Color(0.2, 0.25, 0.33);
 const ACTION_COLORS = LIGHT
   ? { hold: "#5b6b85", buy: "#0f9a5a", sell: "#d01e52", close: "#c98a00", move_sl_breakeven: "#7a4de0", trail_sl_atr: "#0a8fd6" }
   : { hold: "#9fb3d9", buy: "#00ffa3", sell: "#ff2e88", close: "#ffc53d", move_sl_breakeven: "#b48cff", trail_sl_atr: "#19e6ff" };
@@ -426,6 +439,10 @@ const bVel = new Float32Array(NB * 2), bLife = new Float32Array(NB);
 bursts.material.uniforms.uScale.value = renderer.getPixelRatio();
 chartScene.add(bursts);
 let burstNext = 0, CH = {};
+// 2026-11-08: the candle/order chart under the network is off (owner's request); ?chart=1 brings it back.
+// Off = its render pass, price labels and the trade bursts on it are skipped; equity/trades stay in the stats panel.
+const CHART = params.get("chart") === "1";
+if (!CHART) document.body.classList.add("nochart");
 function layoutChart() {
   const w = innerWidth, h = innerHeight;
   let lift = LIVE ? 44 : 0;     // room for the timeline panel
@@ -435,7 +452,8 @@ function layoutChart() {
     const a = tl.getBoundingClientRect(), b = ct.getBoundingClientRect();
     if (a.right + 10 > b.left) { tl.style.bottom = (h - b.top + 8) + "px"; lift += h - b.top - 6; }
   }
-  CH = { x0: 70, x1: w - 90, y0: 34 + lift, y1: Math.max(150, h * 0.27) + lift };
+  CH = CHART ? { x0: 70, x1: w - 90, y0: 34 + lift, y1: Math.max(150, h * 0.27) + lift }
+             : { x0: 70, x1: w - 90, y0: 34 + lift, y1: 70 + lift };   // no chart: labels only avoid the bottom controls
   chartCam.right = w; chartCam.top = h; chartCam.updateProjectionMatrix();
   const g = gridGeo.attributes.position.array;
   for (let i = 0; i < 5; i++) { const y = CH.y0 + (CH.y1 - CH.y0) * i / 4; g.set([CH.x0, y, 0, CH.x1, y, 0], i * 6); }
@@ -474,7 +492,8 @@ function prepare(D) {
   s.OFF_PROB = o; s.OFF_VAL = o + s.NA; s.NODES = s.OFF_VAL + 1;
   if (s.NODES !== s.W) throw new Error(`snapshot width ${s.W} != layout ${s.NODES}`);
   s.towerLayers = [s.layers.filter(l => l.tower === 0), s.layers.filter(l => l.tower === 1)];
-  s.mats = [D.edges.actor, D.edges.critic].map(ms => ms.map(m => ({ rows: m.rows, cols: m.cols, k: m.k, idx: dec(m.idx, Int16Array), w: dec(m.w, Float32Array) })));
+  s.mats = [D.edges.actor, D.edges.critic].map(ms => ms.map(m => ({ rows: m.rows, cols: m.cols, k: m.k, idx: dec(m.idx, Int16Array), w: dec(m.w, Float32Array),
+                                                                   dw: m.dw ? dec(m.dw, Float32Array) : null })));
   s.colors = s.names.map((n, i) => ACTION_COLORS[n] || FALLBACK_COLORS[i % FALLBACK_COLORS.length]);
   s.colorsT = s.colors.map(c => new THREE.Color(c));
   s.ROLL = !!(D.meta && D.meta.source === "rollout" && D.adv && D.greedy);
@@ -597,22 +616,25 @@ function buildNet(s) {
   nodes.geometry.attributes.position.array.set(s.posOf);
   scene.add(nodes);
   // synapses ordered by rank, so a draw range keeps the K strongest per neuron
+  // E: src, dst, weight, rank, dw = |weight change since the previous eval| / that matrix's 95th percentile (−1 = not recorded)
   const E = [];
   [0, 1].forEach(ti => {
     const tl = s.towerLayers[ti];
     s.mats[ti].forEach((M, mi) => {
+      let p95 = 0;
+      if (M.dw) { const a = Array.from(M.dw, Math.abs).sort((x, y) => x - y); p95 = a[Math.floor((a.length - 1) * 0.95)] || 1e-12; }
       for (let r = 0; r < M.rows; r++) for (let q = 0; q < M.k; q++) {
         const sIdx = M.idx[r * M.k + q];
         const src = mi === 0 ? sIdx : tl[mi - 1].off + sIdx;
         const dst = mi < tl.length ? tl[mi].off + r : (ti === 0 ? s.OFF_PROB + r : s.OFF_VAL);
-        E.push(src, dst, M.w[r * M.k + q] * (mi === 0 ? 5.0 : 2.6), q);
+        E.push(src, dst, M.w[r * M.k + q] * (mi === 0 ? 5.0 : 2.6), q, M.dw ? Math.min(1, Math.abs(M.dw[r * M.k + q]) / p95) : -1);
       }
     });
   });
-  const NE = E.length / 4, order = Array.from({ length: NE }, (_, i) => i).sort((a, b) => E[a * 4 + 3] - E[b * 4 + 3]);
-  const eSrc = new Int32Array(NE), eDst = new Int32Array(NE), eW = new Float32Array(NE), rankEnd = [];
-  order.forEach((e, i) => { eSrc[i] = E[e * 4]; eDst[i] = E[e * 4 + 1]; eW[i] = E[e * 4 + 2]; });
-  let cut = 0; for (let k = 1; k <= 64; k++) { while (cut < NE && E[order[cut] * 4 + 3] < k) cut++; rankEnd[k] = cut; }
+  const NE = E.length / 5, order = Array.from({ length: NE }, (_, i) => i).sort((a, b) => E[a * 5 + 3] - E[b * 5 + 3]);
+  const eSrc = new Int32Array(NE), eDst = new Int32Array(NE), eW = new Float32Array(NE), eDW = new Float32Array(NE), rankEnd = [];
+  order.forEach((e, i) => { eSrc[i] = E[e * 5]; eDst[i] = E[e * 5 + 1]; eW[i] = E[e * 5 + 2]; eDW[i] = E[e * 5 + 4]; });
+  let cut = 0; for (let k = 1; k <= 64; k++) { while (cut < NE && E[order[cut] * 5 + 3] < k) cut++; rankEnd[k] = cut; }
   const eGeo = new THREE.BufferGeometry(), ePos = new Float32Array(NE * 6);
   for (let i = 0; i < NE; i++) { ePos.set(s.posOf.subarray(eSrc[i] * 3, eSrc[i] * 3 + 3), i * 6); ePos.set(s.posOf.subarray(eDst[i] * 3, eDst[i] * 3 + 3), i * 6 + 3); }
   eGeo.setAttribute("position", new THREE.BufferAttribute(ePos, 3));
@@ -625,8 +647,9 @@ function buildNet(s) {
   const ring = [], fills = [], mk = [], GROUP_BAR_W = 0.32;
   const ringCol = LIGHT ? "#334155" : "#38bdf8";
   const at = (L, b, y) => [L.x + b * DISC_V[0], Y_TOWER[L.tower] + y, b * DISC_V[1]];
+  const ringRange = [];   // per layer: [first vertex, vertex count] in the outline buffer (LEARNING colours each frame by its Δ)
   s.layers.forEach(L => {
-    const y0 = Y_TOWER[L.tower];
+    const y0 = Y_TOWER[L.tower], r0 = ring.length / 3;
     let f;
     if (SHAPE === "disc") {
       const R = L.r * 1.06, SEG = 72;
@@ -648,10 +671,15 @@ function buildNet(s) {
       color: ringCol, transparent: true, opacity: LIGHT ? 0.13 : 0.05, side: THREE.DoubleSide, depthWrite: false, blending: BLEND }));
     m.position.set(L.x, y0, 0); m.rotation.y = Math.PI / 2 - TILT;          // geometry normal z -> (cos TILT, 0, sin TILT)
     fills.push(m); scene.add(m);
+    ringRange.push([r0, ring.length / 3 - r0]);
   });
+  const nFill = fills.length;
   fills.push(...mk);
   const rGeo = new THREE.BufferGeometry(); rGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(ring), 3));
-  const rings = new THREE.LineSegments(rGeo, new THREE.LineBasicMaterial({ color: ringCol, transparent: true, opacity: LIGHT ? 0.85 : 0.4, blending: BLEND, depthWrite: false }));
+  const ringRGB = new THREE.Color(ringCol), rc = new Float32Array(ring.length);
+  for (let i = 0; i < rc.length; i += 3) { rc[i] = ringRGB.r; rc[i + 1] = ringRGB.g; rc[i + 2] = ringRGB.b; }
+  rGeo.setAttribute("color", new THREE.BufferAttribute(rc, 3));
+  const rings = new THREE.LineSegments(rGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: LIGHT ? 0.85 : 0.4, blending: BLEND, depthWrite: false }));
   rings.renderOrder = 2; scene.add(rings);
   // labels
   const outLbl = s.labels.map((n, a) => mkLbl("out", `${n} <span>0%</span><span class="bar"></span>`, s.colors[a]));
@@ -669,7 +697,7 @@ function buildNet(s) {
     const b = -(L.hw + 0.45) - 0.95, y = (G.y0 + G.y1) / 2;
     tags.push([mkLbl("grp", G.g < s.NA ? s.labels[G.g] : "OTHER", G.g < s.NA ? s.colors[G.g] : null), [L.x + b * DISC_V[0], Y_TOWER[0] + y, b * DISC_V[1]]]);
   }));   // above: below it runs into the chart strip, where labels hide
-  NET = { nodes, synapses, pulses, eGeo, eSrc, eDst, eW, eInt: new Float32Array(NE), rankEnd, NE, NP,
+  NET = { nodes, synapses, pulses, eGeo, eSrc, eDst, eW, eDW, hasDW: eDW.some(v => v >= 0), ringRange, ringRGB, nFill, eInt: new Float32Array(NE), rankEnd, NE, NP,
           pEdge: new Int32Array(NP).fill(-1), pT: new Float32Array(NP), pSp: new Float32Array(NP),
           outLbl, valLbl, tags, lyrLbl, rings, fills, impulse: new Float32Array(s.NA),
           outColorsLin: s.colors.map(c => new THREE.Color(c).convertSRGBToLinear()) };
@@ -737,11 +765,15 @@ function updateNetwork(dt) {
     for (let i = 0; i < s.NIN; i++) { const v = cur[i], m = Math.min(1, Math.abs(v) * 1.3);
       if (LIGHT) inputInk(nCol, nSize, i, v, m * m, 2.5, 2.6); else { setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.07 + m * m * 0.85); nSize[i] = 1.5 + m * 1.7; } }
   }
-  for (const L of s.layers) { const dead = L.dead; for (let j = 0; j < L.size; j++) {
+  const HEALTH = insightMode === "health", nRing = N.nodes.geometry.attributes.aRing.array;
+  for (const L of s.layers) { const dead = L.dead, sw = HEALTH ? L.sw : null; for (let j = 0; j < L.size; j++) {
     const i = L.off + j, v = cur[i], m = Math.abs(v);
+    nRing[i] = sw && sw[j] ? 1 : 0;
     if (dead && dead[j]) { setColor(nCol, i, C_INK_DIM, LIGHT ? 0.35 : 0.12); nSize[i] = L.dot * 0.45; continue; }   // dead: constant output, no signal
+    if (nRing[i]) { setColor(nCol, i, v >= 0 ? C_POS : C_NEG, LIGHT ? 0.55 : 0.5); nSize[i] = L.dot * 1.25; continue; }   // switch: ring, colour = which side it is on now
     setColor(nCol, i, v >= 0 ? C_POS : C_NEG, 0.10 + m * m * m * 1.3); nSize[i] = L.dot * (0.6 + m * 0.9);
   } }
+  N.nodes.geometry.attributes.aRing.needsUpdate = true;
   for (let a = 0; a < s.NA; a++) {
     const p = Math.max(0, cur[s.OFF_PROB + a]), i = s.OFF_PROB + a;
     N.impulse[a] = Math.max(0, N.impulse[a] - dt * 1.8);
@@ -753,9 +785,13 @@ function updateNetwork(dt) {
   N.nodes.material.uniforms.uScale.value = uScale; N.pulses.material.uniforms.uScale.value = uScale;
 
   const end = N.rankEnd[Math.min(64, K)], eCol = N.eGeo.attributes.color.array;
+  const LEARN_DW = insightMode === "learning" && N.hasDW, FAINT = HEALTH ? s.flagOf : null;
   for (let e = 0; e < end; e++) {
-    const sg = N.eW[e] * cur[N.eSrc[e]]; N.eInt[e] = sg;
-    const m = Math.min(1, Math.abs(sg)), c = SHOW ? C_SHOW : (sg >= 0 ? C_POS : C_NEG), a = m * m * m * 0.32 + 0.0025, b = a * 0.25, o = e * 6;
+    let sg = N.eW[e] * cur[N.eSrc[e]]; N.eInt[e] = sg;
+    let c = SHOW ? C_SHOW : (sg >= 0 ? C_POS : C_NEG);
+    if (LEARN_DW) { const d = Math.max(0, N.eDW[e]); sg = d; c = C_LEARN; N.eInt[e] = 0; }          // brightness = how much this weight changed since the last eval
+    else if (FAINT && FAINT[N.eSrc[e]]) sg *= 0.22;                                                  // leaves a dead / switch neuron
+    const m = Math.min(1, Math.abs(sg)), a = m * m * m * 0.32 + 0.0025, b = a * 0.25, o = e * 6;
     // light: alpha floor 0.012 (was 0.05 — thousands of overlapping faint lines added up to a solid mass)
     if (LIGHT) { const q = e * 8, as = Math.min(0.85, 0.012 + m * m * 0.8), bs = as * 0.4;
       eCol[q] = c.r; eCol[q + 1] = c.g; eCol[q + 2] = c.b; eCol[q + 3] = as; eCol[q + 4] = c.r; eCol[q + 5] = c.g; eCol[q + 6] = c.b; eCol[q + 7] = bs; }
@@ -970,7 +1006,9 @@ let shown = "", source = "eval", srcPinned = false, evalD = null;
 function applySnapshot(D) {
   try { S = prepare(D); } catch (e) { fail("bad snapshot: " + e.message); return; }
   S.health = layerHealth(S);
-  S.layers.forEach((L, i) => L.dead = S.health[i].dead);
+  S.layers.forEach((L, i) => { L.dead = S.health[i].dead; L.sw = S.health[i].sw; });
+  S.flagOf = new Uint8Array(S.NODES);            // 1 = dead or switch neuron (HEALTH dims the lines leaving it)
+  S.layers.forEach(L => { for (let j = 0; j < L.size; j++) if (L.dead[j] || L.sw[j]) S.flagOf[L.off + j] = 1; });
   buildNet(S);
   insightUpdate();
   START = Math.min(Math.max(0, Math.min(60, S.NF - 2)), S.NF - 2);
@@ -1259,7 +1297,7 @@ $("bPlay").onclick = e => { playing = !playing; e.target.textContent = playing ?
 $("iSpeed").oninput = e => speed = +e.target.value;
 $("iK").onchange = e => K = +e.target.value;
 $("iShape").value = SHAPE;
-$("iShape").onchange = e => { SHAPE = e.target.value; if (S) { buildNet(S); drivers(Math.min(S.NF - 1, Math.floor(fpos))); } wake("shape"); };
+$("iShape").onchange = e => { SHAPE = e.target.value; if (S) { buildNet(S); drivers(Math.min(S.NF - 1, Math.floor(fpos))); insightUpdate(); } wake("shape"); };
 $("iIn").onchange = e => { inputMode = e.target.value; if (S) drivers(Math.min(S.NF - 1, Math.floor(fpos))); wake("input"); };
 $("iGlow").oninput = e => glow = +e.target.value / 10;
 $("iFps").onchange = e => fpsCap = +e.target.value;
@@ -1348,6 +1386,20 @@ function updateLayerLabels() {
     sp.textContent = txt; sp.className = "hl" + (txt ? " on " + cls : "");
   }
 }
+function layerFrames() {
+  if (!NET || !S || !NET.ringRange) return;
+  const d = insightMode === "learning" ? (S.D.meta && S.D.meta.layer_delta) : null;
+  const col = NET.rings.geometry.attributes.color.array, vals = S.layers.map(L => d && d[L.tower ? "critic" : "actor"] ? d[L.tower ? "critic" : "actor"][L.idx] : null);
+  const mx = Math.max(1e-12, ...vals.filter(v => v != null));
+  S.layers.forEach((L, li) => {
+    const v = vals[li], [r0, n] = NET.ringRange[li], tt = v == null ? -1 : Math.sqrt(v / mx);
+    const c = tt < 0 ? NET.ringRGB : _fc.copy(C_FROZEN).lerp(C_LEARN, tt);
+    for (let k = r0; k < r0 + n; k++) { col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b; }
+    const f = NET.fills[li]; if (f && li < NET.nFill) { f.material.color.copy(tt < 0 ? NET.ringRGB : c); f.material.opacity = tt < 0 ? (LIGHT ? 0.13 : 0.05) : (LIGHT ? 0.10 + 0.22 * tt : 0.04 + 0.14 * tt); }
+  });
+  NET.rings.geometry.attributes.color.needsUpdate = true;
+}
+const _fc = new THREE.Color();
 function insightUpdate() {
   const show = !!S && insightMode !== "off" && mode !== "dashboard" && mode !== "monitor";
   $("insight").style.display = show ? "block" : "none";
@@ -1360,7 +1412,7 @@ function insightUpdate() {
     if (insightMode === "critic") { critic.set(S, histRows()); critic.frame(fi); }
     if (insightMode === "learning" || insightMode === "inputs" || insightMode === "critic") { renderHistory(); loadHistory(); }
   }
-  updateLayerLabels();
+  updateLayerLabels(); layerFrames();
 }
 function setInsight(k) {
   insightMode = k; $("iIns").value = k;

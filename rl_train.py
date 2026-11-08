@@ -700,16 +700,18 @@ def train(args, run, prepared=None):
                                 best_reward=float(getattr(parent, "best_mean_reward", float("nan"))),
                                 symbol=Path(args.csv).name.split("_")[0].upper(), gate_name=args.entry_gate,
                                 feature_names=list(feature_cols), gamma=float(args.gamma))
+                    prev_w = self.prev_w
                     try:   # how much each layer moved since the previous evaluation (3D LEARNING tab)
                         w = viz_snapshot.layer_weights(self.model.policy)
-                        if self.prev_w is not None:
-                            meta["layer_delta"] = viz_snapshot.layer_delta(self.prev_w, w)
+                        if prev_w is not None:
+                            meta["layer_delta"] = viz_snapshot.layer_delta(prev_w, w)
                         self.prev_w = w
                     except Exception as exc:   # a visual must never stop training
                         print(f"\n[viz] layer delta {self.i} failed: {exc}", flush=True)
                     try:
                         snap = viz_snapshot.capture(self.model.policy, make_viz_env(), args.window,
-                                                    viz_frames, action_names=viz_actions, meta=meta)
+                                                    viz_frames, action_names=viz_actions, meta=meta,
+                                                    prev_weights=prev_w)   # per-synapse change (LEARNING tab)
                         entry = {k: meta[k] for k in ("step", "total_steps", "eval_reward", "best_reward")}
                         if "layer_delta" in meta:
                             entry["layer_delta"] = meta["layer_delta"]

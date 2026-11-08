@@ -153,13 +153,20 @@ class TemplateWiringTests(unittest.TestCase):
         self.assertIn("body.show #insight { display: none !important; }", html)
         self.assertIn("#insight { left: 24px; top: 150px;", html)          # 2026-11-08: left side, drivers list off
         self.assertIn('const DRIVERS = params.get("drivers") === "1";', html)
+        # 2026-11-08: candle chart off by default (?chart=1), switch rings / faint lines (HEALTH), Δ frames + changed lines (LEARNING)
+        self.assertIn('const CHART = params.get("chart") === "1";', html)
+        self.assertIn('if (params.get("chart") !== "1") chartPass.enabled = false;', html)
+        self.assertIn("if (vR > 0.5)", html)
+        self.assertIn("else if (FAINT && FAINT[N.eSrc[e]]) sg *= 0.22;", html)
+        self.assertIn("function layerFrames()", html)
 
     def test_snapshot_records_layer_activation(self):
         src = (ROOT / "tools/viz/snapshot.py").read_text(encoding="utf-8")
         self.assertIn('"layer_act":', src)
         train = (ROOT / "rl_train.py").read_text(encoding="utf-8")
-        self.assertIn('meta["layer_delta"] = viz_snapshot.layer_delta(self.prev_w, w)', train)
+        self.assertIn('meta["layer_delta"] = viz_snapshot.layer_delta(prev_w, w)', train)
         self.assertIn("def _init_callback(self):", train)
+        self.assertIn("prev_weights=prev_w)", train)
 
 
 if __name__ == "__main__":

@@ -203,12 +203,14 @@ def layer_delta(prev, now):
 
 
 def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, feature_names=None,
-         usage=True):
+         usage=True, prev_weights=None):
     """Build a snapshot dict from observations the policy saw.
 
     bars: dict of per-frame lists — ts, o, h, l, c, act, pos, eq, tpnl.
     extra: optional per-frame arrays added as-is (e.g. reward, adv).
     feature_names: env feature columns (for input attribution labels).
+    prev_weights: layer_weights() of the previous evaluation -> every drawn synapse also gets `dw`
+    (its weight change since then) for the 3D LEARNING tab.
     usage: run the per-feature permutation test (feature_usage; eval snapshots only, the
     rollout writer turns it off to keep its overhead at ~1%).
     """
@@ -240,14 +242,18 @@ def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, fea
     for name, head in (("actor", policy.action_net), ("critic", policy.value_net)):
         weights = [m.weight for m in towers[name] if isinstance(m, torch.nn.Linear)] + [head.weight]
         sources = [obs_std] + [a.std(axis=0) for a in hidden[name]]
+        prevs = (list(prev_weights[name]) + [prev_weights[name + "_head"]]) if prev_weights else [None] * len(weights)
         mats = []
-        for W, src_std in zip(weights, sources):
+        for W, src_std, Wp in zip(weights, sources, prevs):
             Wn = W.detach().cpu().numpy()
             kk = int(min(k, Wn.shape[1]))
             order = np.argsort(-(np.abs(Wn) * src_std[None, :]), axis=1, kind="stable")[:, :kk]
-            mats.append({"rows": int(Wn.shape[0]), "cols": int(Wn.shape[1]), "k": kk,
-                         "idx": b64(order.astype(np.int16)),
-                         "w": b64(np.take_along_axis(Wn, order, 1).astype(np.float32))})
+            mat = {"rows": int(Wn.shape[0]), "cols": int(Wn.shape[1]), "k": kk,
+                   "idx": b64(order.astype(np.int16)),
+                   "w": b64(np.take_along_axis(Wn, order, 1).astype(np.float32))}
+            if Wp is not None and Wp.shape == Wn.shape:
+                mat["dw"] = b64(np.take_along_axis(Wn - Wp, order, 1).astype(np.float32))
+            mats.append(mat)
         edges[name] = mats
 
     n_actions = probs.shape[1]
@@ -291,7 +297,7 @@ def pack(policy, obs, window, bars, k=16, names=None, meta=None, extra=None, fea
     return snap
 
 
-def capture(policy, env, window, frames, k=16, action_names=None, meta=None, feature_names=None):
+def capture(policy, env, window, frames, k=16, action_names=None, meta=None, feature_names=None, prev_weights=None):
     """Eval replay: walk `env` (a fresh, unwrapped TradingEnv on the slice to
     show) with the policy's argmax action and return the snapshot dict.
 
@@ -332,7 +338,7 @@ def capture(policy, env, window, frames, k=16, action_names=None, meta=None, fea
             "act": acts, "pos": pos, "eq": eq, "tpnl": tpnl}
     snap = pack(policy, np.stack(rows), window, bars, k=k, names=action_names,
                 meta=dict(meta or {}, source="eval"), extra=dict({"reward": rewards}, **({"gate": gates} if gates else {})),
-                feature_names=feature_names or list(getattr(env, "feature_cols", []) or []))
+                feature_names=feature_names or list(getattr(env, "feature_cols", []) or []), prev_weights=prev_weights)
     snap["meta"]["capture_s"] = round(time.perf_counter() - t_start, 3)
     return snap
 
